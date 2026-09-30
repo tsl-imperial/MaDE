@@ -77,7 +77,7 @@ step is `dt=0.2`.
 ### Data
 
 **Simulated systems.** Generated locally by the first step of `scripts/sim/run_all.sh`
-(`scripts/sim/generate_data.py --system all --seed 0`), about 7.5 minutes on CPU. Output goes to
+(`scripts/sim/generate_data.py --system all --seed 0`). Output goes to
 `data/generated/`. Dynamic-bicycle controls are sampled in ±0.2 rad and ±1.5 m/s², inside the
 ±0.5 rad and ±3.0 m/s² constraint box (`configs/sim/data_generation.json`).
 
@@ -131,11 +131,7 @@ python scripts/ind/build_table_breakdown.py
 python scripts/ind/build_table_completion_only.py
 ```
 
-**Compute.** inD training used one NVIDIA RTX 3090 (24 GB) per run, in float64. MaDE took 47.92
-to 71.05 minutes per seed over both training phases. Each of the 15 predictors took 2.99 to 6.93 minutes. The simulated
-runs were not timed.
-
-**Checkpoints.** Pretrained checkpoints are not released.
+**Hardware.** inD training used one NVIDIA RTX 3090 (24 GB) per run, in float64.
 
 ## Citation
 
