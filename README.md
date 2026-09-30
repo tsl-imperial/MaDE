@@ -131,8 +131,6 @@ python scripts/ind/build_table_breakdown.py
 python scripts/ind/build_table_completion_only.py
 ```
 
-**Hardware.** inD training used one NVIDIA RTX 3090 (24 GB) per run, in float64.
-
 ## Citation
 
 <!-- TODO: replace with the arXiv identifier, then with the NeurIPS 2026 @inproceedings entry -->
