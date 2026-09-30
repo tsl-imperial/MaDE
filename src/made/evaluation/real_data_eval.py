@@ -115,9 +115,9 @@ def load_train_envelope_and_residual(
             f"load_train_envelope_and_residual requires split='train', got {split!r}"
         )
 
-    # On-disk cache: envelope + GT residual depend only on (data_dir contents,
-    # dt, the constants above). Reused across every variant/seed eval. Disable
-    # via MADE_EVAL_CACHE_DISABLE=1 or for stub data.
+    # On-disk cache: envelope + GT residual depend only on (data_dir contents, dt, the
+    # constants above). Reused across every variant/seed eval. Disable via
+    # MADE_EVAL_CACHE_DISABLE=1 or for stub data.
     cache_file: Path | None = None
     if not use_stub and os.environ.get("MADE_EVAL_CACHE_DISABLE") != "1":
         try:

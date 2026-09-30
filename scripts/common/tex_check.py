@@ -1,17 +1,9 @@
-"""Compile what you emit.
+"""Verify a LaTeX fragment builds before it is written.
 
-Three rendered tables in a row failed to drop in, and each was caught on the manuscript side,
-which is the expensive place to catch it. The third was well-formed but did not build: its
-header declared a span one column too wide and LaTeX stopped with "Extra alignment tab has been
-changed to \\cr".
-
-A generator that writes a LaTeX fragment can wrap it in a minimal document and run the engine in
-about a second. `assert_compiles` does that and **raises rather than warns**, so a fragment that
-does not build is never written.
-
-**The principle is the reproduction gate's**: a check that has never been observed to fail is
-not a check. `self_test()` below feeds this one the exact off-by-one that reached the manuscript
-and asserts it is rejected, so the checker is known to discriminate rather than assumed to.
+`assert_compiles` wraps a fragment in a minimal document and runs the LaTeX engine, raising
+rather than warning, so a fragment that does not build is never written. `self_test()` checks
+the checker itself against a known-bad fragment (an off-by-one column span) to confirm it can
+reject, not just pass.
 """
 
 from __future__ import annotations
@@ -22,13 +14,8 @@ import tempfile
 from pathlib import Path
 
 
-# Macros the MANUSCRIPT defines and a fragment may legitimately use. Without stubs here the
-# checker rejects a correct fragment. A
-# checker that fails valid input is as bad as one that passes invalid input, so the contract is:
-# every macro the manuscript provides is stubbed, and anything else is still an error.
-#
-# The stubs render something visible rather than nothing, so a proof read of the check output
-# shows where the placeholders sit.
+# Macros the manuscript defines that a fragment may legitimately use; without stubs the checker
+# rejects valid input. Stubs render visibly so check output shows where placeholders sit.
 MANUSCRIPT_MACROS = r"""
 \newcommand{\resultpending}[1]{[pending: #1]}
 \newcommand{\basispending}[1]{[pending basis: #1]}
@@ -81,7 +68,7 @@ def assert_compiles(fragment: str, *, name: str = "fragment") -> None:
 
 
 def self_test() -> bool:
-    """Negative control: the exact defect that reached the manuscript must be rejected."""
+    """Negative control: a fragment with a known off-by-one column span must be rejected."""
     good = (
         r"\begin{tabular}{llccccc}" "\n" r"\toprule" "\n"
         r" & & \multicolumn{4}{c}{Ablations} & \multicolumn{1}{c}{Reference} \\" "\n"
@@ -111,24 +98,13 @@ if __name__ == "__main__":
     raise SystemExit(0 if self_test() else 1)
 
 
-# --- Fitting the TEXT BLOCK, which `assert_compiles` cannot see ----------------------------
+# assert_compiles builds on a 40cm page so width never masks a structural error, which makes it
+# blind to a table that compiles but is wider than the column it has to sit in. overfull_pt /
+# assert_fits_width check width separately.
 #
-# `assert_compiles` builds on a 40cm page precisely so that width never masks a structural
-# error. That makes it blind to a table that builds perfectly but is wider than the column
-# it has to sit in. A fragment can pass the first check and still be unusable, so the two
-# checks are separate and both are run.
-#
-# ICLR's style sets a 5.5in text block. The width is a parameter rather than a constant so a
-# caller can measure against whatever the target document actually uses.
+# ICLR's style sets a 5.5in text block; width is a parameter so a caller can target other docs.
 ICLR_TEXTWIDTH = "5.5in"
 
-# Macros the MANUSCRIPT defines and a fragment may legitimately use. Without stubs here the
-# checker rejects a correct fragment. A
-# checker that fails valid input is as bad as one that passes invalid input, so the contract is:
-# every macro the manuscript provides is stubbed, and anything else is still an error.
-#
-# The stubs render something visible rather than nothing, so a proof read of the check output
-# shows where the placeholders sit.
 MANUSCRIPT_MACROS = r"""
 \newcommand{\resultpending}[1]{[pending: #1]}
 \newcommand{\basispending}[1]{[pending basis: #1]}

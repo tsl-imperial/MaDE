@@ -4,8 +4,8 @@ Layer 1 (vector_field δ clamp): tested by `test_kinematic_vector_field_grad_fin
 Layer 2 (corrector box projection): tested by `test_corrector_compound_grad_finite_near_pi_half`.
 Layer 3 (optax.zero_nans):           tested by `test_optax_zero_nans_recovers_from_nan_gradient`.
 
-Each test independently fails when its target layer is removed (verified by
-the pre-merge protocol). Direct unit-style probes; no full trainer machinery.
+Each test independently fails when its target layer is removed. Direct
+unit-style probes; no full trainer machinery.
 """
 
 from __future__ import annotations
@@ -29,9 +29,6 @@ def test_kinematic_vector_field_grad_finite_near_pi_half():
     The clamp at |δ| ≤ 1.4 makes the gradient identically zero for δ outside
     the box (since clip's gradient is 0 outside its bounds), so a single
     optimizer step does NOT push δ further toward π/2.
-
-    Pre-merge verification: this test MUST FAIL when Step 1's δ-clamp is
-    removed (`tan_arg = jnp.clip(delta, -1.4, 1.4)` deleted). Confirmed.
     """
     physics = KinematicBicycle()
     state = jnp.array([0.0, 0.0, 0.0, 1.0])
@@ -175,16 +172,16 @@ def test_optax_zero_nans_recovers_from_nan_gradient():
 def test_migrate_opt_state_prepends_zero_nans_for_legacy_checkpoints():
     """Resume from a pre-zero_nans checkpoint must succeed.
 
-    Pre-2026-05-04 the optimizer was `chain(clip_by_global_norm, adam)` →
-    opt_state is a 2-tuple. The current chain prepends `zero_nans()` →
-    expects a 3-tuple. Loading the legacy 2-tuple straight into the new chain
-    raises "The number of updates and states has to be the same in chain".
+    Legacy optimizer is `chain(clip_by_global_norm, adam)` → opt_state is a
+    2-tuple. The current chain prepends `zero_nans()` → expects a 3-tuple.
+    Loading the legacy 2-tuple straight into the new chain raises "The number
+    of updates and states has to be the same in chain".
     `_migrate_opt_state_for_zero_nans` must prepend a fresh zero_nans state and
     leave Adam moments / clip-norm state intact, so resume is momentum-faithful.
     """
     params = {"w": jnp.array([1.0, 2.0]), "b": jnp.array([0.5])}
 
-    # Legacy chain: clip + adam (matches pre-2026-05-04 trainer).
+    # Legacy chain: clip + adam.
     legacy_opt = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(1e-3))
     legacy_state = legacy_opt.init(params)
     assert isinstance(legacy_state, tuple) and len(legacy_state) == 2
@@ -209,8 +206,7 @@ def test_migrate_opt_state_prepends_zero_nans_for_legacy_checkpoints():
         f"migration should produce 3-tuple matching new chain, got len={len(migrated)}"
     )
 
-    # Apply an update through the new chain — this is the exact path that was
-    # crashing in the original bug report.
+    # Apply an update through the new chain.
     updates, _opt_state2 = opt_T.update(grads, migrated, params)
     new_params = optax.apply_updates(params, updates)
     assert jnp.isfinite(new_params["w"]).all()

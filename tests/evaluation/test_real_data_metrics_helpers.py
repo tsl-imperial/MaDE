@@ -21,9 +21,7 @@ from made.evaluation.metrics import (
 )
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _make_env(range_v: float = 20.0) -> EmpiricalEnvelope:
     return EmpiricalEnvelope(
@@ -34,17 +32,13 @@ def _make_env(range_v: float = 20.0) -> EmpiricalEnvelope:
     )
 
 
-# ---------------------------------------------------------------------------
 # METRIC_VERSION
-# ---------------------------------------------------------------------------
 
 def test_metric_version():
     assert METRIC_VERSION == "real-data-v3-gaussian"
 
 
-# ---------------------------------------------------------------------------
 # _perturb_base_vector
-# ---------------------------------------------------------------------------
 
 def test_perturb_base_vector_shape_and_dtype():
     env = _make_env(20.0)
@@ -95,9 +89,7 @@ def test_perturb_base_vector_infinite_dims_zero():
     assert float(base[2]) == pytest.approx(0.1, abs=1e-12), "heading must still be 0.1"
 
 
-# ---------------------------------------------------------------------------
 # _perturb_pair
-# ---------------------------------------------------------------------------
 
 def test_perturb_pair_zero_multiplier_is_identity():
     """_perturb_pair(x, 0, b, s) == x for any b, s."""
@@ -134,9 +126,7 @@ def test_perturb_pair_negative_multiplier():
     assert jnp.allclose(r_pos + r_neg, 2.0 * x, atol=1e-14)
 
 
-# ---------------------------------------------------------------------------
 # _stationary_infeasible_mask
-# ---------------------------------------------------------------------------
 
 def test_stationary_mask_below_threshold():
     """|v_avg| strictly below 0.5 → True."""

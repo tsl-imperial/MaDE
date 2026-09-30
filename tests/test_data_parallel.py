@@ -1,4 +1,4 @@
-"""Tests for opt-in data parallelism (Phase 3)."""
+"""Tests for opt-in data parallelism."""
 
 # ruff: noqa: E402
 

@@ -1,49 +1,43 @@
 """Tune the EKF/RTS smoother's process and measurement covariances. TRAINING SPLIT ONLY.
 
-The spec is explicit: *"Process and measurement noise covariances tuned on the training split
-only, never on test. Report the tuning procedure and the selected values."* This script is that
-tuning, and it is the only place the smoother sees data before evaluation. It writes the
+Process and measurement noise covariances are tuned on the training split only, never on
+test; this script is the only place the smoother sees data before evaluation. It writes the
 selected values to a JSON that the evaluation reads; the evaluation tunes nothing.
 
-## The procedure, stated in full so the paper can quote it
+## Procedure
 
-**The diagonals' SHAPES come from training-split statistics, not from a guess.** Three vectors,
-all measured on the training split and all with an interpretation:
+**Diagonal shapes come from training-split statistics.** Three vectors, all measured on the
+training split:
 
-| vector | what it is measured as | what it means |
+| vector | measured as | meaning |
 |---|---|---|
-| `r_base` | per-channel mean squared error of the predictor against ground truth | the measurement noise the smoother actually faces -- the "measurement" IS a prediction |
-| `q_state_base` | per-channel mean squared ONE-STEP known-model residual on ground-truth trajectories | the model mismatch between the known kinematic-bicycle model and the recorded inD trajectories |
-| `q_ctrl_base` | per-channel mean squared one-step increment of the known model's own recovered controls | the random walk's step size, so the control block's process noise is the rate the controls really move at |
+| `r_base` | per-channel MSE of the predictor against ground truth | measurement noise the smoother faces -- the "measurement" is a prediction |
+| `q_state_base` | per-channel MSE of the one-step known-model residual on ground-truth trajectories | model mismatch between the known kinematic-bicycle model and recorded inD trajectories |
+| `q_ctrl_base` | per-channel MSE of the one-step increment of the known model's recovered controls | random-walk step size, i.e. the control block's process noise |
 
-**Only ONE scalar is then swept, and that is not a shortcut -- it is the whole search space.**
-Scaling `P0`, `Q` and `R` by a common factor leaves the Kalman gain exactly unchanged: if
-`P0 -> aP0`, `Q -> aQ`, `R -> aR` then `P^- -> aP^-` by induction and
-`K = aP^-H^T(a(HP^-H^T+R))^{-1}` is invariant, so the state estimate is invariant, so the
-Jacobian evaluated at that estimate is invariant and the induction closes. The estimator
-therefore depends on the RATIO alone. Sweeping `q_scale` with `R` pinned at `r_base` and `P0`'s
-state block pinned at `r_base` covers that ratio completely.
+**Only one scalar is swept -- the whole search space.** Scaling `P0`, `Q` and `R` by a common
+factor leaves the Kalman gain exactly unchanged: if `P0 -> aP0`, `Q -> aQ`, `R -> aR` then
+`P^- -> aP^-` by induction and `K = aP^-H^T(a(HP^-H^T+R))^{-1}` is invariant, so the state
+estimate and its Jacobian are invariant and the induction closes. The estimator depends on
+the RATIO alone. Sweeping `q_scale` with `R` pinned at `r_base` and `P0`'s state block pinned
+at `r_base` covers that ratio completely.
 
-**The one exception, stated rather than hidden:** `P0`'s control block has no `r_base`
-counterpart -- it is a prior on the initial steering and acceleration, not a measurement
-covariance -- so it sits outside the invariance group. It is held at the training-split
-variance of the recovered controls and is NOT tuned. It affects only the first few steps of
-each window.
+**Exception:** `P0`'s control block has no `r_base` counterpart -- it is a prior on initial
+steering and acceleration, not a measurement covariance -- so it sits outside the invariance
+group. Held at the training-split variance of the recovered controls, not tuned. Affects only
+the first few steps of each window.
 
-**Selection criterion: training-split ADE.** Reported as a full curve over the grid, not as a
-single winner, so a reader can see whether the minimum is sharp or the curve is flat -- which
-is the difference between "this value matters" and "anything in this decade would do".
+**Selection criterion: training-split ADE.** Reported as a full curve over the grid, not a
+single winner, so a reader can see whether the minimum is sharp or the curve is flat.
 
-**The known-model residual is recorded along the same curve, and is NOT used to select.** The
-smoother is selected on ADE and then reported on Dyn.-K and the inequality metrics, so a reader
-is entitled to ask whether a different criterion would have flattered it. `CRITERION_SENSITIVITY`
-answers that with the q_scale the residual would have chosen and how many decades away it sits.
-Measured rather than argued, and recorded whichever way it falls.
+**The known-model residual is recorded along the same curve and is NOT used to select.** The
+smoother is selected on ADE, then reported on Dyn.-K and the inequality metrics.
+`CRITERION_SENSITIVITY` records the q_scale the residual would have chosen and how many
+decades away it sits.
 
-**Pooled over all five predictor seeds, per (panel, family).** The noise covariance describes a
-predictor family's error statistics, and those differ by family, so one value per family is the
-honest granularity. Pooling the seeds rather than tuning on seed 0 removes the question of why
-seed 0. No per-seed tuning: one `q_scale` per (panel, family) is applied to all five seeds.
+**Pooled over all five predictor seeds, per (panel, family).** Noise covariance describes a
+predictor family's error statistics, which differ by family, so one value per family is the
+right granularity. Pooling avoids picking a seed arbitrarily. No per-seed tuning.
 
 **Nothing in this script reads the test split.**
 """
@@ -97,7 +91,7 @@ def _physics(panel: str):
 
 
 def _params() -> jax.Array:
-    """`L_REF`, the same reference wheelbase the metric stencil scores every row against."""
+    """`L_REF`, the reference wheelbase the metric stencil scores every row against."""
     return jnp.asarray([L_REF], dtype=jnp.float64)
 
 
@@ -107,7 +101,7 @@ def _params() -> jax.Array:
 
 
 def _train_windows(panel: str, cfg: dict, spec: dict, cap: int) -> dict[str, jax.Array]:
-    """Build TRAIN-split windows. The split name is hardcoded; there is no flag to change it."""
+    """Build TRAIN-split windows; the split name is hardcoded, no flag to change it."""
     states, metadata, lengths = create_ind_data_source(cfg["data_dir"], "train")
     w = make_prediction_windows(
         states, lengths, metadata,
@@ -118,8 +112,7 @@ def _train_windows(panel: str, cfg: dict, spec: dict, cap: int) -> dict[str, jax
     if n == 0:
         raise ValueError(f"zero train windows for panel {panel} at spec {spec}")
     if n > cap:
-        # A fixed stride rather than a random draw: the subsample is then reproducible without
-        # carrying a key, and it spans the split rather than clustering at its start.
+        # Fixed stride rather than random draw: reproducible without a key, spans the split.
         idx = jnp.arange(0, n, max(1, n // cap))[:cap]
         w = {k: v[idx] for k, v in w.items() if hasattr(v, "shape") and v.shape[0] == n}
     return w
@@ -141,7 +134,7 @@ def _forward(predictor, context: jax.Array, chunk: int) -> jax.Array:
 
 
 def _known_step(physics, x: jax.Array, u: jax.Array, params: jax.Array, dt: float) -> jax.Array:
-    """One Heun step of the KNOWN model -- the same step the filter propagates with."""
+    """One Heun step of the known model, the same step the filter propagates with."""
     k1 = physics.vector_field(x, u, params, 0.0)
     k2 = physics.vector_field(x + dt * k1, u, params, 0.0)
     return x + 0.5 * dt * (k1 + k2)
@@ -151,8 +144,8 @@ def _model_mismatch(physics, gt: jax.Array, params: jax.Array, dt: float
                     ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Per-channel one-step known-model residual, control increments, and control variance.
 
-    Measured on GROUND-TRUTH training trajectories under the known model's OWN analytic control
-    inverse -- the same inverse the filter initialises from.
+    Measured on ground-truth training trajectories under the known model's own analytic
+    control inverse, the same inverse the filter initialises from.
     """
     def per_window(x: jax.Array):
         u = jax.vmap(physics.known_control_prior, in_axes=(0, 0, None, None))(
@@ -177,13 +170,12 @@ def _ade(x: jax.Array, gt: jax.Array) -> float:
 
 
 def _known_residual(physics, x: jax.Array, params: jax.Array, dt: float) -> float:
-    """Mean one-step KNOWN-model residual of a trajectory batch, under the model's own inverse.
+    """Mean one-step known-model residual of a trajectory batch, under the model's own inverse.
 
-    This is Dyn.-K in the shape the smoother actually targets, and it is recorded ALONGSIDE the
-    ADE curve rather than used to select. **Why it is here at all:** the selection criterion is
-    ADE, and the smoother is then reported on Dyn.-K and the inequality metrics. If the
-    ADE-optimal covariance were far from the Dyn.-K-optimal one, that presentation would need
-    defending. Recording both settles whether the question is live instead of arguing it.
+    Dyn.-K in the shape the smoother targets, recorded alongside the ADE curve but not used
+    to select. Selection criterion is ADE; the smoother is then reported on Dyn.-K and the
+    inequality metrics, so recording both shows whether the ADE-optimal covariance is far
+    from the Dyn.-K-optimal one.
     """
     def per_window(t: jax.Array) -> jax.Array:
         u = jax.vmap(physics.known_control_prior, in_axes=(0, 0, None, None))(
@@ -204,8 +196,8 @@ def _build(physics, params, dt, q_state, q_ctrl, r, p0) -> KinodynamicSmoother:
 def _floor(v: jax.Array) -> jax.Array:
     """Keep a channel that moved by exactly zero on the training split from zeroing the matrix.
 
-    This is a POSITIVE-DEFINITENESS guard on a covariance diagonal, not a tolerance and not a
-    convergence test. It fires only on a channel with no measured variation at all.
+    Positive-definiteness guard on a covariance diagonal; fires only on a channel with no
+    measured variation.
     """
     return jnp.maximum(v, 1e-12)
 
@@ -239,15 +231,15 @@ def _tune_family(panel: str, cfg: dict, family: str, grid: jax.Array,
     pred = jnp.concatenate(preds, axis=0)
     gt_all = jnp.concatenate(gts, axis=0)
     x0_all = jnp.concatenate(x0s, axis=0)
-    # The smoother, like every other correction row, sees the anchor state prepended.
+    # The smoother sees the anchor state prepended, like every other correction row.
     meas = jnp.concatenate([x0_all[:, None, :], pred], axis=1)
     gt_full = jnp.concatenate([x0_all[:, None, :], gt_all], axis=1)
 
     r_base = _floor(jnp.mean((pred - gt_all) ** 2, axis=(0, 1)))
     q_state_base, q_ctrl_base, ctrl_var = _model_mismatch(physics, gt_full, params, dt)
     q_state_base, q_ctrl_base, ctrl_var = _floor(q_state_base), _floor(q_ctrl_base), _floor(ctrl_var)
-    # P0's state block sits at the measurement scale, which is what makes the single-scalar
-    # sweep complete; its control block is the prior described in the module docstring.
+    # P0's state block sits at measurement scale (makes the single-scalar sweep complete);
+    # control block is the prior described in the module docstring.
     p0 = jnp.concatenate([r_base, ctrl_var])
 
     raw_ade = _ade(pred, gt_all)
@@ -274,9 +266,7 @@ def _tune_family(panel: str, cfg: dict, family: str, grid: jax.Array,
     within_1pct = [c["q_scale"] for c in finite
                    if c["train_ade"] <= best["train_ade"] * 1.01]
 
-    # The Dyn.-K-optimal setting, recorded but NOT used to select. If it sits far from the
-    # ADE-optimal one, the choice of criterion is doing real work and has to be defended; if
-    # the two are close, the question dissolves. Either way it is measured rather than argued.
+    # Dyn.-K-optimal setting, recorded but not used to select.
     finite_k = [c for c in curve if jnp.isfinite(c["train_known_model_residual"])]
     best_dynk = min(finite_k, key=lambda c: c["train_known_model_residual"]) if finite_k else None
 
@@ -323,7 +313,7 @@ def main() -> int:
     ap.add_argument("--predictor-root", default=str(ROOT / "outputs" / "ind" / "predictors"))
     ap.add_argument("--families", default=",".join(FAMILIES))
     ap.add_argument("--max-windows", type=int, default=2000,
-                    help="cap on TRAIN windows per seed before pooling")
+                    help="cap on train windows per seed before pooling")
     ap.add_argument("--chunk", type=int, default=256)
     ap.add_argument("--grid-lo", type=float, default=-6.0)
     ap.add_argument("--grid-hi", type=float, default=2.0)

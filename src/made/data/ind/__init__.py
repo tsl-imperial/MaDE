@@ -1,4 +1,4 @@
-"""inD dataset preprocessing and loading pipeline (Plan 0).
+"""inD dataset preprocessing and loading pipeline.
 
 Contract: every public symbol on this package must be importable in an env
 without JAX. JAX is allowed only inside function bodies. Enforced by

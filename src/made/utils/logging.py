@@ -18,13 +18,9 @@ _local_metrics_path: str | None = None
 def e01_condition(config: ExperimentConfig) -> str:
     """Return the E01 condition label used for W&B metadata and output paths.
 
-    The condition is derived from ``model.known_system``: ``"underspecified"``
-    when MaDE's known physics differs from the true data-generating physics,
-    ``"fully-specified"`` otherwise. Training-time augmentation
-    (``data.noise_scale``) and eval-time perturbation (``data.perturbation_type``)
-    do not affect the label — the canonical underspecified DB row applies a
-    small Gaussian augmentation by default and is evaluated under the same
-    bound-violation protocol as every other cell.
+    Derived from ``model.known_system``: ``"underspecified"`` when MaDE's known physics
+    differs from the true data-generating physics, ``"fully-specified"`` otherwise.
+    Training-time augmentation and eval-time perturbation do not affect the label.
     """
     return "underspecified" if config.model.known_system else "fully-specified"
 
@@ -74,11 +70,10 @@ def init_logging(config: ExperimentConfig, project: str = "made") -> None:
         job_type="train",
     )
 
-    # Phase-2-only metrics start at different global steps per seed because
-    # Phase 1 may early-stop at different epochs. Re-axis them on a per-phase
-    # counter so wandb aggregations align across seeds.
-    # Why: wandb's `step_metric` only takes effect for keys explicitly listed.
-    # How to apply: any new Phase-2-only key must be registered here as well.
+    # Phase-2-only metrics start at different global steps per seed since Phase 1 may
+    # early-stop at different epochs; re-axis on a per-phase counter so wandb
+    # aggregations align across seeds. wandb's `step_metric` only applies to keys
+    # explicitly listed here, so register any new Phase-2-only key too.
     wandb.define_metric("phase_step")
     wandb.define_metric("val/phase_step")
     wandb.define_metric("inequality_violation", step_metric="phase_step")

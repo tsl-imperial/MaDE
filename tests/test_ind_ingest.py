@@ -39,9 +39,8 @@ def test_vehicle_count_matches_tracks_meta(rec_id: int) -> None:
     expected = sum(
         1 for row in tables.track_meta_rows if row["class"].strip() in VEHICLE_CLASSES
     )
-    # The test validates that ingest returns all meta rows; filtering is done in transform.
+    # ingest returns all meta rows; filtering happens in transform.
     assert len(tables.track_meta_rows) >= expected
-    # All meta rows that are vehicles must be present.
     vehicle_ids_in_meta = {
         int(row["trackId"])
         for row in tables.track_meta_rows

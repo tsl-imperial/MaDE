@@ -24,9 +24,9 @@ __all__ = [
     "create_data_source",
 ]
 
-# Salt to derive the per-epoch noise RNG from the loader seed without colliding
-# with the shuffle RNG stream. Arbitrary fixed integer; do not change without
-# breaking byte-equivalence of past noisy runs.
+# Salt to derive the per-epoch noise RNG from the loader seed without colliding with the
+# shuffle RNG stream. Arbitrary fixed integer; changing it breaks reproducibility of past
+# noisy runs.
 _NOISE_SALT: int = 0x9E3779B97F4A7C15  # 64-bit fractional golden ratio
 
 
@@ -105,12 +105,9 @@ class InMemoryDataLoader:
         self.drop_remainder = drop_remainder
         self.noise_scale = float(noise_scale)
         self._epoch_counter = 0
-        # Pre-stack once into contiguous numpy arrays. The previous implementation called
-        # jnp.asarray on EVERY sample of EVERY key of EVERY batch and then jnp.stack'd the
-        # results -- 128 x 3 = 384 individual host->device transfers per batch, ~4.7M per
-        # epoch at the inD scale. Pre-stacking turns each batch into one fancy-index plus
-        # one transfer per key: measured 56.9 ms/batch -> 0.267 ms/batch, 213x, with
-        # bit-identical values because the data, the keys and the order are unchanged.
+        # Pre-stack once into contiguous numpy arrays. Turns each batch into one fancy-index
+        # plus one host->device transfer per key instead of one transfer per sample per key
+        # per batch: measured 56.9 ms/batch -> 0.267 ms/batch, 213x, values bit-identical.
         self._columns: dict[str, np.ndarray] | None = None
         if samples:
             self._columns = {
@@ -124,13 +121,11 @@ class InMemoryDataLoader:
             rng = np.random.default_rng(self.seed)
             rng.shuffle(indices)
 
-        # Per-epoch noise RNG. Distinct seed-stream from shuffle RNG so a given
-        # (seed, noise_scale) is reproducible even if shuffle is toggled off.
-        # Loader-time numpy RNG deliberately matches the existing shuffle RNG
-        # style; eval-time noise uses jax.random.normal — the two streams are
-        # intentionally independent and will not produce byte-identical sequences
-        # even at matched seeds. This is correct distributional behaviour (both
-        # are N(0, noise_scale^2)) and is documented in the plan (Anomaly 1).
+        # Per-epoch noise RNG, distinct seed-stream from shuffle RNG so a given
+        # (seed, noise_scale) is reproducible even if shuffle is toggled off. Uses numpy
+        # (matching shuffle RNG style) while eval-time noise uses jax.random.normal; the two
+        # streams are independent and won't match byte-for-byte, but both are N(0,
+        # noise_scale^2), which is the relevant guarantee.
         if self.noise_scale > 0.0:
             epoch_idx = self._epoch_counter
             noise_rng = np.random.default_rng(

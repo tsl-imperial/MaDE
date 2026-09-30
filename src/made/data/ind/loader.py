@@ -194,7 +194,7 @@ def iter_recordings(
 
     Each bundle contains only the trajectories from one recording, with a
     recording-local T_max (smallest padding that fits all tracks in the recording).
-    This is the entry point Plan 2's per-recording batching uses.
+    Entry point for per-recording batching.
 
     Parameters
     ----------
@@ -226,9 +226,8 @@ def iter_recordings(
         t_max_rec = int(rec_lengths.max())
         rec_states = states_all[mask, :t_max_rec, :]  # trim to recording-local T_max
 
-        # Yield numpy arrays so callers without JAX installed can consume
-        # bundles directly. MaDE's wrapper iter_ind_recordings re-wraps as
-        # jnp.asarray on its side.
+        # Numpy arrays so callers without JAX can consume bundles directly;
+        # iter_ind_recordings re-wraps as jnp.asarray on its side.
         yield InDRecordingBundle(
             recording_id=rec_id,
             location_id=loc_id,

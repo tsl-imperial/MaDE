@@ -1,11 +1,10 @@
 """Per-step MLP baseline.
 
-Optional location-aware mode (Plan 1 / inD): when ``num_locations > 0`` and
-``metadata_dim > 0``, the integer ``location_id`` column at
-``location_id_index`` is replaced by an ``eqx.nn.Embedding`` lookup before the
-metadata is concatenated onto the state.  Identical convention to
-:class:`made.models.encoder.MetadataEncoder` so the location embedding behaves
-the same way across MaDE and its baselines.
+Optional location-aware mode: when ``num_locations > 0`` and ``metadata_dim > 0``, the integer
+``location_id`` column at ``location_id_index`` is replaced by an ``eqx.nn.Embedding`` lookup
+before the metadata is concatenated onto the state. Same convention as
+:class:`made.models.encoder.MetadataEncoder` so location embedding behaves the same way across
+MaDE and its baselines.
 """
 
 from __future__ import annotations

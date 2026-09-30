@@ -1,9 +1,8 @@
-"""Contract tests for the ML formulation remediation plan.
+"""Contract tests for the ML formulation.
 
-These tests intentionally describe the formulation-level behaviour from
-``.omx/plans/remediate-made-ml-formulation-gaps.md``.  Contracts that are not
-implemented yet are reported as ``xfail`` instead of weakening the repository's
-existing green test surface while implementation lanes catch up.
+Contracts not implemented yet are reported as ``xfail`` instead of weakening
+the repository's existing green test surface while implementation lanes
+catch up.
 """
 
 from __future__ import annotations
@@ -365,9 +364,7 @@ def test_baselines_export_common_correction_protocol():
     assert hasattr(baselines, "clamp_baseline")
 
 
-# ---------------------------------------------------------------------------
-# x_proposal threading tests (Phase C1)
-# ---------------------------------------------------------------------------
+# x_proposal threading tests
 
 from made.training.losses import phase1_loss, phase2_loss  # noqa: E402
 

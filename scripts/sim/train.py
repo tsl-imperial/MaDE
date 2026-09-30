@@ -92,18 +92,18 @@ def main_programmatic(
     """Run training (or clamp marker creation) in-process and return result dict.
 
     Args:
-        cfg: Fully resolved experiment configuration. ``cfg.experiment_name`` is
-             used as the variant name. ``cfg.physics.true_system`` drives the
-             data-loading path; ``cfg.model.known_system`` (falling back to
-             ``cfg.physics.true_system``) drives ``MaDECell`` construction.
+        cfg: Fully resolved experiment configuration. ``cfg.experiment_name`` is used as
+             the variant name. ``cfg.physics.true_system`` drives the data-loading path;
+             ``cfg.model.known_system`` (falling back to ``cfg.physics.true_system``)
+             drives ``MaDECell`` construction.
         output_dir: Directory under which artefacts are written.
-        data_dir: Root directory for pre-generated datasets. The true-system
-                  subdirectory is appended automatically.
-        data_parallel_devices: Number of devices for data-parallel training.
-                               When None or 1, single-device training is used.
+        data_dir: Root directory for pre-generated datasets; true-system subdirectory is
+                  appended automatically.
+        data_parallel_devices: Number of devices for data-parallel training. None or 1
+                               means single-device training.
 
     Returns:
-        {"checkpoint_dir": str | None, "variant": str, "final_metrics": dict}
+        {"checkpoint_dir": str | None, "variant": str, "final_metrics": dict}.
         For clamp: checkpoint_dir is None, final_metrics is {}.
     """
     true_system_name = cfg.physics.true_system
@@ -202,11 +202,10 @@ def main_programmatic(
         save_config(train_cfg, str(out_dir / "config.json"))
         return {"checkpoint_dir": checkpoint_dir, "variant": variant_name, "final_metrics": {}}
 
-    # Inherit steps_per_epoch from the MaDE training config when the baseline
-    # does not set it explicitly, so all methods sample the same number of
-    # transitions per step. num_epochs is taken directly from each baseline's
-    # own config (default 100) — intentionally decoupled from MaDE's phase count.
-    _baseline_spe = cfg.training.steps_per_epoch  # None → use all available batches
+    # Inherit steps_per_epoch from the MaDE training config when the baseline doesn't set
+    # it explicitly, so all methods sample the same number of transitions per step.
+    # num_epochs is taken from each baseline's own config, decoupled from MaDE's phase count.
+    _baseline_spe = cfg.training.steps_per_epoch  # None -> use all available batches
 
     # ------------------------------------------------------------ MLP baseline --
     if variant_name == "mlp":

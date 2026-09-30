@@ -25,9 +25,7 @@ from made.evaluation.metrics import (
 from made.physics import inD_physical_constraints
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _make_env(range_v: float = 20.0) -> EmpiricalEnvelope:
     return EmpiricalEnvelope(
@@ -71,9 +69,7 @@ def _build_flat_inputs(
     )
 
 
-# ---------------------------------------------------------------------------
 # Tests
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("v_prev,m", _build_cases())
 def test_stationary_flag_matches_v_avg(v_prev: float, m: float):

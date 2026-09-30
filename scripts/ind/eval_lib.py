@@ -108,9 +108,7 @@ _SMOOTHER_STATE_DIM = 4
 _ROWS_REQUIRING_MADE: frozenset[str] = frozenset({"made_pnp"})
 
 
-# ---------------------------------------------------------------------------
 # CLI parsing / validation
-# ---------------------------------------------------------------------------
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -220,9 +218,7 @@ def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
     return tty, False, tty
 
 
-# ---------------------------------------------------------------------------
 # Provenance helpers
-# ---------------------------------------------------------------------------
 
 
 def _git_sha() -> str:
@@ -244,9 +240,7 @@ def _hardware_string() -> str:
     )
 
 
-# ---------------------------------------------------------------------------
 # Frozen MaDE loading (mirrors scripts/evaluate_e02.py exactly).
-# ---------------------------------------------------------------------------
 
 
 def _load_frozen_made(
@@ -322,16 +316,7 @@ def _load_frozen_made(
     )
 
 
-# ---------------------------------------------------------------------------
-# Windowing
-# ---------------------------------------------------------------------------
-
-
-
-# ---------------------------------------------------------------------------
-# X1 -- the EKF/RTS smoother rows
-# ---------------------------------------------------------------------------
-
+# X1 -- the EKF/RTS smoother rows.
 # Which tuned operating point each row uses. The two sit four to seven and a half decades apart
 # in q_scale, and Dyn.-K differs between them by a factor of thirty to a hundred and ninety, so
 # they are genuinely different arms rather than a sensitivity check.
@@ -502,9 +487,7 @@ def _chunked_predictor_forward(
     return jnp.concatenate(outputs, axis=0)[:n]
 
 
-# ---------------------------------------------------------------------------
 # Row builders
-# ---------------------------------------------------------------------------
 
 
 def _clamp_state(clamp_model: ClampBaseline, state: jax.Array) -> jax.Array:
@@ -556,9 +539,7 @@ def _made_pnp_rows(
     return x_corr_all, u_corr_all
 
 
-# ---------------------------------------------------------------------------
 # Metrics
-# ---------------------------------------------------------------------------
 
 
 def _full_sequence(x0_all: jax.Array, x_row: jax.Array) -> jax.Array:
@@ -647,9 +628,7 @@ def _row_metrics(
     return metrics
 
 
-# ---------------------------------------------------------------------------
 # Latency harness
-# ---------------------------------------------------------------------------
 
 
 def _time_pipeline(
@@ -693,9 +672,7 @@ def _time_pipeline(
     }
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:

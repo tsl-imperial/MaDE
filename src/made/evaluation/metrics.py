@@ -1,22 +1,15 @@
 """Evaluation metrics for feasibility and fidelity.
 
-This module also exposes a real-data metric suite (Experiment 2 / Experiment 3
-on the inD dataset) added per ``ralplan-real-data-metrics-v1``:
+Also exposes a real-data metric suite (E2/E3, inD dataset):
+:class:`EmpiricalEnvelope`, :func:`estimate_empirical_envelope`,
+:func:`envelope_constraint`, :func:`empirical_envelope_violation_rate`,
+:func:`empirical_envelope_violation_magnitude`, :func:`ade`, :func:`fde`,
+:func:`gt_normalised_dynamics_residual`, :func:`estimate_gt_reference_residual`,
+:func:`jerk`, :func:`heading_jerk`, :func:`kinematic_bicycle_inverse_controls`,
+:data:`METRIC_VERSION`.
 
-- :class:`EmpiricalEnvelope` plus :func:`estimate_empirical_envelope`
-- :func:`envelope_constraint` — convert an :class:`EmpiricalEnvelope` to a :class:`ConstraintSet`
-- :func:`empirical_envelope_violation_rate`
-- :func:`empirical_envelope_violation_magnitude`
-- :func:`ade`, :func:`fde`
-- :func:`gt_normalised_dynamics_residual`
-- :func:`estimate_gt_reference_residual`
-- :func:`jerk`, :func:`heading_jerk`
-- :func:`kinematic_bicycle_inverse_controls`
-- :data:`METRIC_VERSION`
-
-Existing helpers (``fidelity``, ``dynamics_violation_*``, ``compute_metrics``)
-are intentionally untouched — Experiment 1 paper tables and several
-regression tests pin them.
+``fidelity``, ``dynamics_violation_*``, ``compute_metrics`` are pinned by
+Experiment 1 paper tables and regression tests; do not change their behaviour.
 """
 
 from __future__ import annotations
@@ -30,7 +23,7 @@ import jax.numpy as jnp
 from made.models import AugmentedDynamics
 from made.physics import BoxConstraints, ConstraintSet, KinematicBicycle, PhysicsModel
 
-# D1-locked; do not change without user sign-off.
+# Locked; do not change without sign-off.
 METRIC_VERSION: str = "real-data-v3-gaussian"
 
 
@@ -52,11 +45,9 @@ def _violation_channel_slice(constraints, channel: str):
 
         [state - state_max, state_min - state, control - control_max, control_min - control]
 
-    so the first `2 * state_dim` columns are the STATE-bound components and the remainder are
-    the CONTROL-bound ones. Returns `None` when the split cannot be taken -- a constraint set
-    that does not expose `state_min` (SpeedNormConstraint raises on it) or a composite whose
-    layout is not this one. **A caller that gets `None` must report the combined figure and say
-    the components were unavailable, never guess a split.**
+    First `2 * state_dim` columns are STATE-bound, remainder are CONTROL-bound. Returns `None`
+    when the split can't be taken (e.g. `SpeedNormConstraint` has no `state_min`) -- caller
+    must then report the combined figure, never guess a split.
     """
     if channel == "all":
         return None
@@ -79,9 +70,7 @@ def _trajectory_inequality_violation_rate(
 ) -> jax.Array:
     """`channel` selects state-bound, control-bound or both.
 
-    The three share ONE implementation deliberately: the components are the
-    primary record and the total a derived quantity, and a component computed by a second code
-    path is a component that can drift from the total it is supposed to decompose.
+    Shares one implementation across channels so components can't drift from the total.
     """
     if x.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x.dtype)
@@ -103,16 +92,10 @@ def _trajectory_inequality_violation_magnitude(
 ) -> jax.Array:
     """`channel` selects state-bound, control-bound or both. See the rate function above.
 
-    **THE TOTAL IS NOT THE SUM OF THE COMPONENTS, on either instrument.** Measured, not
-    asserted: with a state violation of 4 and a control violation of 6 on the same step, the
-    combined magnitude is 7.2111 -- the L2 norm across the whole violation vector, sqrt(4^2 +
-    6^2) -- and not 10. The rate is not additive either, being an "any" over the union of both
-    channels, so `rate_all <= rate_state + rate_control` with equality only when the two never
-    co-occur on a step.
-
-    This is exactly why the components are recorded as the primary record: a reader who
-    reconstructs one channel by subtracting the other from the total gets a wrong number, and
-    it will look plausible.
+    Total is not the sum of the components: magnitude is the L2 norm over the whole violation
+    vector (e.g. state=4, control=6 gives sqrt(4^2+6^2)=7.2111, not 10), and rate is an "any"
+    over the union (`rate_all <= rate_state + rate_control`). Reconstructing one channel by
+    subtracting the other from the total gives a wrong but plausible-looking number.
     """
     if x.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x.dtype)
@@ -185,43 +168,17 @@ def inequality_violation_rate(
 ) -> jax.Array:
     """Fraction of trajectory steps that violate at least one constraint.
 
-    **THE SCORING CONVENTION. One convention, everywhere, both panels.** Written
-    here at the definition of the metric because it was previously reconstructible only from a
-    harness flag, and two panels came to disagree as a result. In short:
+    Scoring convention for controls, applied everywhere: a row that emits controls (MaDE,
+    EKF/RTS smoother) is scored on its own emitted controls; a row that emits none (raw, clamp)
+    is scored on controls recovered from its state trajectory via the inverse known model. No
+    row is scored on states alone. This is the INEQUALITY convention only -- dynamics residual
+    and control recovery still use a row's emitted controls where it has them.
 
-        "Clamp only clamps states and does not re-integrate."
-        "Scoring for inequality violations considers both states and controls."
-        "Controls are always recovered as implied by the states through the inverse known
-         model."
+    Consequence: clamp fails control bounds it has no mechanism to satisfy (it projects states,
+    no dynamics step), so it is not exactly 0.0000 on the simulated panel.
 
-    **This amends the control clause above.** The rule is:
-
-    - a row that **emits** controls is scored on **its own emitted controls**. MaDE always emits,
-      and so does the EKF/RTS smoother, whose augmented state carries the controls and whose RTS
-      pass returns a smoothed estimate of them;
-    - a row that emits **none** -- raw, clamp -- is scored on controls **recovered** from its own
-      state trajectory through the inverse of the known model.
-
-    No row is scored on states alone. The rationale is comparability: a baseline that does not
-    produce controls can only be scored on recovered ones, and a method that does produce them is
-    scored on what it actually outputs.
-
-    This is the INEQUALITY convention only. The dynamics residual and control recovery are
-    untouched and still use a row's emitted controls where it has them.
-
-    **Consequence, so it is not read as a defect:** clamp fails control bounds it has no
-    mechanism to satisfy, because it projects states and has no dynamics step. On the simulated
-    panel this moves clamp off exactly 0.0000, which is this convention landing rather than a
-    regression.
-
-    This supersedes earlier scoring conventions. The `--ineq-controls`
-    flag that used to select between conventions is retired rather than re-defaulted: a
-    convention switchable at the command line is how the two panels diverged.
-
-    **NOTE, unrelated to the convention but load-bearing for anyone comparing values:** this
-    reduction returns FLOAT32, because `jnp.mean` of a boolean array is float32 even under
-    x64. Every other metric here is float64. Not yet changed, because
-    a one-character fix moves every published rate at the last ulp.
+    Returns FLOAT32 (`jnp.mean` of a bool array is float32 even under x64), unlike every other
+    metric here (float64).
     """
     if _is_batched(x):
         return jnp.mean(
@@ -341,62 +298,34 @@ def compute_metrics(
 ) -> dict[str, float]:
     """Compute the standard evaluation metrics for a batch or one trajectory.
 
-    Most metrics use ``u_corrected`` — the control that the method under
-    evaluation actually produced.  The two dynamics-violation metrics
-    (``dynamics_violation_known`` and ``dynamics_violation_true``) ask whether
-    ``x_corrected`` is consistent with *some* control signal driven through the
-    physics model.  For MaDE variants that infer controls via :math:`\\mathcal{I}`,
-    ``u_corrected`` is the right choice because it is the model's own prediction
-    of what control produced the corrected state sequence.  For non-MaDE baselines
-    (Clamp, MLP, FAB) the method does not infer controls at all and
-    ``u_corrected`` is a zero placeholder (see ``apply_baseline_over_trajectory``).
-    Comparing the corrected states against a zero-control free-coast integration
-    is therefore meaningless — Clamp trivially achieves ~0.2 even though it does
-    nothing to enforce dynamics.
+    Most metrics use ``u_corrected``, the control the method actually produced. The two
+    dynamics-violation metrics ask whether ``x_corrected`` is consistent with some control
+    driven through the physics model. For MaDE variants ``u_corrected`` is the model's own
+    predicted control. Non-MaDE baselines (Clamp, MLP, FAB) don't infer controls, so
+    ``u_corrected`` is a zero placeholder; scoring dynamics violation against a zero-control
+    free coast is meaningless (Clamp trivially reads ~0.2 despite enforcing nothing).
 
-    The optional ``u_for_dynamics`` argument overrides the control used *only*
-    for these two dynamics-violation calls.  Pass the ground-truth control
-    trajectory (from the test split) for non-MaDE baselines so the metric
-    measures whether the corrected states are consistent with the actual actuated
-    rollout, not a free coast.  Leave ``u_for_dynamics=None`` (the default) for
-    MaDE variants to preserve their inferred-control semantics.
+    ``u_for_dynamics`` overrides the control used only for the two dynamics-violation calls.
+    Pass the ground-truth control trajectory for non-MaDE baselines so the metric measures
+    consistency with the actual rollout, not a free coast. Leave it ``None`` for MaDE variants.
 
-    ``dynamics_violation_learned`` uses ``u_corrected`` by default, regardless of
-    ``u_for_dynamics``, because for a row with a learned model it measures
-    cycle-consistency between the corrected trajectory and that model — an
-    internal coherence metric that should stay tied to the model's own control
-    output. ``u_for_dyn_learned`` is provided for rows that have **no**
-    learned model of their own and borrow the canonical MaDE model's; there
-    ``u_corrected`` is a zero placeholder and would make the metric meaningless.
+    ``dynamics_violation_learned`` always uses ``u_corrected`` (ignoring ``u_for_dynamics``)
+    since it's a cycle-consistency check tied to the model's own output. ``u_for_dyn_learned``
+    is for rows with no learned model of their own, borrowing the canonical MaDE model's.
     """
     del u_gt
     u_dyn = u_corrected if u_for_dynamics is None else u_for_dynamics
-    # Each metric may take its own control set, because the rules differ.
-    #   inequality  -- emitted where the row emits, recovered through the KNOWN model otherwise;
-    #   Dyn.-K      -- recovered through the KNOWN model, every row;
-    #   Dyn.-T      -- overrides the Dyn.-K rule for the
-    #                  dynamic bicycle. Where the known model IS the true model (the three
-    #                  fully specified systems), it is recovered through that model and so
-    #                  equals Dyn.-K by construction. Where the known model is NOT the true
-    #                  model (the underspecified dynamic bicycle), it takes the row's OWN
-    #                  emitted controls where the row emits them, and controls recovered
-    #                  through the KNOWN (kinematic-bicycle) model's inverse where it emits
-    #                  none. The TRUE model's inverse is NOT used on the dynamic bicycle:
-    #                  evaluating it on states off its own manifold is what made that column
-    #                  explode. The caller supplies the choice via `u_for_dyn_true`;
-    #                  `scripts/evaluate.py` is where the rule is applied.
-    #   Dyn.-L      -- For a row that HAS a learned model this is its own emitted
-    #                  control, an internal cycle-consistency check. A row with NO learned model
-    #                  emits nothing to check, so it is scored by borrowing the canonical MaDE
-    #                  model for that system and seed: controls recovered through MaDE's
-    #                  LEARNED inverse, residual taken under MaDE's learned augmented dynamics,
-    #                  with the KNOWN model's inverse as the documented fallback where the
-    #                  learned one does not resolve. The caller supplies the controls through
-    #                  `u_for_dyn_learned` and the model through `dynamics_learned`, and says
-    #                  which recovery it used; `dyn_learned_available=False` still omits the
-    #                  metric rather than filling it with a placeholder that would read as a
-    #                  measurement.
-    # Defaults preserve the previous behaviour exactly, so an un-updated caller is unaffected.
+    # Per-metric control set:
+    #   inequality -- own emitted controls, else recovered through the known model.
+    #   Dyn.-K -- recovered through the known model, every row.
+    #   Dyn.-T -- for the dynamic bicycle (underspecified), own emitted controls where
+    #             emitted, else recovered through the known (kinematic-bicycle) model's
+    #             inverse -- never the true model's inverse (off-manifold blow-up). For the
+    #             three fully specified systems this equals Dyn.-K. Caller supplies the
+    #             choice via `u_for_dyn_true`; applied in `scripts/evaluate.py`.
+    #   Dyn.-L -- own emitted control for a row with a learned model; a row with none borrows
+    #             the canonical MaDE model's controls/residual via `u_for_dyn_learned` and
+    #             `dynamics_learned`. `dyn_learned_available=False` omits the metric.
     u_ineq = u_corrected if u_for_inequality is None else u_for_inequality
     u_dyn_k = u_dyn if u_for_dyn_known is None else u_for_dyn_known
     u_dyn_t = u_dyn if u_for_dyn_true is None else u_for_dyn_true
@@ -427,23 +356,16 @@ def compute_metrics(
     return metrics
 
 
-# ---------------------------------------------------------------------------
-# Real-data (E2 / E3) metric helpers — additive siblings of the E1 helpers
-# above. See ralplan-real-data-metrics-v1.
-# ---------------------------------------------------------------------------
+# Real-data (E2 / E3) metric helpers, additive siblings of the E1 helpers above.
 
 
 @dataclass(frozen=True)
 class EmpiricalEnvelope:
     """Per-dimension empirical state and control bounds.
 
-    Estimated from a training-split ground-truth distribution (states +
-    inferred controls) by :func:`estimate_empirical_envelope`. Used as a
-    dataset-support proxy for inequality metrics on real-data trajectories
-    where physical actuator limits are unknown.
-
-    Bounds are NOT physical limits — see ``ralplan-real-data-metrics-v1``
-    pre-mortem 8 / Risk 3.
+    Estimated from a training-split ground-truth distribution (states + inferred controls) by
+    :func:`estimate_empirical_envelope`. Dataset-support proxy for inequality metrics on
+    real-data trajectories where physical actuator limits are unknown. Not physical limits.
     """
 
     state_min: jax.Array  # (state_dim,)
@@ -458,16 +380,14 @@ def _flatten_with_lengths(
 ) -> jax.Array:
     """Flatten ``(N, T, D)`` over ``(N, T)`` honouring per-trajectory ``lengths``.
 
-    Returns a ``(M, D)`` array, where ``M`` is the total number of valid
-    timesteps.  When ``lengths`` is ``None``, every entry is treated as
-    valid.  This mirrors the inD pipeline, which pads ragged trajectories
-    in a fixed-length tensor.
+    Returns ``(M, D)``, ``M`` the total valid timesteps. ``lengths=None`` treats every entry
+    as valid. Mirrors the inD pipeline, which pads ragged trajectories to a fixed length.
     """
     if array.ndim == 2:
         return array
     if lengths is None:
         return array.reshape(-1, array.shape[-1])
-    # Build a boolean mask (N, T) where t < lengths[i] is True.
+    # mask (N, T): t < lengths[i]
     t = array.shape[1]
     t_idx = jnp.arange(t)
     mask = t_idx[None, :] < lengths[:, None]
@@ -502,14 +422,12 @@ def estimate_empirical_envelope(
 ) -> EmpiricalEnvelope:
     """Estimate per-dimension state/control bounds from training data.
 
-    ``states`` may be ``(N, T, state_dim)`` or ``(T, state_dim)``;
-    ``controls`` may be ``(N, T-1, control_dim)`` or ``(T-1, control_dim)``.
-    When ``lengths`` is provided (inD pipeline), padding entries past
-    ``lengths[i]`` are masked out before quantile estimation.
+    ``states`` may be ``(N, T, state_dim)`` or ``(T, state_dim)``; ``controls`` may be
+    ``(N, T-1, control_dim)`` or ``(T-1, control_dim)``. With ``lengths`` (inD pipeline),
+    padding past ``lengths[i]`` is masked before quantile estimation.
 
-    Bounds are computed at the 1st / 99th percentile (configurable) and
-    rounded outward when increments are provided. The helper has no IO and
-    is callable from JIT contexts.
+    Bounds are the 1st/99th percentile (configurable), rounded outward when increments are
+    given. No IO; callable from JIT contexts.
     """
     state_lengths = lengths
     flat_states = _flatten_with_lengths(states, state_lengths)
@@ -519,8 +437,7 @@ def estimate_empirical_envelope(
     s_high = jnp.quantile(flat_states, upper_quantile, axis=0)
     s_low, s_high = _round_outward(s_low, s_high, state_rounding)
 
-    # Controls have one fewer step per trajectory than states; subtract 1
-    # from each length so the mask aligns with the (T-1) axis.
+    # Controls have one fewer step per trajectory; subtract 1 from lengths to align the mask.
     if state_lengths is not None and controls.ndim == 3:
         ctrl_lengths = jnp.maximum(state_lengths - 1, 0)
     else:
@@ -545,9 +462,8 @@ def estimate_empirical_envelope(
 def _envelope_state_only_constraint(envelope: EmpiricalEnvelope) -> ConstraintSet:
     """Return a state-only BoxConstraints proxy with permissive control bounds.
 
-    Used when the caller passes ``u=None`` to the empirical-envelope helpers.
-    The control box is set to ``[-inf, +inf]`` so the control-side terms
-    contribute zero violation under any zero-control alignment.
+    Used when the caller passes ``u=None`` to the empirical-envelope helpers: control box is
+    ``[-inf, +inf]`` so control-side terms contribute zero violation.
     """
     state_dtype = envelope.state_min.dtype
     ctrl_dim = envelope.control_min.shape[-1]
@@ -607,8 +523,7 @@ def empirical_envelope_violation_rate(
     """
     if u is None:
         constraints = _envelope_state_only_constraint(envelope)
-        # Pass a zero-control placeholder; control bounds are ±inf so they
-        # contribute zero violations.
+        # Zero-control placeholder; control bounds are ±inf so it contributes zero violation.
         if x.ndim == 3:
             zero_u = jnp.zeros(
                 (x.shape[0], x.shape[1], envelope.control_min.shape[-1]),
@@ -650,13 +565,9 @@ def empirical_envelope_violation_magnitude(
 def ade(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
     """Average Displacement Error.
 
-    Thin alias of :func:`fidelity` for real-data tables. ``fidelity`` is
-    retained because Experiment 1 imports it; this name is the conventional
-    label in trajectory-prediction benchmarks. This is the FULL-STATE norm
-    (all state dimensions), kept for E01 and for the ``e05-v3`` locked
-    ``results_e05.json``. The printed inD tables use
-    :func:`position_ade` / :func:`position_fde` instead, which restrict the
-    norm to the (x, y) position indices.
+    Alias of :func:`fidelity` (kept since Experiment 1 imports that name). Full-state norm
+    (all state dims), used by E01 and the locked ``results_e05.json``. Printed inD tables use
+    :func:`position_ade` / :func:`position_fde` instead, restricted to (x, y).
     """
     return fidelity(x_corrected, x_gt)
 
@@ -710,21 +621,14 @@ def gt_normalised_dynamics_residual(
 ) -> jax.Array:
     """Method known-physics residual normalised by the GT reference residual.
 
-    Returns ``method_residual / max(gt_reference_residual, eps) - 1.0``.
-    A value near ``0.0`` is the desired calibration target — the method
-    matches the dataset's intrinsic known-physics residual. Large positive
-    values indicate drift; negative values indicate over-projection toward
-    the simplified known model.
+    Returns ``method_residual / max(gt_reference_residual, eps) - 1.0``. Near ``0.0`` means the
+    method matches the dataset's intrinsic known-physics residual; positive is drift, negative
+    is over-projection toward the simplified known model.
 
-    .. warning:: structural-circularity caveat
-        When the trajectory was generated by the same KB+L Heun stencil
-        that ``dynamics_violation_known`` evaluates against, the numerator
-        (and the typical reference residual) is bounded by Heun
-        discretisation error; the resulting ratio minus one is uninformative.
-        This metric is intended for trajectories that were NOT produced by
-        the same KB+L Heun stencil — i.e. real inD trajectories or model
-        rollouts that exit the KB+L manifold. See
-        ``tests/test_metrics.py::test_gt_normalised_residual_nontrivial_on_non_heun_trajectory``.
+    .. warning:: On a trajectory generated by the same KB+L Heun stencil that
+        ``dynamics_violation_known`` evaluates against, the residual is bounded by Heun
+        discretisation error and the ratio is uninformative. Use only on trajectories NOT
+        produced by that stencil (real inD data, or rollouts off the KB+L manifold).
     """
     method = dynamics_violation_known(x, u, physics, params, dt)
     denom = jnp.maximum(jnp.asarray(gt_reference_residual, x.dtype), eps)
@@ -742,11 +646,9 @@ def estimate_gt_reference_residual(
 ) -> float:
     """Mean known-model transition residual on training-split GT trajectories.
 
-    For each trajectory ``i`` we compute the per-trajectory residual via
-    ``_trajectory_dynamics_violation_known(states_i, controls_i, ...)`` and
-    take the mean across trajectories (masked by ``lengths`` when provided
-    so padding is excluded).  Returns a Python ``float`` so the value can
-    be embedded in JSON metadata without further conversion.
+    Per-trajectory residual via ``_trajectory_dynamics_violation_known``, meaned across
+    trajectories (``lengths`` masks out padding). Returns a Python ``float`` for embedding in
+    JSON metadata.
     """
     if gt_states.ndim == 2:
         residual = _trajectory_dynamics_violation_known(
@@ -873,16 +775,14 @@ def _i_known(
     wheelbase: float = 2.7,
     stationary_speed_threshold: float = 0.5,
 ) -> tuple[jax.Array, jax.Array]:
-    """NEW pair-wise primitive — known-physics inverse on a single (x_prev, x_curr).
+    """Pair-wise known-physics inverse on a single (x_prev, x_curr).
 
-    Returns (u, is_stationary_carry). u has shape (2,). is_stationary_carry is a
-    scalar bool. DISTINCT from `kinematic_bicycle_inverse_controls` (trajectory-
-    major) — leave that function untouched.
+    Returns (u, is_stationary_carry): u has shape (2,), is_stationary_carry is a scalar bool.
+    Distinct from `kinematic_bicycle_inverse_controls` (trajectory-major).
     """
-    # FieldData deliberately: this predicate is used on inD, where the option-D fallback
-    # belongs. Using the analytic base here would change a published real-data
-    # feasibility metric -- the fallback is scoped to move off
-    # SIMULATED data only.
+    # FieldData deliberately: used on inD, where the option-D fallback belongs. The analytic
+    # base would change a published real-data feasibility metric; fallback stays scoped to
+    # simulated data.
     from made.physics.kinematic_bicycle import KinematicBicycleFieldData
     physics = KinematicBicycleFieldData()
     params = jnp.asarray([wheelbase], dtype=x_prev.dtype)
@@ -999,18 +899,11 @@ def compute_inequality_dual(
         "inequality_violation_rate_envelope": float(inequality_violation_rate(x, u, env_box)),
         "inequality_violation_magnitude_envelope": float(inequality_violation_magnitude(x, u, env_box)),
     }
-    # The four-way split on the PHYSICAL set, recorded as separate fields rather
-    # than derived at render time from the combined figure. The components are the primary
-    # record; the combined values above are the derived quantity.
-    #
-    # **The total is NOT the sum of the components** -- the magnitude combines in quadrature
-    # and the rate is an "any" over the union -- so reconstructing one channel by subtracting
-    # the other from the total gives a wrong number that looks plausible.
-    #
-    # It is the only way the clamp baseline reads honestly: clamp projects states and has no
-    # control field, so its state-bound violation is zero by construction while its
-    # control-bound violation is whatever its implied controls score. As one number those two
-    # facts cancel into something that describes neither.
+    # Four-way split on the PHYSICAL set, recorded as separate fields (primary record); the
+    # combined values above are derived. Total is not the sum of components: magnitude
+    # combines in quadrature, rate is an "any" over the union. Needed for clamp to read
+    # honestly: it has zero state-bound violation by construction (no dynamics step) while
+    # its control-bound violation is whatever its implied controls score.
     for channel in ("state", "control"):
         out[f"inequality_violation_rate_physical_{channel}"] = float(
             inequality_violation_rate(x, u, physical, channel)
@@ -1031,39 +924,28 @@ def kinematic_bicycle_inverse_controls(
 ) -> tuple[jax.Array, dict]:
     """Recover ``(δ, a)`` from consecutive KB states, exact-against-Heun.
 
-    Wraps ``KinematicBicycle.known_control_prior`` (`src/made/physics/
-    kinematic_bicycle.py:59`) — the Heun-exact inverse for ZOH-constant
-    ``(δ, a)`` with a fixed wheelbase ``L``.
+    Wraps ``KinematicBicycle.known_control_prior`` (`src/made/physics/kinematic_bicycle.py:59`),
+    the Heun-exact inverse for ZOH-constant ``(δ, a)`` with fixed wheelbase ``L``.
 
-    Stationary-frame filter
-    -----------------------
-    When ``|v_avg| < stationary_speed_threshold`` (default ``0.5 m/s``) the
-    closed-form inverse degenerates to ``δ = arctan(L * dθ / (v_avg * dt))``
-    near a singularity. To avoid spurious ±π/2 spikes from sensor jitter on
-    parked vehicles, we carry forward the previous frame's ``δ`` (and use
-    ``δ = 0`` at ``t == 0`` as the boundary case). The auxiliary dict
-    returned alongside controls records ``stationary_frame_count``.
+    Stationary-frame filter: when ``|v_avg| < stationary_speed_threshold`` (default 0.5 m/s)
+    the closed-form inverse ``δ = arctan(L * dθ / (v_avg * dt))`` is near a singularity. To
+    avoid spurious ±π/2 spikes from sensor jitter on parked vehicles, carry forward the
+    previous frame's ``δ`` (``δ = 0`` at ``t == 0``). ``aux`` records ``stationary_frame_count``.
 
-    .. warning:: structural-circularity caveat
-        This estimator is the exact-against-Heun inverse for the KB stencil
-        with wheelbase ``L``. When this estimator is composed with
-        :func:`gt_normalised_dynamics_residual` on a trajectory generated by
-        the same KB+L Heun stencil, the residual is bounded by Heun
-        discretisation error plus the ``v_avg``-regularisation; the
-        resulting metric is informative only when the trajectory was NOT
-        generated by the same KB+L Heun stencil. inD real-world trajectories
-        satisfy this condition; Heun-perfect synthetic test trajectories
-        do not.
+    .. warning:: This is the exact-against-Heun inverse for the KB stencil with wheelbase
+        ``L``. Composed with :func:`gt_normalised_dynamics_residual` on a trajectory generated
+        by the same KB+L Heun stencil, the residual is bounded by Heun discretisation error
+        plus ``v_avg``-regularisation and is uninformative. Informative only on trajectories
+        NOT generated by that stencil (real inD data; not Heun-perfect synthetic ones).
 
     Returns
     -------
     controls : ``(N, T-1, 2)`` or ``(T-1, 2)``
         Recovered ``[δ, a]`` per consecutive state pair.
     aux : dict
-        ``{"stationary_frame_count": int}`` reporting how many transitions
-        fell into the stationary-frame branch (across all trajectories).
+        ``{"stationary_frame_count": int}``, transitions in the stationary-frame branch.
     """
-    del eps  # reserved for future use; v_avg regularisation is inside known_control_prior
+    del eps  # v_avg regularisation is inside known_control_prior
     physics = KinematicBicycle()
     params = jnp.asarray([wheelbase], dtype=jnp.float64)
 

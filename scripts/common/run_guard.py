@@ -1,22 +1,14 @@
-"""A refusal instead of a silent overwrite.
+"""Exclusive-lock guard against two processes writing the same output path.
 
-Two concurrent runs wrote one artifact today and the second overwrote the first five minutes
-after it had been analysed and committed. The numbers happened to agree to 4.3e-16; that was
-luck, not a property of the setup.
-
-`claim_output(path)` takes an exclusive lock beside the target and refuses if another live
-process holds it, so the second run **fails loudly at the start** rather than finishing and
-overwriting. It also records who holds it, which is what was missing when the collision
-surfaced as a `git status` line.
+`claim_output(path)` takes a lock beside the target and refuses if another live process holds
+it, so a second run fails loudly at the start instead of silently overwriting a finished one.
+Also records who holds the lock.
 
 Usage::
 
     with claim_output(out_path):
         ...                       # compute
         out_path.write_text(...)  # write
-
-Nothing here is specific to one script; every harness that writes a named artifact should use
-it.
 """
 
 from __future__ import annotations
@@ -131,25 +123,15 @@ def require_idle_devices(
 ) -> None:
     """Refuse to start if another compute process holds a GPU.
 
-    A latency harness that runs while another process holds the device measures contention
-    rather than the method: an overlapping job on the same device can inflate a measured
-    median by several times and its spread by an order of magnitude.
+    A latency harness sharing a device with another process measures contention, not the
+    method: an overlapping job can inflate a measured median several times and its spread by
+    an order of magnitude. Reads device state directly rather than tracking processes, and
+    refuses rather than warns.
 
-    **The waiter that existed to prevent this is what let it through.** It captured only the
-    FIRST matching process with `head -1` and released as soon as that one exited, while a
-    second run of the same command was still going. A guard that can pass while its condition
-    is false is the same class of defect as a test that cannot fail, so this one reads the
-    device directly rather than tracking processes it was told about.
-
-    **Refuses rather than warns.** A warning in a log is a thing nobody reads at the moment it
-    matters.
-
-    `devices` scopes the check to those PHYSICAL device indices. Pass it only when the caller
+    `devices` scopes the check to those physical indices. Pass it only when the caller
     genuinely runs on a subset — a run pinned to one device by `CUDA_VISIBLE_DEVICES` is not
-    made slower by a job on a different card, and refusing on that would stop work for no
-    reason on a two-card machine. **A latency measurement must not pass it**: leave it None
-    there, because the blanket check is the one that catches this failure mode. `None` means
-    every device, which stays the default.
+    slowed by a job on a different card. A latency measurement must leave it None (default,
+    every device), since the blanket check is what catches contention.
     """
     import subprocess
 

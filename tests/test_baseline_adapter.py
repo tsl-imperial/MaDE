@@ -1,4 +1,4 @@
-"""Baseline trajectory adapter tests (US-011 AC)."""
+"""Baseline trajectory adapter tests."""
 
 # ruff: noqa: E402
 

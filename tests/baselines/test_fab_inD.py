@@ -1,4 +1,4 @@
-"""FAB baseline smoke tests for the inD pipeline (Phase D5 gate).
+"""FAB baseline smoke tests for the inD pipeline.
 
 Tests:
 - FAB forward pass on a tiny batch.
@@ -82,7 +82,6 @@ def test_fab_train_smoke():
         key=jax.random.key(5),
     )
     assert isinstance(trained, FABBaseline)
-    # Verify forward still finite after training
     x_prev = jnp.zeros(state_dim, dtype=jnp.float64)
     x_curr = jnp.ones(state_dim, dtype=jnp.float64) * 0.1
     pred_prev, pred_curr = trained(x_prev, x_curr)

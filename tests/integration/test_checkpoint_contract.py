@@ -1,13 +1,11 @@
-"""Plan 3 checkpoint contract integration test (Phase F4 gate).
+"""Checkpoint contract integration test.
 
 Verifies:
 1. MaDEModel.from_checkpoint loads a saved checkpoint and runs a forward pass.
 2. FABBaseline.from_checkpoint loads a saved checkpoint and runs a forward pass.
 3. Both models produce finite output on a synthetic kinematic-bicycle batch.
 
-This test uses synthetic data only — no real inD dataset required.
-The test constitutes the Plan-3 handoff gate: if this passes, Plan 3 can
-import both classmethods and attach the frozen models.
+Uses synthetic data only — no real inD dataset required.
 """
 
 # ruff: noqa: E402
@@ -29,9 +27,7 @@ from made.utils.checkpointing import CheckpointManager, TrainState
 from made.utils.config import CorrectorConfig, ModelConfig
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_made_model(key: jax.Array) -> MaDEModel:
@@ -69,9 +65,7 @@ def _make_fab(key: jax.Array) -> FABBaseline:
     )
 
 
-# ---------------------------------------------------------------------------
 # Tests
-# ---------------------------------------------------------------------------
 
 
 def test_made_model_from_checkpoint_roundtrip(tmp_path):
@@ -88,12 +82,10 @@ def test_made_model_from_checkpoint_roundtrip(tmp_path):
     cm = CheckpointManager(ckpt_dir)
     cm.save(state, 0)
 
-    # Load via the Plan-3 classmethod
     loaded = MaDEModel.from_checkpoint(ckpt_dir)
     assert isinstance(loaded, MaDEModel)
 
-    # Plan 3 contract H5: the restored model must keep its corrector active.
-    # ``eval_max_steps == 0`` would silently disable correction even though
+    # eval_max_steps == 0 would silently disable correction even though
     # the forward call still returns finite values.
     assert loaded.corrector.eval_max_steps > 0, (
         "Restored corrector has eval_max_steps=0; corrector is silently inactive"
@@ -125,7 +117,7 @@ def test_made_model_from_checkpoint_roundtrip(tmp_path):
 def test_made_model_corrector_reduces_known_violation(tmp_path):
     """Restored MaDEModel must actually shrink a known constraint violation.
 
-    Plan 3 contract H5: a passing ``isfinite`` assertion is too weak — a
+    A passing ``isfinite`` assertion is too weak — a
     corrector with ``eval_max_steps=0`` would still produce finite output
     while doing no work.  Seed a state below the kinematic-bicycle velocity
     floor (``v_min = 0``), run the restored model, and require that the
@@ -175,7 +167,6 @@ def test_fab_from_checkpoint_roundtrip(tmp_path):
     model = _make_fab(jax.random.key(2))
     save_fab_checkpoint(model, str(tmp_path / "fab_checkpoint"))
 
-    # Load via the Plan-3 classmethod
     loaded = FABBaseline.from_checkpoint(str(tmp_path / "fab_checkpoint"))
     assert isinstance(loaded, FABBaseline)
 

@@ -1,8 +1,8 @@
-"""MLP baseline smoke tests for the inD pipeline (Plan 1 / inD baseline coverage).
+"""MLP baseline smoke tests for the inD pipeline.
 
 Mirrors ``tests/baselines/test_fab_inD.py`` but exercises the location-aware
-metadata path (Plan 1 / inD): the integer ``location_id`` column at index 4
-must flow through an embedding lookup before reaching the MLP, the same way
+metadata path: the integer ``location_id`` column at index 4 must flow
+through an embedding lookup before reaching the MLP, the same way
 :class:`MetadataEncoder` handles it in MaDE.
 """
 

@@ -52,10 +52,9 @@ ABLATION_COLS: list[tuple[str, str]] = [
     ("MaDE", "made"),
 ]
 
-# Variants recorded in the seed-level file but printed in neither table. The manuscript quotes
-# the prior-only model's dynamic-bicycle numbers directly, and a quoted number has to be
-# recomputable from an artifact rather than from a report. These never enter `stats_grid`, so no
-# printed cell and no emphasis can move because of them.
+# Variants recorded in the seed-level file but printed in neither table. The manuscript
+# quotes the prior-only model's dynamic-bicycle numbers directly, so they must stay
+# recomputable from an artifact. Never enter `stats_grid`, so no printed cell moves.
 SEED_LEVEL_ONLY_VARIANTS: tuple[str, ...] = ("made-prior-only",)
 
 ALL_COLS: list[tuple[str, str]] = []
@@ -90,9 +89,8 @@ HEADLINE_METRICS_BY_ROW: dict[str, list[tuple[str, str]]] = {
 DISPLAY_DECIMALS = 4
 
 # Dagger rule: a cell carries a dagger when at least one seed's value for that (row, variant,
-# metric) exceeds ABS_FLOOR AND exceeds RATIO times the median of the OTHER seeds. This is a
-# seed-level flag: one wild seed inside an otherwise sane cell, which a mean and a standard
-# deviation together can hide.
+# metric) exceeds ABS_FLOOR and RATIO times the median of the other seeds -- a wild seed
+# inside an otherwise sane cell, which mean and std can hide.
 DAGGER = r"$^\dagger$"
 PENDING_MARK = r"\basispending"
 ABS_FLOOR = 1.0
@@ -194,9 +192,8 @@ def _gather_cell(
 def _gather_cell_seed_level(system: str, condition: str, variant: str) -> dict[str, dict]:
     """Per-seed metric values, keyed by seed directory name.
 
-    Separate from :func:`_gather_cell` on purpose: that one collapses seeds into mean and
-    population std, and several claims rest on an ordering holding in EACH of five seeds,
-    which cannot be recovered from a mean.
+    Separate from :func:`_gather_cell`: that one collapses seeds into mean and population
+    std, but some claims rest on an ordering holding in each of five seeds, not just the mean.
     """
     import json as _json
 
@@ -220,12 +217,11 @@ def _gather_cell_seed_level(system: str, condition: str, variant: str) -> dict[s
     return out
 
 
-# A cell is flagged "unstable" when its mean alone exceeds a per-metric
-# physical-plausibility threshold — i.e., the model has blown up in absolute
-# terms, independent of seed-to-seed scatter. Thresholds are picked so that
-# baselines that legitimately ignore dynamics or feasibility (Clamp at
-# Dyn.-K~0.2, MLP at Dyn.-K~0.2) stay uncoloured, while catastrophic numerical
-# divergence (Dyn.-T~1e5, Ineq.\,mag~500, Fid~400) is highlighted.
+# A cell is flagged "unstable" when its mean alone exceeds a per-metric physical-plausibility
+# threshold, i.e. the model has blown up in absolute terms, independent of seed-to-seed
+# scatter. Thresholds keep baselines that legitimately ignore dynamics or feasibility (Clamp
+# at Dyn.-K~0.2, MLP at Dyn.-K~0.2) uncoloured, while flagging catastrophic numerical
+# divergence (Dyn.-T~1e5, Ineq.\,mag~500, Fid~400).
 _UNSTABLE_MEAN_THRESHOLDS: dict[str, float] = {
     "inequality_violation_rate": 0.6,
     "inequality_violation_magnitude": 5.0,
@@ -252,9 +248,8 @@ def _row_ranking(
 ) -> tuple[set[int], set[int], set[int]]:
     """Identify (best_idxs, second_idxs, unstable_idxs) for one metric row.
 
-    Best/second-best are computed over cells that are present and not flagged
-    as unstable, since unstable means are unreliable for ranking. Lower is
-    better for every metric in this table.
+    Best/second-best computed over cells present and not flagged unstable, since unstable
+    means are unreliable for ranking. Lower is better for every metric in this table.
     """
     unstable_idxs = {
         i for i, s in enumerate(row_stats) if _is_unstable(s, metric_key)
@@ -304,16 +299,16 @@ def _format_cell(
         + "$"
     )
     if rank == "best":
-        # Strip the outer $ delimiters and wrap content in \mathbf{}.
+        # Strip outer $ delimiters, wrap content in \mathbf{}.
         inner = body[1:-1]
         body = r"$\mathbf{" + inner + r"}$"
     elif rank == "second":
         body = r"\underline{" + body + r"}"
-    # The E01 tables carry no red text: the `unstable` flag affects ranking only (see
-    # `_row_ranking`, which excludes an unstable mean from best/second) and emits no markup here.
-    del unstable  # retained in the signature: callers pass it, and the audit JSON records it
-    # A pending placeholder cell is never daggered, and a cell is daggered at most once; the
-    # dagger is appended last, after any bold/underline markup.
+    # E01 tables carry no red text: `unstable` affects ranking only (see `_row_ranking`)
+    # and emits no markup here; kept in the signature since callers pass it and the audit
+    # JSON records it.
+    del unstable
+    # A pending placeholder cell is never daggered; dagger appended last, after bold/underline.
     if dagger and PENDING_MARK not in body and DAGGER not in body:
         body = body + DAGGER
     return body
@@ -391,9 +386,9 @@ def _build_table(
 def _dyn_learned_recovery(system: str, condition: str, variant: str) -> dict | None:
     """Which Dyn.-L control recovery this cell used, read off its metrics.json.
 
-    A row with its own learned model has no entry: its Dyn.-L is its own emitted control through
-    its own model. A row with none carries the borrowed-model record `scripts/sim/evaluate.py`
-    writes, saying whether the learned inverse resolved or the known-model fallback applied.
+    A row with its own learned model has no entry: its Dyn.-L is its own emitted control
+    through its own model. A row with none carries the borrowed-model record
+    `scripts/sim/evaluate.py` writes.
     """
     paths, seeds = set(), 0
     for seed_dir in sorted((OUT_ROOT / system / condition / variant).glob("seed*")):
@@ -422,16 +417,15 @@ def _build_audit(
             "system": system,
             "condition_dir": condition,
             "metrics_file": "metrics.json",
-            # Which recovery each cell's Dyn.-L used. Absent for a variant that has its own
-            # learned model, because it borrows nothing.
+            # Which recovery each cell's Dyn.-L used; absent for a variant with its own
+            # learned model, since it borrows nothing.
             "dyn_learned_recovery": {
                 variant: rec for _, variant in cols
                 if (rec := _dyn_learned_recovery(system, condition, variant)) is not None
             },
             "cells": {},
         }
-        # Pre-compute rank/unstable flags for each (row, metric) so the audit
-        # mirrors the LaTeX highlighting decisions.
+        # Pre-compute rank/unstable flags per (row, metric) so the audit mirrors the LaTeX.
         rank_by_metric: dict[str, dict[int, str]] = {}
         unstable_by_metric: dict[str, set[int]] = {}
         for _, metric_key in METRICS:
@@ -507,20 +501,13 @@ def main() -> None:
         "--results-root",
         type=Path,
         default=ROOT / "outputs" / "sim" / "scores",
-        help=(
-            "Directory to read per-seed metrics.json from (the scoring pass output). Point it "
-            "at a different tree to regenerate the tables from a different set of scored cells."
-        ),
+        help="Directory to read per-seed metrics.json from (the scoring pass output).",
     )
     parser.add_argument(
         "--out-seed-level",
         type=Path,
         default=ROOT / "outputs" / "tables" / "tab_e01_seed_level.json",
-        help=(
-            "Where to write PER-SEED values alongside the aggregates. Always written, because "
-            "claims that rest on an ordering holding in each of five seeds cannot be checked "
-            "against a mean."
-        ),
+        help="Where to write per-seed values alongside the aggregates. Always written.",
     )
     parser.add_argument(
         "--out-tex",
@@ -548,8 +535,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Rebind the module-level root so every loader below reads the requested tree. Done here
-    # rather than by threading a parameter through five call sites.
+    # Rebind the module-level root so every loader below reads the requested tree.
     global OUT_ROOT
     OUT_ROOT = args.results_root
 
@@ -561,8 +547,7 @@ def main() -> None:
             per_seed = _gather_cell_seed_level(system, condition, variant)
             if per_seed:
                 seed_level.setdefault(row_label, {})[variant] = per_seed
-        # Seed-level only: deliberately NOT added to `stats_grid`, so no printed cell in
-        # either table depends on these variants.
+        # Seed-level only: not added to `stats_grid`, so no printed cell depends on these.
         for variant in SEED_LEVEL_ONLY_VARIANTS:
             per_seed = _gather_cell_seed_level(system, condition, variant)
             if per_seed:

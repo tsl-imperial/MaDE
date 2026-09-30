@@ -31,10 +31,7 @@ def build_data_config(
 ) -> DataConfig:
     """Construct a DataConfig, overriding only the fields that are not None.
 
-    Any argument left as None falls back to the DataConfig default, so
-    byte-identical behavior with today's fixed-size generation is preserved
-    unless a caller explicitly opts into a different size, control profile,
-    or speed floor.
+    Arguments left as None fall back to the DataConfig default.
     """
     overrides = {
         "num_trajectories_train": num_train,
@@ -47,8 +44,6 @@ def build_data_config(
         "noise_scale": noise_scale,
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
-    # Opting in is explicit, so a generation without the flag stays byte-identical even
-    # when a config carries a non-zero noise_scale for LOAD-time use.
     if add_generation_noise:
         overrides["add_generation_noise"] = True
     return dataclasses.replace(DataConfig(), **overrides)
@@ -87,9 +82,8 @@ def main() -> None:
         "--generation-config",
         default=str(ROOT / "configs/sim/data_generation.json"),
         help=(
-            "Path to a JSON file mapping system name to control-sampling overrides "
-            "(control_sample_min/control_sample_max). Applied only to systems present "
-            "as keys; other systems are generated with the unmodified DataConfig."
+            "JSON file mapping system name to control-sampling overrides "
+            "(control_sample_min/control_sample_max). Applied only to systems present as keys."
         ),
     )
     parser.add_argument("--seed", type=int, default=0)
@@ -115,8 +109,7 @@ def main() -> None:
         default=None,
         help=(
             "Reject trajectories whose speed ever drops below this floor "
-            "(dynamic-bicycle 6D layout only). Defaults to the DataConfig "
-            "default (no floor)."
+            "(dynamic-bicycle 6D layout only). Defaults to no floor."
         ),
     )
     parser.add_argument(
@@ -124,18 +117,16 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Observation-noise standard deviation. Only applied at GENERATION time when "
-            "--add-generation-noise is also passed; otherwise it is recorded in the config "
-            "and consumed at load time as before."
+            "Observation-noise standard deviation. Applied at generation time only when "
+            "--add-generation-noise is also passed; otherwise recorded in the config and "
+            "consumed at load time."
         ),
     )
     parser.add_argument(
         "--add-generation-noise",
         action="store_true",
-        help=(
-            "Add zero-mean Gaussian observation noise to the generated states on EVERY "
-            "split, at --noise-scale. Off by default so nothing already generated changes."
-        ),
+        help="Add zero-mean Gaussian observation noise to generated states on every split, "
+             "at --noise-scale. Off by default.",
     )
     args = parser.parse_args()
 

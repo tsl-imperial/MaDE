@@ -32,9 +32,7 @@ _DT = 0.1
 _KEY = jax.random.key(42)
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -70,9 +68,7 @@ def dynbicycle_state_pair():
     return x_prev, x_curr, params
 
 
-# ---------------------------------------------------------------------------
 # known_control_prior: shape and finiteness
-# ---------------------------------------------------------------------------
 
 
 def test_double_integrator_known_control_prior_shape(di_state_pair):
@@ -130,9 +126,7 @@ def test_kinematic_bicycle_as_dynamic_state_known_control_prior():
     assert jnp.all(jnp.isfinite(u))
 
 
-# ---------------------------------------------------------------------------
 # InverseDynamics structural decomposition
-# ---------------------------------------------------------------------------
 
 
 def test_inverse_dynamics_with_residual_uses_known_prior():
@@ -204,9 +198,7 @@ def test_inverse_dynamics_fixed_i_residual_norm_is_zero():
     assert jnp.allclose(inv.residual_norm(x_prev, x_curr, params), 0.0)
 
 
-# ---------------------------------------------------------------------------
 # Dispatch: made-fixed-i variant
-# ---------------------------------------------------------------------------
 
 
 _SMALL_MODEL = ModelConfig(inverse_hidden=(16, 16), residual_hidden=(16, 16))
@@ -303,9 +295,7 @@ def test_phase1_metrics_report_delta_i_norm():
     assert jnp.isfinite(metrics["delta_i_norm"])
 
 
-# ---------------------------------------------------------------------------
-# Dynamic-bicycle true inverse (Anomaly 2 fix)
-# ---------------------------------------------------------------------------
+# Dynamic-bicycle true inverse
 
 
 @pytest.fixture
@@ -402,7 +392,7 @@ def test_dynamic_bicycle_kinematic_prior_fails_same_tolerance(feasible_dyn_bicyc
         f"Diagnosticity guard failed: new prior delta error {float(err_new):.6f} is not "
         f">10x smaller than kinematic delta error {float(err_kin):.6f}."
     )
-    # Additionally: new prior's absolute delta error must be < 1e-3 (Architect edit #4).
+    # Additionally: new prior's absolute delta error must be < 1e-3.
     assert err_new < 1e-3, (
         f"New prior absolute delta error {float(err_new):.6f} exceeds 1e-3."
     )
@@ -412,7 +402,6 @@ def test_dynamic_bicycle_inverse_one_iter_already_strong(feasible_dyn_bicycle_tr
     """A single Newton iteration already beats the kinematic prior by ≥5×.
 
     Documents that _NEWTON_STEPS=2 is safety margin, not load-bearing math
-    (Architect edit #2 / recommendation #1).
     """
     x_prev, x_curr, params, control_true, dt = feasible_dyn_bicycle_trajectory
     delta_true = control_true[0]

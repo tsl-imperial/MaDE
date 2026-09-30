@@ -55,8 +55,8 @@ __all__ = [
     "unicycle_constraints",
 ]
 
-# Canonical per-system parameter ordering. Must match simulation_data._SIMULATION_REGISTRY.
-# Double integrator and unicycle have no physics parameters.
+# Must match simulation_data._SIMULATION_REGISTRY. Double integrator and unicycle
+# have no physics parameters.
 PARAMETER_ORDER: dict[str, tuple[str, ...]] = {
     "double_integrator": (),
     "unicycle": (),
@@ -64,7 +64,7 @@ PARAMETER_ORDER: dict[str, tuple[str, ...]] = {
     "dynamic_bicycle": ("C_f", "C_r", "m", "I_z", "l_f", "l_r"),
 }
 
-# Default parameter values per system (used when overrides dict is incomplete).
+# Used when the overrides dict is incomplete.
 _PARAMETER_DEFAULTS: dict[str, dict[str, float]] = {
     "double_integrator": {},
     "unicycle": {},
@@ -132,11 +132,7 @@ class KinematicBicycleAsDynamicState(PhysicsModel):
 
 
 def build_system(name: str) -> tuple[PhysicsModel, ConstraintSet]:
-    """Instantiate a physics model and its constraint set by name.
-
-    Returns a (PhysicsModel instance, ConstraintSet instance) tuple.
-    Raises ValueError for unknown names.
-    """
+    """Instantiate a physics model and its constraint set by name. Raises ValueError if unknown."""
     if name not in _SYSTEM_REGISTRY:
         supported = sorted(_SYSTEM_REGISTRY)
         raise ValueError(f"Unknown physics system '{name}'. Supported: {supported}")
@@ -151,10 +147,9 @@ def build_system_for_model(
 ) -> tuple[PhysicsModel, ConstraintSet]:
     """Build the physics/constraints pair used by MaDE for a true/known system pair.
 
-    When ``envelope`` is an :class:`~made.evaluation.metrics.EmpiricalEnvelope`,
-    the hardcoded constraint factory is replaced by an empirical-envelope-derived
-    ``BoxConstraints``.  Callers that do not pass ``envelope`` (E01, tests) are
-    unaffected.
+    If ``envelope`` is an :class:`~made.evaluation.metrics.EmpiricalEnvelope`, the
+    hardcoded constraint factory is replaced by an empirical-envelope-derived
+    ``BoxConstraints``.
     """
     resolved_known = known_system or true_system
     if true_system == "dynamic_bicycle" and resolved_known == "kinematic_bicycle":
@@ -163,7 +158,7 @@ def build_system_for_model(
     else:
         physics, constraints = build_system(resolved_known)
     if envelope is not None:
-        from made.evaluation.metrics import envelope_constraint as _env_con  # lazy — avoids circular import
+        from made.evaluation.metrics import envelope_constraint as _env_con  # avoid circular import
         constraints = _env_con(envelope)
     return physics, constraints
 
@@ -171,13 +166,8 @@ def build_system_for_model(
 def resolve_params(system_name: str, overrides: dict[str, float]) -> jax.Array:
     """Convert a parameter override dict to a canonical-order float64 jax.Array.
 
-    Args:
-        system_name: One of the supported physics system names.
-        overrides: Dict of {param_name: value}. Unknown keys raise ValueError.
-                   Missing keys use defaults from _PARAMETER_DEFAULTS.
-
-    Returns:
-        jax.Array of shape (param_dim,) with dtype float64 in PARAMETER_ORDER sequence.
+    Missing keys use defaults from ``_PARAMETER_DEFAULTS``. Returns shape (param_dim,)
+    in ``PARAMETER_ORDER`` sequence.
     """
     if system_name not in PARAMETER_ORDER:
         supported = sorted(PARAMETER_ORDER)
@@ -185,7 +175,6 @@ def resolve_params(system_name: str, overrides: dict[str, float]) -> jax.Array:
     param_names = PARAMETER_ORDER[system_name]
     defaults = _PARAMETER_DEFAULTS[system_name]
 
-    # Validate override keys
     unknown = set(overrides) - set(param_names)
     if unknown:
         raise ValueError(

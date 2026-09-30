@@ -1,30 +1,24 @@
-"""inD data adapter for Plan 1 — MaDE Experiment 2.
+"""inD data adapter for the MaDE trainer.
 
-This module is a thin adapter over the Plan 0 loader API
-(``made.data.ind.load_ind_split`` / ``made.data.ind.iter_recordings``).  It
-converts the NumPy arrays returned by Plan 0 into float64 JAX arrays and
-exposes them in the ``(states, metadata, lengths)`` format expected by the
-existing ``TrajectoryWindowTransform`` / ``create_data_loader`` pipeline.
+Thin adapter over ``made.data.ind.load_ind_split`` / ``made.data.ind.iter_recordings``.
+Converts their NumPy arrays into float64 JAX arrays in the ``(states, metadata, lengths)`` format expected by
+``TrajectoryWindowTransform`` / ``create_data_loader``.
 
-Schema consumed (Plan 0 §3):
+Schema consumed:
   ``metadata`` columns: [length, width, car_onehot, truck_bus_onehot, location_id]
   ``M = 5``  (2 float + 2 class one-hot + 1 location-id integer column)
   ``location_id ∈ {1, 2, 3, 4}`` (vendor canonical IDs, NOT zero-indexed).
 
-The location embedding lookup (``id - 1`` → embedding row) is performed
-internally by ``MetadataEncoder`` when ``num_locations > 0``; this adapter
-does **not** zero-index the IDs.
+The location embedding lookup (``id - 1`` → embedding row) is performed internally by
+``MetadataEncoder`` when ``num_locations > 0``; this adapter does **not** zero-index the IDs.
 
-Plan 0 status:
-  If ``made.data.ind.load_ind_split`` raises ``NotImplementedError`` (Plan 0
-  stub not yet replaced), callers should run the Plan 0 preprocessor first::
+If ``made.data.ind.load_ind_split`` raises ``NotImplementedError``, run the preprocessor first::
 
-      python -m made.data.ind.preprocess \\
-          --raw-dir data/inD-dataset \\
-          --output-dir data/inD-preprocessed/v1
+    python -m made.data.ind.preprocess \\
+        --raw-dir data/inD-dataset \\
+        --output-dir data/inD-preprocessed/v1
 
-  A stub path is provided via :func:`load_ind_split_stub` for unit tests that
-  do not need the real dataset.
+:func:`load_ind_split_stub` provides a stub path for unit tests without the real dataset.
 """
 
 from __future__ import annotations
@@ -44,8 +38,7 @@ __all__ = [
     "load_ind_split_stub",
 ]
 
-# Metadata column count per Plan 0 §3:
-#   [length, width, class_one_hot[2], location_id]
+# Metadata columns: [length, width, class_one_hot[2], location_id]
 IND_METADATA_DIM: int = 5
 IND_LOCATION_ID_INDEX: int = 4  # trailing column
 IND_NUM_LOCATIONS: int = 4  # vendor IDs {1..4}
@@ -58,22 +51,15 @@ def load_ind_split(
     *,
     location_filter: list[int] | None = None,
 ) -> tuple[Any, Any, Any]:
-    """Load a preprocessed inD split and return (states, metadata, lengths) as JAX float64 arrays.
-
-    Consumes ``made.data.ind.load_ind_split`` (Plan 0) and performs:
-      - float64 cast on states and metadata
-      - int32 cast on lengths
+    """Load a preprocessed inD split via ``made.data.ind.load_ind_split``, casting
+    states/metadata to float64 and lengths to int32.
 
     Args:
         data_dir: Path to ``data/inD-preprocessed/v1/`` (or the preprocessed root).
-        split: One of ``"train"``, ``"val"``, ``"test"``.
-        location_filter: Optional list of location IDs to keep (vendor IDs 1–4).
-
-    Returns:
-        Tuple of (states, metadata, lengths) as JAX arrays.
+        location_filter: Optional list of location IDs to keep (vendor IDs 1-4).
 
     Raises:
-        NotImplementedError: If Plan 0 has not been run yet.
+        NotImplementedError: If the preprocessor has not been run yet.
     """
     from made.data.ind import load_ind_split as _plan0_load
 
@@ -90,8 +76,8 @@ def iter_ind_recordings(
 ) -> Iterator[dict[str, Any]]:
     """Iterate per-recording trajectory bundles from the preprocessed inD dataset.
 
-    Thin wrapper over ``made.data.ind.iter_recordings`` (Plan 0).  Converts
-    arrays to float64 JAX arrays.
+    Thin wrapper over ``made.data.ind.iter_recordings``, converting arrays to
+    float64 JAX arrays.
 
     Yields:
         Dicts with keys: ``states``, ``metadata``, ``lengths``, ``location_id``,

@@ -1,4 +1,4 @@
-"""Tests for the inD data loader stub (Phase A6 gate).
+"""Tests for the inD data loader stub.
 
 These tests run without real inD data by using ``load_ind_split_stub``.
 Shape, dtype, and location-id range are verified.
@@ -75,17 +75,17 @@ def test_stub_class_onehot_valid():
 
 
 def test_stub_metadata_dim_constant():
-    """IND_METADATA_DIM equals 5 per Plan 1 contract."""
+    """IND_METADATA_DIM equals 5."""
     assert IND_METADATA_DIM == 5
 
 
 def test_stub_location_id_index_constant():
-    """IND_LOCATION_ID_INDEX equals 4 (trailing column) per Plan 1 contract."""
+    """IND_LOCATION_ID_INDEX equals 4 (trailing column)."""
     assert IND_LOCATION_ID_INDEX == 4
 
 
 def test_load_ind_split_raises_without_plan0(tmp_path):
-    """load_ind_split raises NotImplementedError (or FileNotFoundError) when Plan 0 not run."""
+    """load_ind_split raises NotImplementedError (or FileNotFoundError) when data is absent."""
     from made.data.ind_data import load_ind_split
 
     with pytest.raises((NotImplementedError, FileNotFoundError, Exception)):

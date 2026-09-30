@@ -128,25 +128,23 @@ def filter_stationary_tracks(
 ) -> tuple[jax.Array, jax.Array, jax.Array, np.ndarray]:
     """Drop whole tracks whose total displacement is at most ``min_displacement_m``.
 
-    This is the TRACK-level stationary filter, ruled on 2026-09-22 as the definition of
-    "filtered" for MaDE training. It exists separately from
-    :func:`make_prediction_windows`'s ``min_displacement_m`` because the two act on
+    TRACK-level stationary filter, the definition of "filtered" for MaDE training. Separate
+    from :func:`make_prediction_windows`'s ``min_displacement_m`` because the two act on
     different units and MaDE training never builds prediction windows: it trains on
     transition pairs drawn from whole tracks
     (``TrajectoryWindowTransform(window_size=2)``, see ``scripts/train_made_inD.py``).
 
     Displacement is measured end to end over the track's valid length,
-    ``||xy[length-1] - xy[0]||``, and compared against the SAME 0.5 m criterion already
-    ruled for the horizon-level filter rather than a second threshold on a per-step time
-    base. The two definitions were measured to select nearly the same data — both remove
-    79.9% of train transition pairs, because 79.9% of pairs come from 4.4% of tracks, i.e.
-    the stationary mass is whole parked tracks rather than stationary moments inside moving
-    ones.
+    ``||xy[length-1] - xy[0]||``, against the same 0.5 m criterion as the horizon-level
+    filter, not a second per-step threshold. The two definitions select nearly the same
+    data — both remove 79.9% of train transition pairs, since 79.9% of pairs come from 4.4%
+    of tracks: the stationary mass is whole parked tracks, not stationary moments inside
+    moving ones.
 
-    Known and accepted asymmetry: a moving track that pauses at a light keeps those
+    Known, deliberate asymmetry: a moving track that pauses at a light keeps those
     stationary transitions, while an evaluation window lying entirely inside that pause is
-    removed by the window-level filter. Training therefore sees slightly more than
-    evaluation does. That is the harmless direction and is deliberate, not an oversight.
+    removed by the window-level filter — training sees slightly more than evaluation does,
+    the harmless direction.
 
     Tracks shorter than 2 samples are dropped regardless: they yield no transition pair.
 

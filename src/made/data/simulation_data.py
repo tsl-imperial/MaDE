@@ -103,19 +103,13 @@ def generate_and_save(
         control_sample_max=data_config.control_sample_max,
     )
 
-    # Observation noise is added to the
-    # generated data ON EVERY SPLIT -- train, validation and test alike -- using the same
-    # mechanism as elsewhere, `add_observation_noise` with the config's `noise_scale`.
-    # **Perturbation stays out**: that job belongs to the upstream predictors.
+    # Observation noise is added to every split (train, val, test) via `add_observation_noise`
+    # with the config's `noise_scale`. Perturbation stays out -- that's the upstream predictors'
+    # job. Applied to states only, before normalisation stats are computed, so recorded mean/std
+    # describe what a model actually sees.
     #
-    # Noise is applied to STATES only, which is what "observation noise" means here, and before
-    # the normalisation statistics are computed, so the recorded mean and std describe the data
-    # a model actually sees.
-    #
-    # The three noise keys are derived with `fold_in` rather than by splitting `key` into six.
-    # Splitting differently would change `key_train`/`key_val`/`key_test` and therefore the
-    # TRAJECTORIES, so every dataset not being regenerated would stop reproducing. With
-    # `fold_in`, a run with the flag off is byte-identical to before this change.
+    # Noise keys are derived with `fold_in` rather than by splitting `key` into six, so the
+    # TRAJECTORIES (key_train/key_val/key_test) don't change when this flag is off.
     if data_config.add_generation_noise and data_config.noise_scale > 0.0:
         noise_train, noise_val, noise_test = jax.random.split(
             jax.random.fold_in(key, _GENERATION_NOISE_STREAM), 3)

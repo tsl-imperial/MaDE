@@ -130,9 +130,7 @@ def validate_preprocessed(data_dir: str) -> ValidationReport:
             "map_variant=1 code path not exercised on held-out data"
         )
 
-    # ------------------------------------------------------------------
     # 6. Per-split array checks
-    # ------------------------------------------------------------------
     for split_name in ("train", "val", "test"):
         split_dir = root / split_name
         if not split_dir.exists():
@@ -197,28 +195,21 @@ def validate_preprocessed(data_dir: str) -> ValidationReport:
                     f"{len(npz['lengths'])} trajectories in npz"
                 )
 
-        # Δt is enforced by construction in ``_downsample_track`` (every emitted
-        # sample is exactly ``DOWNSAMPLE_FACTOR`` native frames apart) and is
-        # exercised end-to-end in ``tests/data/test_ind_loader.py``.  The NPZ
-        # only stores the *first* native frame, so a per-step check from disk
-        # alone would be a no-op — we deliberately skip it here.
-        _ = DOWNSAMPLE_FACTOR  # imported for the comment above; silences unused-import warnings
+        # Δt is enforced by construction in ``_downsample_track`` and exercised in
+        # ``tests/data/test_ind_loader.py``. NPZ stores only the first native frame, so a
+        # per-step check from disk alone would be a no-op; skipped here.
+        _ = DOWNSAMPLE_FACTOR  # silences unused-import warning
 
-    # ------------------------------------------------------------------
     # 7. lanelet_map_paths exist on disk (relative to an inferred dataset root)
-    # ------------------------------------------------------------------
     lanelet_paths = manifest.get("lanelet_map_paths", {})
     if lanelet_paths:
-        # Try to infer dataset root: manifest says paths are relative to dataset root.
-        # We don't know the raw_dir here, so we skip existence check with a warning.
+        # raw_dir unknown here, so existence check is skipped with a warning.
         warnings.append(
             "lanelet_map_paths existence check skipped: raw_dir unknown to validator. "
             "Pass raw_dir explicitly or use the CLI with --raw-dir to verify."
         )
 
-    # ------------------------------------------------------------------
     # 8. vehicle_counts sum to total_trajectories (if present)
-    # ------------------------------------------------------------------
     if "vehicle_counts" in manifest and "total_trajectories" in manifest:
         claimed_total = manifest["total_trajectories"]
         split_total = sum(manifest.get("trajectory_counts_per_split", {}).values())
@@ -228,9 +219,7 @@ def validate_preprocessed(data_dir: str) -> ValidationReport:
                 f"sum of split counts={split_total}"
             )
 
-    # ------------------------------------------------------------------
     # 9. stats.json exists
-    # ------------------------------------------------------------------
     stats_path = root / "stats.json"
     if not stats_path.exists():
         warnings.append("stats.json not found (optional but expected)")
@@ -275,9 +264,7 @@ def validate_and_check_lanelet_paths(data_dir: str, raw_dir: str) -> ValidationR
     return report
 
 
-# ---------------------------------------------------------------------------
 # CLI entry point: python -m made.data.ind.validate
-# ---------------------------------------------------------------------------
 def _cli() -> None:
     import argparse
     import sys

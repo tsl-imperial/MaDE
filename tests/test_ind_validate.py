@@ -1,4 +1,4 @@
-"""Phase 5 acceptance tests for made.data.ind.validate.
+"""Tests for made.data.ind.validate.
 
 Builds minimal preprocessed bundles in tmp_path and verifies that
 validate_preprocessed() passes on well-formed bundles and fails with
@@ -14,11 +14,6 @@ from pathlib import Path
 import numpy as np
 
 from made.data.ind.validate import validate_preprocessed
-
-
-# ---------------------------------------------------------------------------
-# Bundle builder
-# ---------------------------------------------------------------------------
 
 _VALID_MANIFEST = {
     "format_version": "1.0",
@@ -96,20 +91,11 @@ def _make_valid_bundle(root: Path) -> None:
         _write_split(root / split, n)
 
 
-# ---------------------------------------------------------------------------
-# Pass case
-# ---------------------------------------------------------------------------
-
 def test_valid_bundle_passes(tmp_path: Path) -> None:
     _make_valid_bundle(tmp_path)
     report = validate_preprocessed(str(tmp_path))
     assert report.passed, f"Expected pass; errors: {report.errors}"
     assert report.errors == []
-
-
-# ---------------------------------------------------------------------------
-# Failure cases
-# ---------------------------------------------------------------------------
 
 def test_missing_manifest_key_fails(tmp_path: Path) -> None:
     _make_valid_bundle(tmp_path)

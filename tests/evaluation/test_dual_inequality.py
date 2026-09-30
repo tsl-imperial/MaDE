@@ -19,9 +19,7 @@ from made.evaluation.metrics import (
 from made.physics import inD_physical_constraints
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _make_feasible_xu(M: int = 10) -> tuple[jax.Array, jax.Array]:
     """Return (x, u) that satisfy inD_physical_constraints with zero violations."""
@@ -65,9 +63,7 @@ def _make_envelope_matching_physical() -> EmpiricalEnvelope:
     )
 
 
-# ---------------------------------------------------------------------------
 # Tests
-# ---------------------------------------------------------------------------
 
 def test_compute_inequality_dual_returns_expected_keys():
     """compute_inequality_dual must return all 4 expected keys."""

@@ -1,34 +1,23 @@
 """Data pipeline.
 
-Note: there are two per-recording iterators in this package, intentionally
-left out of the top-level ``made.data`` namespace to avoid ambiguity:
+Two per-recording iterators exist, kept out of this namespace to avoid ambiguity:
+``made.data.ind.iter_recordings`` yields typed ``InDRecordingBundle`` dataclasses (NumPy,
+dtype-stable); ``made.data.ind_data.iter_ind_recordings`` yields plain dicts with
+JAX-converted float64 arrays for the inD trainer. Import the one you need from
+its submodule.
 
-  * ``made.data.ind.iter_recordings`` — yields strictly-typed
-    ``InDRecordingBundle`` dataclasses (NumPy arrays, dtype-stable).
-  * ``made.data.ind_data.iter_ind_recordings`` — yields plain dicts with
-    JAX-converted float64 arrays for the Plan 1 / inD trainer pipeline.
+Lazy attribute lookup: ``grain_pipeline``, ``ind_data``, ``simulation_data`` import JAX at
+module load, so their names are resolved lazily via ``__getattr__`` to keep
+``import made.data`` JAX-free.
 
-Import the one you need explicitly from its submodule.
-
-Lazy attribute lookup
----------------------
-Most names in ``__all__`` live in modules that import JAX at module-load time
-(``grain_pipeline``, ``ind_data``, ``simulation_data``). Importing them
-eagerly here would force JAX into every ``import made.data`` caller. We
-therefore resolve those names lazily through ``__getattr__``, keeping
-``import made.data`` and ``from made.data.ind import ...`` JAX-free.
-
-Maintenance: adding a JAX-side public symbol that should be re-exported from
-``made.data`` requires (a) listing in the submodule's ``__all__``, (b) listing
-in ``made.data.__all__``, and (c) registering in ``_LAZY_ATTRS``. Every lazy
-target module must define ``__all__``. Enforced bidirectionally by
-``tests/data/test_lazy_attrs_complete.py``.
+Adding a JAX-side public symbol requires listing it in the submodule's ``__all__``, in
+``made.data.__all__``, and in ``_LAZY_ATTRS``. Every lazy target module must define
+``__all__``. Enforced bidirectionally by ``tests/data/test_lazy_attrs_complete.py``.
 """
 
 from __future__ import annotations
 
-# Eager imports — these submodules are JAX-free at module load (load_ind_split
-# inside `made.data.ind.loader` lazily imports jax.numpy at call time only).
+# JAX-free at module load (load_ind_split lazily imports jax.numpy at call time).
 from made.data.ind import (
     InDRecordingBundle,
     InDSplitArrays,
@@ -38,8 +27,7 @@ from made.data.ind import (
     validate_preprocessed,
 )
 
-# Lazy imports — each entry maps an attribute name to the module that defines
-# it. Resolved on first access via ``__getattr__`` below.
+# Attribute name -> defining module. Resolved on first access via __getattr__ below.
 _LAZY_ATTRS: dict[str, str] = {
     "InMemoryDataLoader": "made.data.grain_pipeline",
     "InMemoryDataSource": "made.data.grain_pipeline",
@@ -60,7 +48,7 @@ _LAZY_ATTRS: dict[str, str] = {
 
 
 def __getattr__(name: str):
-    """Resolve JAX-side names lazily so the package stays importable in JAX-free envs."""
+    """Resolve JAX-side names lazily to keep the package importable JAX-free."""
     if name in _LAZY_ATTRS:
         import importlib
 

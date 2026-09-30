@@ -1,4 +1,4 @@
-"""DynamicBicycle physics contract tests (US-015)."""
+"""DynamicBicycle physics contract tests."""
 
 # ruff: noqa: E402
 

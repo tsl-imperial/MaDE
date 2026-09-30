@@ -33,12 +33,10 @@ def apply_made_trajectory_with_controls(
             run the training-mode corrector paths; ``"eval_adaptive"`` runs the cell
             with ``training=False`` (adaptive while-loop corrector honouring
             ``eval_max_steps`` / ``eval_tol``) — use this for plug-and-play evaluation.
-        x0: optional feasible seed state (e.g. the last *observed* context state).
-            When given, the correction scan starts from ``x0`` and EVERY row of
-            ``x_pred`` is corrected — output length equals ``len(x_pred)`` and the
-            E01 "rollout seed must be feasible" convention holds. When ``None``,
-            ``x_pred[0]`` seeds the scan uncorrected (legacy uncorrected-seed behaviour) and
-            its control slot is zero-filled.
+        x0: optional feasible seed state (e.g. the last *observed* context state). When given,
+            the correction scan starts from ``x0`` and every row of ``x_pred`` is corrected —
+            output length equals ``len(x_pred)``. When ``None``, ``x_pred[0]`` seeds the scan
+            uncorrected and its control slot is zero-filled.
         return_diagnostics: opt-in per-timestep corrector diagnostics (iteration
             count + cap-hit flag), stacked into a ``CorrectorDiagnostics`` whose
             leaves have shape ``[T]`` — one entry per row of the returned

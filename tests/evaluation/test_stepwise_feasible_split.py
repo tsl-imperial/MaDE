@@ -26,9 +26,7 @@ from made.evaluation.metrics import (
 from made.physics import inD_physical_constraints
 
 
-# ---------------------------------------------------------------------------
 # Shared constants
-# ---------------------------------------------------------------------------
 
 _DT = 0.1
 _WHEELBASE = 2.7
@@ -37,9 +35,7 @@ _WHEELBASE = 2.7
 _CONSTRAINTS = inD_physical_constraints()
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _tame_state(v: float = 5.0) -> jax.Array:
     """A kinematic-bicycle state well inside inD_physical_constraints."""
@@ -69,9 +65,7 @@ def _build_flat_pairs_tame(n: int = 9) -> tuple[jax.Array, jax.Array]:
     return jnp.stack(rows_prev), jnp.stack(rows_curr)
 
 
-# ---------------------------------------------------------------------------
 # Fixture: 3 trajectories T=[5,3,4] → M=9 flat pairs
-# ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def flat_9_pairs():
@@ -92,9 +86,7 @@ def flat_9_pairs():
     return x_prev, x_curr
 
 
-# ---------------------------------------------------------------------------
 # (e) Flat aggregation: M=9 shape check
-# ---------------------------------------------------------------------------
 
 def test_flat_aggregation_shape(flat_9_pairs):
     """Function must accept flat (9, 4) inputs without error and return scalar outputs."""
@@ -114,9 +106,7 @@ def test_flat_aggregation_shape(flat_9_pairs):
         assert arr.shape == (), f"{key} should be scalar, got shape {arr.shape}"
 
 
-# ---------------------------------------------------------------------------
 # (d) frac_inf(m=0) == 0 with tame states
-# ---------------------------------------------------------------------------
 
 def test_frac_inf_zero_when_no_perturbation(flat_9_pairs):
     """With x_perturbed == x_curr (tame, no perturbation), fraction_infeasible must be 0."""
@@ -135,9 +125,7 @@ def test_frac_inf_zero_when_no_perturbation(flat_9_pairs):
     )
 
 
-# ---------------------------------------------------------------------------
 # (b) fid_feasible == 0 when corrected == gt on feasible step
-# ---------------------------------------------------------------------------
 
 def test_fidelity_feasible_zero_when_corrected_equals_gt(flat_9_pairs):
     """When x_corrected == x_curr_gt on all feasible steps, fidelity_feasible must be 0."""
@@ -157,9 +145,7 @@ def test_fidelity_feasible_zero_when_corrected_equals_gt(flat_9_pairs):
     )
 
 
-# ---------------------------------------------------------------------------
 # (c) fid_infeasible > 0 on infeasible step where corrected != gt
-# ---------------------------------------------------------------------------
 
 def test_fidelity_infeasible_positive_when_corrected_differs():
     """Build an infeasible step explicitly: push v above 22 m/s (inD v_max).
@@ -202,9 +188,7 @@ def test_fidelity_infeasible_positive_when_corrected_differs():
     )
 
 
-# ---------------------------------------------------------------------------
 # (a) Infeasibility uses _i_known, not method-I (structural + functional)
-# ---------------------------------------------------------------------------
 
 def test_bucket_assignment_uses_i_known_not_method_I():
     """Structural: evaluate_stepwise_feasible_split takes no model argument.
@@ -250,9 +234,7 @@ def test_bucket_assignment_uses_i_known_not_method_I():
     )
 
 
-# ---------------------------------------------------------------------------
 # Stationary carry: step with low v is excluded from both feas and inf
-# ---------------------------------------------------------------------------
 
 def test_stationary_step_excluded_from_both_buckets():
     """A step with |v_avg| < 0.5 must contribute to stationary_carry, not inf/feas."""
@@ -277,9 +259,7 @@ def test_stationary_step_excluded_from_both_buckets():
     )
 
 
-# ---------------------------------------------------------------------------
 # Disjointness: fraction_infeasible + fraction_stationary_carry <= 1
-# ---------------------------------------------------------------------------
 
 def test_frac_inf_and_stationary_are_disjoint(flat_9_pairs):
     """fraction_infeasible and fraction_stationary_carry are disjoint partitions (sum ≤ 1)."""

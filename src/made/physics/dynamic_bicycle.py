@@ -16,25 +16,18 @@ class DynamicBicycle(PhysicsModel):
     ClassVar constants
     ------------------
     _SAFE_VX_EPS : float
-        Epsilon used in both ``vector_field`` and ``known_control_prior`` to
-        stabilise the vx-denominator near zero.  Single source of truth — if
-        the singular-regime threshold ever changes, update it here only.
+        Epsilon shared by ``vector_field`` and ``known_control_prior`` to stabilise the
+        vx-denominator near zero. Single source of truth.
     _NEWTON_STEPS : int
-        Number of unrolled Newton iterations on the algebraic yaw-rate FD
-        equation that warm-start ``known_control_prior``.  Python-static so the
-        loop is unrolled at JAX trace time (no effect on the JIT cache key).
-        Value 2 provides quadratic convergence insurance for moderate slip
-        angles; ``test_dynamic_bicycle_inverse_one_iter_already_strong``
-        documents that iteration 1 alone already beats the kinematic prior by ≥5×.
+        Unrolled Newton iterations on the algebraic yaw-rate FD equation that warm-start
+        ``known_control_prior`` (Python-static, unrolled at trace time). 2 gives quadratic
+        convergence insurance for moderate slip angles.
     _NEWTON_HEUN_STEPS : int
-        Number of unrolled outer Newton iterations on the 2D Heun-step residual
-        ``r(delta, a) = [Heun(x_prev, [delta, a])[3] - x_curr[3],
-        Heun(...)[5] - x_curr[5]]`` (vx and yaw-rate rows — the two most
-        sensitive to a and delta respectively).  Aligns the inverse with the
-        actual training-time integrator, eliminating the O(dt) FD bias floor.
-        Python-static (Python ``for`` loop unrolled at trace time).  Value 3
-        delivers machine-zero recovery (~1e-12) across mild→aggressive
-        manoeuvres at production dt=0.1.
+        Unrolled outer Newton iterations on the 2D Heun-step residual
+        ``r(delta, a) = [Heun(x_prev, [delta, a])[3] - x_curr[3], Heun(...)[5] - x_curr[5]]``
+        (vx and yaw-rate rows, most sensitive to a and delta). Aligns the inverse with the
+        training-time integrator, removing the O(dt) FD bias floor. 3 gives machine-zero
+        recovery (~1e-12) across mild-to-aggressive manoeuvres at production dt=0.1.
     """
 
     _SAFE_VX_EPS: ClassVar[float] = 1e-3
@@ -74,7 +67,7 @@ class DynamicBicycle(PhysicsModel):
         accel = control[1]
         c_f, c_r, mass, inertia_z, l_f, l_r = params
 
-        # safe_vx epsilon: must match known_control_prior — see _SAFE_VX_EPS ClassVar.
+        # Must match known_control_prior's epsilon (_SAFE_VX_EPS).
         eps = jnp.asarray(self._SAFE_VX_EPS, dtype=state.dtype)
         safe_vx = jnp.where(jnp.abs(vx) > eps, vx, jnp.where(vx >= 0.0, eps, -eps))
         slip_front = delta - jnp.arctan2(vy + l_f * yaw_rate, safe_vx)
@@ -106,32 +99,26 @@ class DynamicBicycle(PhysicsModel):
         """True dynamic-bicycle inverse aligned with the Heun training integrator.
 
         Stage A — algebraic warm start (matches FD targets, O(dt) bias):
-          A1: Solve delta from the yaw-rate equation via ``_NEWTON_STEPS`` unrolled
-              Newton iterations, initialised from the kinematic estimate.
+          A1: Solve delta from the yaw-rate equation via ``_NEWTON_STEPS`` unrolled Newton
+              iterations, initialised from the kinematic estimate.
           A2: Closed-form ``a`` from the v_x equation given the solved delta.
 
         Stage B — Newton-on-Heun (matches the actual integrator, removes O(dt) bias):
           B1: Iterate ``_NEWTON_HEUN_STEPS`` outer Newton steps on the 2D residual
-              ``r(delta, a) = [Heun(x_prev, [delta, a])[3]  - x_curr[3],
+              ``r(delta, a) = [Heun(x_prev, [delta, a])[3] - x_curr[3],
                                 Heun(x_prev, [delta, a])[5] - x_curr[5]]``
-              (vx and yaw-rate rows are the two most sensitive to a and delta).
-              The 2x2 Jacobian is built with ``jax.jacfwd`` (forward-mode, exact)
-              and inverted via the closed-form 2x2 formula with a det-floor for
-              gradient stability.
+              (vx and yaw-rate rows, most sensitive to a and delta). Jacobian via
+              ``jax.jacfwd`` (exact), inverted via closed-form 2x2 with a det-floor.
 
-        JIT-clean (loop counts are Python-static), vmap-compatible (no Python
-        branches on traced values), gradient-stable (bounded denominators).
-
-        safe_vx epsilon: must match vector_field — see _SAFE_VX_EPS ClassVar.
+        JIT-clean (Python-static loop counts), vmap-compatible, gradient-stable.
+        safe_vx epsilon must match vector_field's _SAFE_VX_EPS.
         """
         c_f, c_r, mass, inertia_z, l_f, l_r = params
 
-        # x_prev kinematic state (frozen inputs for the inverse).
         vx_p = x_prev[3]
         vy_p = x_prev[4]
         yaw_rate_p = x_prev[5]
 
-        # safe_vx: identical pattern to vector_field.
         eps = jnp.asarray(self._SAFE_VX_EPS, dtype=x_prev.dtype)
         safe_vx = jnp.where(
             jnp.abs(vx_p) > eps,

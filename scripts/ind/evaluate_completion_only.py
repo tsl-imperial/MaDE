@@ -9,10 +9,10 @@ one flag apart:
                   inferred control and then NEVER steered toward feasibility
   3. raw       -- the predictor's own output, the floor
 
-"it_only" is the exact arm this attribution needs rather than an approximation of it:
-MaDECell.__call__ computes x_pred = augmented_dynamics.integrate(...) and passes THAT into
-the corrector, and Corrector.__call__ returns (x_pred, u) unchanged under that mode. So arm 2
-is I -> T with C removed, not C run to a loose tolerance.
+"it_only" is the exact arm needed, not an approximation: MaDECell.__call__ computes
+x_pred = augmented_dynamics.integrate(...) and passes THAT into the corrector, and
+Corrector.__call__ returns (x_pred, u) unchanged under that mode. So arm 2 is I -> T with C
+removed, not C run to a loose tolerance.
 
 THE ATTRIBUTION. With ADE_raw <= ADE_completion <= ADE_full, the share of the raw->full
 rise carried by completion is (ADE_completion - ADE_raw) / (ADE_full - ADE_raw). If that is

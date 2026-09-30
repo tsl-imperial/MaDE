@@ -143,7 +143,6 @@ def main(argv: list[str] | None = None) -> dict:
 
     model = _build_model(args, config)
 
-    # One batch through the same inD windowing pipeline training uses.
     train_module = _load_train_made_module()
     from dataclasses import replace
 
@@ -164,15 +163,12 @@ def main(argv: list[str] | None = None) -> dict:
 
     x_prev, x_curr, params, _, metadata = _batch_arrays(batch)
     if args.smoke_random_made and params is not None and params.shape[-1] == 0:
-        # Stub inD batches carry empty params (real runs resolve them via the
-        # MaDEModel metadata encoder); the smoke MaDECell has no encoder, so
-        # substitute the kinematic wheelbase (same convention as the smoke
-        # hatch in train_predictor.py).
+        # Stub inD batches carry empty params; the smoke MaDECell has no encoder, so
+        # substitute the kinematic wheelbase (same convention as train_predictor.py).
         params = jnp.broadcast_to(jnp.array([2.7]), (x_prev.shape[0], 1))
         batch = {**batch, "params": params}
     params = _resolve_params(model, params, metadata)
-    # step == total_steps pins the control-sampling schedule at its
-    # end-of-training mix; only the ratio matters to sample_controls.
+    # step == total_steps pins the sampling schedule at its end-of-training mix.
     u_sampled, _, _ = _sample_batch_controls(
         model, batch, training_config, jax.random.key(args.seed + 1), 1, 1
     )

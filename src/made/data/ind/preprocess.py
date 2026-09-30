@@ -11,9 +11,8 @@ Output layout under output_dir/version/:
   val/  ... (same)
   test/ ... (same)
 
-Note: pyarrow/pandas are not available in this environment.  The per-trajectory index
-is written as a plain CSV file (index.csv) instead of index.parquet.  The plan
-explicitly allows this fallback: "emit a lightweight CSV index instead."
+Note: pyarrow/pandas are unavailable here, so the per-trajectory index is written as a
+plain CSV file (index.csv) instead of index.parquet.
 """
 
 from __future__ import annotations
@@ -63,11 +62,10 @@ def _git_sha() -> str:
 def _resolve_lanelet_paths(raw_dir: Path) -> dict[str, str]:
     """Build relative lanelet map paths from the raw dir.
 
-    Returns paths relative to the raw *dataset root* (parent of the ``data/``
-    subdirectory).  When a key has a registered fallback path
-    (``LANELET_MAP_PATHS_FALLBACK``) and the primary path does not exist on
-    disk, the fallback is substituted — this handles the vendor typo
-    ``constuction`` vs ``construction`` (Decision R5).
+    Returns paths relative to the raw *dataset root* (parent of the ``data/`` subdirectory).
+    When a key has a registered fallback (``LANELET_MAP_PATHS_FALLBACK``) and the primary
+    path doesn't exist, the fallback is substituted — handles the vendor typo
+    ``constuction`` vs ``construction``.
     """
     dataset_root = raw_dir.parent  # raw_dir is the data/ subdir
     resolved: dict[str, str] = {}
@@ -195,24 +193,18 @@ def preprocess_ind(
     raw_dir:
         Path to the inD ``data/`` directory containing ``XX_tracks.csv`` etc.
     output_dir:
-        Root output directory.  Artefacts are written under ``output_dir/version/``.
+        Root output directory. Artefacts written under ``output_dir/version/``.
     version:
-        Version tag (e.g. ``"v1"``).  A new tag produces a fresh output tree; an
-        existing tag requires ``force=True`` to overwrite.
+        Version tag (e.g. ``"v1"``). A new tag makes a fresh tree; an existing tag
+        requires ``force=True``.
     split_seed:
         Seed passed to :func:`assign_splits`.
     min_frames:
-        Minimum trajectory length (in 5 Hz frames) after downsampling.
+        Minimum trajectory length (5 Hz frames) after downsampling.
     force:
         Overwrite an existing versioned output directory.
-    _location_table:
-        Internal override for testing.  Uses module-level ``LOCATION_TABLE`` when None.
-    _split_assignment:
-        Internal override for testing.  Computed from ``split_seed`` when None.
-    _recording_ids:
-        Internal override for testing.  Uses ``range(NUM_RECORDINGS)`` when None.
-    _construction_recordings:
-        Internal override for testing.  Uses module-level constant when None.
+    _location_table, _split_assignment, _recording_ids, _construction_recordings:
+        Internal test overrides; module-level defaults used when None.
 
     Returns
     -------
@@ -235,9 +227,7 @@ def preprocess_ind(
         else list(range(NUM_RECORDINGS))
     )
 
-    # -----------------------------------------------------------------------
-    # Ingest + transform all recordings
-    # -----------------------------------------------------------------------
+    # Ingest + transform all recordings.
     vehicle_counts_per_recording: dict[str, int] = {}
 
     if _split_assignment is not None:
@@ -259,9 +249,7 @@ def preprocess_ind(
         split_records[split_assignment[rec_id]].extend(trajs)
         vehicle_counts_per_recording[f"{rec_id:02d}"] = len(trajs)
 
-    # -----------------------------------------------------------------------
-    # Write split artefacts
-    # -----------------------------------------------------------------------
+    # Write split artefacts.
     split_counts: dict[str, int] = {}
     for split_name in ("train", "val", "test"):
         n_written = _write_split_artefacts(
@@ -269,15 +257,11 @@ def preprocess_ind(
         )
         split_counts[split_name] = n_written
 
-    # -----------------------------------------------------------------------
-    # Compute train-only state statistics
-    # -----------------------------------------------------------------------
+    # Compute train-only state statistics.
     stats = _compute_stats(split_records["train"])
     (out_root / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
-    # -----------------------------------------------------------------------
-    # Build and write manifest
-    # -----------------------------------------------------------------------
+    # Build and write manifest.
     lanelet_paths = _resolve_lanelet_paths(raw_path)
     location_table_serialisable = {
         str(k): {
@@ -352,9 +336,7 @@ def _compute_stats(records: list[dict]) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point:  python -m made.data.ind.preprocess
-# ---------------------------------------------------------------------------
+# CLI entry point: python -m made.data.ind.preprocess
 def _cli() -> None:
     import argparse
 

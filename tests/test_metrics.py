@@ -174,7 +174,7 @@ def test_dynamics_violation_true_uses_heun_stencil():
 
 
 # ---------------------------------------------------------------------------
-# Real-data (E2 / E3) metric helpers — ralplan-real-data-metrics-v1.
+# Real-data (E2 / E3) metric helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -495,7 +495,7 @@ def test_kb_inverse_controls_round_trip():
 
 
 def test_ind_physical_and_envelope_strip_xy():
-    """Regression guard for 2026-05-14 fix: x,y must be ±inf on inD inequality path."""
+    """x,y must be ±inf on inD inequality path."""
     from made.evaluation.metrics import envelope_constraint, EmpiricalEnvelope
     from made.physics import inD_physical_constraints
 

@@ -57,17 +57,16 @@ def main_programmatic(
 ) -> dict:
     """Run the E01 evaluation and write results to *output*.
 
-    eval_regime: optional label describing the perturbation regime used at
-    evaluation time (e.g. "fully-specified", "underspecified"). Written into
-    the output JSON for provenance when provided.
+    eval_regime: optional label describing the perturbation regime used at evaluation time
+    (e.g. "fully-specified", "underspecified"). Written into the output JSON for provenance
+    when provided.
 
-    dyn_learned_from: path to the MaDE checkpoint for this system, condition and
-    seed, used ONLY for rows that have no learned model of their own (clamp, the
-    per-step MLP, FAB). Given it, Dyn.-L is scored for those rows by recovering
-    controls through MaDE's LEARNED inverse and taking the residual under MaDE's
-    learned augmented dynamics, with the known model's inverse as the documented
-    fallback. Omitted (the default), those rows have no Dyn.-L and the metric is
-    omitted rather than filled. The choice of checkpoint is the caller's.
+    dyn_learned_from: path to the MaDE checkpoint for this system, condition and seed, used
+    only for rows with no learned model of their own (clamp, per-step MLP, FAB). If given,
+    Dyn.-L is scored for those rows by recovering controls through MaDE's learned inverse and
+    taking the residual under MaDE's learned augmented dynamics, falling back to the known
+    model's inverse when needed. Omitted (default): those rows have no Dyn.-L, and the metric
+    is left out rather than filled.
 
     Returns the result dict.
     """
@@ -88,7 +87,7 @@ def main_programmatic(
     # 2. Load test data
     # ------------------------------------------------------------------
     states, controls = load_split(test_data, "test")
-    # states: (N, T, state_dim), controls: (N, T-1, control_dim)
+    # states: (N, T, state_dim); controls: (N, T-1, control_dim)
 
     # ------------------------------------------------------------------
     # 3. Perturb
@@ -101,12 +100,11 @@ def main_programmatic(
         key, noise_key = jax.random.split(key)
         perturbed_states = add_observation_noise(perturbed_states, cfg.data.noise_scale, noise_key)
 
-    # Rollout convention (ref/notes/E01-experiment-design.md → "Rollout convention"):
-    # the scan seed must be a feasible observed state, never a perturbed one. C
-    # acts only through u with x re-completed by T(x_prev, u); from an infeasible
-    # x_prev the reachable one-step set may not intersect the feasible region, so
-    # an infeasible seed propagates through the carry. Restoring the unperturbed
-    # ground-truth x_0 here makes x_prev at t=1 feasible by construction.
+    # Rollout convention (ref/notes/E01-experiment-design.md, "Rollout convention"): the scan
+    # seed must be a feasible observed state, never a perturbed one. C acts only through u
+    # with x re-completed by T(x_prev, u); from an infeasible x_prev the reachable one-step
+    # set may not intersect the feasible region. Restoring unperturbed ground-truth x_0 here
+    # makes x_prev at t=1 feasible by construction.
     perturbed_states = perturbed_states.at[:, 0].set(states[:, 0])
 
     # ------------------------------------------------------------------
@@ -151,19 +149,18 @@ def main_programmatic(
         x_corrected, u_corrected = jax.vmap(
             lambda s, c: apply_baseline_over_trajectory(baseline, s, c, cfg.physics.dt)
         )(perturbed_states, controls)
-        # x_corrected: (N, T, state_dim), u_corrected: (N, T-1, control_dim) zeros
+        # x_corrected: (N, T, state_dim); u_corrected: (N, T-1, control_dim) zeros
 
-        # Build a stub AugmentedDynamics using the known physics with zero residual
         stub_dynamics = AugmentedDynamics(
             known_physics,
             ZeroResidual(known_physics.state_dim),
         )
         dynamics_learned = stub_dynamics
-        # A baseline emits no controls and has no learned model of its own, so Dyn.-L has
-        # nothing of its own to check. Borrow the MaDE model for this cell: recover controls
-        # through its LEARNED inverse and score the residual under its learned augmented
-        # dynamics. The zero placeholder in `u_corrected` would make the metric meaningless, so
-        # the controls are passed explicitly below.
+        # A baseline emits no controls and has no learned model, so Dyn.-L has nothing of its
+        # own to check. Borrow the MaDE model for this cell: recover controls through its
+        # learned inverse and score the residual under its learned augmented dynamics. The
+        # zero placeholder in `u_corrected` would make the metric meaningless, so controls
+        # are passed explicitly below.
         if dyn_learned_from is not None:
             borrowed = CheckpointManager(dyn_learned_from).restore()
             if borrowed is None:
@@ -177,27 +174,23 @@ def main_programmatic(
     x_gt = states          # (N, T, state_dim)
     u_gt = controls        # (N, T-1, control_dim)
 
-    # For non-MaDE baselines, u_corrected is a zero placeholder (baselines do not
-    # infer controls). Pass the ground-truth control trajectory so dynamics-violation
-    # metrics measure consistency with the actual actuated rollout, not a free coast.
-    # Three separate control sets are used, because the three metrics need different recovered
-    # controls, not one shared placeholder.
+    # For non-MaDE baselines, u_corrected is a zero placeholder. Three separate control sets
+    # are used below, since the three metrics need different recovered controls:
     #
-    #   inequality  -- the row's own emitted controls where it emits (every MaDE variant does,
-    #                  since they all route through the model); controls recovered through the
-    #                  condition's KNOWN model where it does not (clamp, MLP, FAB).
-    #                  Scoring a baseline at u = 0 would put it inside every control box
-    #                  and its control-bound violations would never be counted.
-    #   Dyn.-K      -- recovered through the KNOWN model, on EVERY row.
-    #   Dyn.-T      -- fully specified (known model IS the true model): recovered through that
+    #   inequality  -- the row's own emitted controls where it emits (every MaDE variant);
+    #                  controls recovered through the condition's known model where it does
+    #                  not (clamp, MLP, FAB). Scoring a baseline at u = 0 would put it inside
+    #                  every control box, hiding control-bound violations.
+    #   Dyn.-K      -- recovered through the known model, on every row.
+    #   Dyn.-T      -- fully specified (known model is the true model): recovered through that
     #                  model, so Dyn.-T equals Dyn.-K by construction. Underspecified (the
-    #                  dynamic bicycle): the row's OWN emitted controls where it emits them,
-    #                  KNOWN-model (kinematic-bicycle) recovered where it emits none. The TRUE
-    #                  model's inverse is never used there for the dynamic bicycle.
-    #   Dyn.-L      -- the learned model's controls. Defined for MaDE rows only; omitted for
-    #                  rows with no learned model, which is reported as pending.
+    #                  dynamic bicycle): the row's own emitted controls where it emits them,
+    #                  known-model (kinematic-bicycle) recovered where it does not. The true
+    #                  model's inverse is never used there.
+    #   Dyn.-L      -- the learned model's controls. Defined for MaDE rows only; omitted (as
+    #                  pending) for rows with no learned model.
     #
-    # NO ROW USES u_gt for any dynamics metric.
+    # No row uses u_gt for any dynamics metric.
     def _recover(physics, phys_params, x_seq):
         """Controls implied by consecutive states through `physics`'s analytic inverse."""
         def one(traj):
@@ -211,16 +204,15 @@ def main_programmatic(
     u_true_recovered = (_recover(true_physics, true_params, x_corrected)
                         if true_physics is not None else u_known_recovered)
     u_for_inequality = u_corrected if is_made else u_known_recovered
-    # Where the known model is NOT the true model -- the underspecified dynamic
-    # bicycle, and only there -- Dyn.-T takes the row's OWN emitted controls where it emits them
-    # (every MaDE variant), and controls recovered through the KNOWN (kinematic-bicycle) model's
-    # inverse where it emits none (clamp, MLP, FAB, and prior-only if it emits none). The TRUE
-    # model's inverse is NOT used on the dynamic bicycle: evaluating the dynamic-bicycle inverse
-    # on states that are off its manifold makes DB Dyn.-T explode.
+    # Where the known model is not the true model -- only the underspecified dynamic
+    # bicycle -- Dyn.-T takes the row's own emitted controls where it emits them (every MaDE
+    # variant), and controls recovered through the known (kinematic-bicycle) model's inverse
+    # where it does not (clamp, MLP, FAB, prior-only). The true model's inverse is not used on
+    # the dynamic bicycle: evaluating it on states off its manifold makes DB Dyn.-T explode.
     #
-    # The three fully specified systems are untouched. There `known_system` is
-    # None, so the known model IS the true model, `u_true_recovered` equals `u_known_recovered`,
-    # and Dyn.-T equals Dyn.-K by construction -- which this branch preserves bit for bit.
+    # The three fully specified systems are untouched: `known_system` is None there, so the
+    # known model is the true model, `u_true_recovered` equals `u_known_recovered`, and
+    # Dyn.-T equals Dyn.-K by construction.
     misspecified = cfg.model.known_system is not None
     u_for_dyn_true = (
         (u_corrected if is_made else u_known_recovered) if misspecified else u_true_recovered
@@ -229,9 +221,9 @@ def main_programmatic(
 
     # Dyn.-L for a row with no learned model of its own.
     #
-    # The learned inverse is TRIED and its output tested: every recovered control must be
-    # finite. If any is not, the fallback is the KNOWN model's inverse -- the residual is still
-    # taken under the LEARNED augmented dynamics either way, because it is Dyn.-L that is being
+    # The learned inverse is tried and its output tested: every recovered control must be
+    # finite. If any is not, the fallback is the known model's inverse -- the residual is still
+    # taken under the learned augmented dynamics either way, because it is Dyn.-L that is being
     # measured; only the control recovery changes. Which path was taken is recorded per cell, so
     # no reader has to infer it from the value.
     u_for_dyn_learned = None

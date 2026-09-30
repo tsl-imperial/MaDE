@@ -1,4 +1,4 @@
-"""Tests for from_json migration shim: old-schema JSON loads correctly (US-002)."""
+"""Tests for from_json migration shim: old-schema JSON loads correctly."""
 
 import json
 from dataclasses import replace

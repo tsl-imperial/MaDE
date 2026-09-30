@@ -1,4 +1,4 @@
-"""Perturb → correct → metrics E2E integration test (US-018, Phase 4 gate).
+"""Perturb → correct → metrics E2E integration test.
 
 Exercises the full evaluate.main_programmatic pipeline on DoubleIntegrator
 data with a freshly-initialised (but corrector-enabled) MaDECell.

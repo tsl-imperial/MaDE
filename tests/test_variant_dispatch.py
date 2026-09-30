@@ -1,4 +1,4 @@
-"""Variant/baseline dispatch tests (US-017)."""
+"""Variant/baseline dispatch tests."""
 
 # ruff: noqa: E402
 

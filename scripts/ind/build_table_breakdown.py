@@ -97,7 +97,7 @@ def main() -> int:
     grid = {k: {m: {"mean": sum(v) / len(v), "sd": _pop_sd(v), "n": len(v)}
                 for m, v in per.items()} for k, per in acc.items()}
 
-    # --- the combination verification, on the numbers rather than asserted -------------------
+    # Combination verification, on the numbers rather than asserted.
     rate_union = mag_bracket = mag_quad_exact = 0
     worst_quad_gap = 0.0
     for c in cells:

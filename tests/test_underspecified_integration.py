@@ -1,4 +1,4 @@
-"""Underspecified dispatch E2E integration tests (US-016).
+"""Underspecified dispatch E2E integration tests.
 
 Tests that model.known_system != physics.true_system wires correctly through
 the full train→evaluate pipeline.  Uses double_integrator (true) and unicycle
@@ -44,18 +44,11 @@ def _write_split(root: pathlib.Path, split: str, n: int, t: int, s: int, c: int)
 
 
 def test_kinbike_as_known_dynbike_as_true(tmp_path):
-    """Underspecified wiring: true=double_integrator, known=unicycle (same dims).
-
-    Both systems have state_dim=4, control_dim=2, param_dim=0, so MaDECell can
-    process data from double_integrator using unicycle physics as the known model.
-    All 6 E01 metric keys must be finite in the returned result.
-    """
-    # ----- build data -----
+    """All 6 E01 metric keys are finite for true=double_integrator, known=unicycle wiring."""
     state_dim, control_dim = 4, 2
     data_dir = tmp_path / "data"
     _write_split(data_dir, "test", n=4, t=8, s=state_dim, c=control_dim)
 
-    # ----- build MaDECell with unicycle (known) physics -----
     known_physics, known_constraints = build_system("unicycle")
     model_cfg = ModelConfig(inverse_hidden=(16, 16), residual_hidden=(16, 16))
     corrector_cfg = CorrectorConfig(mode="enabled", train_steps=2)
@@ -69,7 +62,6 @@ def test_kinbike_as_known_dynbike_as_true(tmp_path):
     )
     CheckpointManager(checkpoint_dir).save(ckpt_state, 0)
 
-    # ----- evaluation config: true=double_integrator, known=unicycle -----
     cfg = ExperimentConfig(
         physics=PhysicsConfig(true_system="double_integrator"),
         model=ModelConfig(

@@ -89,9 +89,7 @@ def _stub_loaders(config, seed: int = 0):
     return train_loader, val_loader
 
 
-# ---------------------------------------------------------------------------
 # Parametrised dispatch test
-# ---------------------------------------------------------------------------
 
 
 _SLOW_VARIANTS = {"made_phase1", "made_phase2", "made_no_residual", "made_no_corrector"}
@@ -137,9 +135,7 @@ def test_train_variant_sentinel_and_summary(variant, tmp_path):
     )
 
 
-# ---------------------------------------------------------------------------
 # Unknown-variant error
-# ---------------------------------------------------------------------------
 
 
 def test_unknown_variant_raises(tmp_path):
@@ -155,9 +151,7 @@ def test_unknown_variant_raises(tmp_path):
         _train_variant(config, train_loader, val_loader, tmp_path, seed=0)
 
 
-# ---------------------------------------------------------------------------
 # Config-payload contract: MaDE-family configs train with state-transition noise
-# ---------------------------------------------------------------------------
 
 
 def test_made_family_configs_have_training_noise() -> None:

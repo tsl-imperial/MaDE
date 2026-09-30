@@ -11,10 +11,8 @@ from typing import Any
 _VALID_PHASE2_PERTURBATIONS: frozenset[str] = frozenset({"none", "bound_violation", "gaussian"})
 _VALID_PHASE2_SCALE_SAMPLING: frozenset[str] = frozenset({"fixed", "loguniform", "uniform"})
 
-# The discrete `variant` field on ExperimentConfig is the source of truth
-# for dispatch in scripts/ind/train_made.py. The set is closed — unknown
-# variants raise at dispatch time. Underscore-canonical (not hyphenated) so
-# each value is a valid Python identifier we can match in a dict.
+# Dispatch set for ExperimentConfig.variant in scripts/ind/train_made.py. Closed: unknown
+# variants raise at dispatch time. Underscore-canonical so each value is a valid identifier.
 _LEGAL_VARIANTS: frozenset[str] = frozenset({
     "made_phase1",
     "made_phase2",
@@ -49,32 +47,20 @@ class ModelConfig:
     metadata_dim: int = 0
     known_system: str | None = None
     known_params: dict[str, float] = field(default_factory=dict)
-    # Location embedding fields (inD). When num_locations <= 0 the
-    # MetadataEncoder uses scalar-only mode (backward-compatible default).
+    # Location embedding fields (inD). num_locations <= 0 keeps MetadataEncoder scalar-only.
     num_locations: int = 0
     embedding_dim: int = 8
-    # The metadata encoder's output map. Default False keeps
-    # `sigmoid(mlp(...)) * param_scales`, which is what every existing checkpoint was trained
-    # under and what E01 uses, so flag-off is bit-identical.
-    #
-    # True makes it `softplus(mlp(...))`: positive, as a wheelbase must be, and unbounded above.
-    # This avoids a bound whose consequence is that, since `param_scales` defaults to ones on
-    # the inD path, the learned wheelbase could never reach 1 m against a physical ~3 m.
-    #
-    # No initial offset is added. softplus(0) = 0.693 against the old sigmoid(0) * 1.0 = 0.5, so
-    # training already starts within 0.2 m of the old regime; an offset would be an unwanted
-    # extra tuning knob.
+    # Metadata encoder's output map. False (default, bit-identical to every existing
+    # checkpoint and E01) keeps `sigmoid(mlp(...)) * param_scales`. True makes it
+    # `softplus(mlp(...))`: positive and unbounded above, since a bounded map would cap the
+    # learned wheelbase near 1 m (param_scales defaults to ones on the inD path) against a
+    # physical ~3 m. No initial offset: softplus(0)=0.693 is already close to sigmoid(0)*1.0=0.5.
     encoder_unbounded_scale: bool = False
-    # Supersedes the softplus design above. The inD known model is the
-    # kinematic bicycle at L_REF = 2.7 m, and that one constant serves MaDE's internal completion
-    # AND every scorer -- so the wheelbase is no longer something the encoder has to discover.
-    # The encoder instead emits a signed, unbounded residual and the model uses
-    #     L = L_REF + mlp(inputs)
-    # per vehicle: no sigmoid, no scale, and deliberately no clamp (the residual can be positive
-    # or negative). A clamp would hide a real failure mode, so if any vehicle's L reaches <= 0
-    # that is surfaced, not guarded.
-    #
-    # `encoder_unbounded_scale` is kept in the code but is not used by any run.
+    # Supersedes the softplus design above. inD's known model is the kinematic bicycle at
+    # L_REF = 2.7 m, used by both MaDE's completion and every scorer, so the encoder emits a
+    # signed unbounded residual instead: L = L_REF + mlp(inputs), no sigmoid, no scale, no
+    # clamp (a clamp would hide a real failure if some vehicle's L reaches <= 0).
+    # `encoder_unbounded_scale` stays in the code but unused by any run.
     encoder_lref_residual: bool = False
     location_id_index: int = 4
 
@@ -90,18 +76,13 @@ class CorrectorConfig:
     step_size: float = 0.01
     momentum: float = 0.0
     # Proximity term: J_gamma(u) = ||ReLU(g(T(x,u),u))||^2 + gamma||u - u_hat||^2.
-    # Default 0.0 and evaluation-only: the term is inference-only on frozen
-    # models, so it is constructed only on the evaluation path -- the training path does
-    # not build it at all, rather than building it and multiplying by zero.
+    # Default 0.0, evaluation-only: constructed only on the evaluation path for frozen models,
+    # never built (not built-and-zeroed) on the training path.
     proximity_gamma: float = 0.0
-    # The tracking term: the same gamma*||u - u_hat||^2, promoted into the training path so
-    # phase 2 differentiates through a corrector whose fixed point has moved.
-    #
-    # Deliberately a second field rather than a reuse of proximity_gamma, since
-    # proximity_gamma is evaluation-time only. A shared field would mean sweeping
-    # proximity_gamma silently changed what phase 2 differentiates through -- reopening
-    # that question invisibly, since the sweep would still run and still produce a curve.
-    # Two fields keep the two claims separable.
+    # Same term, gamma*||u - u_hat||^2, promoted into the training path so phase 2
+    # differentiates through a corrector whose fixed point has moved. A separate field rather
+    # than reusing proximity_gamma, so sweeping that (eval-only) field can't silently change
+    # what phase 2 differentiates through.
     tracking_gamma: float = 0.0
 
 
@@ -119,10 +100,9 @@ class TrainingConfig:
     lr_T: float = 1e-3
     lambda_min_norm: float = 0.01
     lambda_ineq: float = 1.0
-    # When True, L_ineq is stop_gradient'd in the T-side Phase-2 loss, so the
-    # inequality term supervises I_phi alone and T_theta sees L_fwd + lambda_a R_a
-    # only. Default False preserves the published behaviour exactly -- every published
-    # result was produced with the gradient reaching T_theta.
+    # True: stop_gradient L_ineq in the T-side Phase-2 loss, so the inequality term
+    # supervises I_phi alone and T_theta sees only L_fwd + lambda_a R_a. Default False
+    # preserves published behaviour (gradient reaches T_theta).
     isolate_ineq_gradient: bool = False
     lambda_inv_consistency: float = 1.0
     lambda_delta_i_norm: float = 0.01
@@ -130,10 +110,8 @@ class TrainingConfig:
     control_sampling: str = "mixture"
     inverse_training: str = "cycle"
     solver_train: str = "heun"
-    # CLAUDE.md mandates Heun() + ConstantStepSize() everywhere — adaptive
-    # solvers exhaust max_steps on stiff tan(δ) near ±π/2.  Per-config
-    # overrides may still set "tsit5" for ablations, but the safe default
-    # matches the project-wide convention.
+    # Heun() + ConstantStepSize() everywhere — adaptive solvers exhaust max_steps on stiff
+    # tan(δ) near ±π/2. Per-config overrides may still set "tsit5" for ablations.
     solver_eval: str = "heun"
     early_stopping_enabled: bool = False
     early_stopping_min_epochs: int = 0
@@ -142,14 +120,9 @@ class TrainingConfig:
     early_stopping_physical_exact: bool = False
     early_stopping_physical_saturation: bool = False
     early_stopping_forward_tol: float = 1e-6
-    # Phase 2 starts from whatever state phase 1 ended in, which is the phase-1 final model, not
-    # its best. Where early stopping selected an earlier epoch, phase 2 therefore begins from a
-    # model the run itself judged worse. With this on, the phase-1 best checkpoint is restored
-    # before phase 2 begins.
-    #
-    # Default stays False. Every existing config and every published result keeps today's
-    # behaviour; the option is set explicitly on the runs that need it, so no number moves by
-    # accident.
+    # Phase 2 starts from phase 1's final model, not its best; if early stopping picked an
+    # earlier epoch, phase 2 begins from a model the run judged worse. True restores the
+    # phase-1 best checkpoint first. Default False preserves existing/published behaviour.
     restore_phase1_best_before_phase2: bool = False
     early_stopping_inverse_tol: float = 1e-6
     early_stopping_minimum_norm_tol: float = 1e-6
@@ -164,46 +137,33 @@ class TrainingConfig:
     phase2_proposal_perturbation_scale: float = 0.0
     # Per-dimension proposal-corruption magnitudes for Phase 2.
     #
-    # When None (default) the scalar `phase2_proposal_perturbation_scale` above
-    # applies and is interpreted as a FRACTION OF THE BOX RANGE per dimension
-    # (`scale * (state_max - state_min)`); dimensions whose range is infinite
-    # receive zero perturbation. Existing configs are bit-unchanged.
+    # None (default): the scalar `phase2_proposal_perturbation_scale` above applies as a
+    # FRACTION OF THE BOX RANGE per dimension (`scale * (state_max - state_min)`); infinite-
+    # range dimensions get zero perturbation. Existing configs are bit-unchanged.
     #
-    # When set, this tuple OVERRIDES the scalar and its entries are ABSOLUTE
-    # per-dimension magnitudes in state units — sigma for the "gaussian" type,
-    # outward push distance for "bound_violation". An entry of 0.0 means that
-    # dimension is NEVER perturbed. No box range is consulted on this path, so
-    # dimensions with infinite bounds can still be corrupted.
+    # Set: this tuple overrides the scalar with ABSOLUTE per-dimension magnitudes in state
+    # units — sigma for "gaussian", outward push distance for "bound_violation". 0.0 means
+    # never perturbed. No box range consulted, so infinite-bound dimensions can be corrupted.
     #
-    # Entries must be finite and >= 0 (validated here); the length is checked
-    # against the state dimension at use time in
-    # `made.training.trainer._compute_x_proposal`, because the config does not
-    # know the state dim.
+    # Entries must be finite and >= 0 (validated here); length checked against state dim at
+    # use time in `made.training.trainer._compute_x_proposal`.
     phase2_proposal_perturbation_scale_per_dim: tuple[float, ...] | None = None
-    # Per-sample / per-dimension randomisation of the Phase-2 "gaussian"
-    # proposal corruption (domain randomisation). Gaussian-only: the
-    # deterministic "bound_violation" family raises rather than silently
-    # ignoring them, so a config can never claim randomisation it does not get.
+    # Per-sample / per-dimension randomisation of the Phase-2 "gaussian" proposal corruption
+    # (domain randomisation). Gaussian-only: "bound_violation" raises rather than silently
+    # ignoring these fields.
     #
-    # `..._scale_per_dim` (or the scalar fallback) becomes the UPPER bound
-    # sigma_max per dimension. The realised sigma is `sigma_max[d] * m[i, d]`,
-    # with the multiplier m drawn independently per batch element i and per
-    # state dimension d:
+    # `..._scale_per_dim` (or the scalar fallback) is the upper bound sigma_max per dimension.
+    # Realised sigma is `sigma_max[d] * m[i, d]`, m drawn independently per batch element i
+    # and dimension d:
+    #   "fixed"      -> m == 1 exactly, bit-for-bit today's behaviour.
+    #   "loguniform" -> log m ~ U(log min_ratio, 0). Preferred for wide brackets: uniform
+    #                   sampling would put most mass at the large end, under-training the
+    #                   near-feasible regime.
+    #   "uniform"    -> m ~ U(min_ratio, 1). For ablation.
     #
-    #   "fixed"      -> m == 1 exactly; today's behaviour, bit-for-bit, and no
-    #                   additional randomness is consumed.
-    #   "loguniform" -> log m ~ U(log min_ratio, 0). Preferred for wide
-    #                   brackets: plausible prediction errors span orders of
-    #                   magnitude, and uniform sampling puts most mass at the
-    #                   large end, under-training the near-feasible regime.
-    #   "uniform"    -> m ~ U(min_ratio, 1). Offered for ablation.
-    #
-    # `..._zero_fraction` is P(sample is left exactly clean), drawn per batch
-    # element and applied to the WHOLE state (not per dimension) -- the guard
-    # pins identity behaviour on feasible inputs, which requires a clean state.
-    #
-    # A dimension with sigma_max == 0.0 stays exactly unperturbed under every
-    # sampling mode.
+    # `..._zero_fraction` is P(sample left exactly clean), drawn per batch element and
+    # applied to the whole state (pins identity behaviour on feasible inputs).
+    # sigma_max == 0.0 stays exactly unperturbed under every sampling mode.
     phase2_proposal_perturbation_scale_sampling: str = "fixed"
     phase2_proposal_perturbation_scale_min_ratio: float = 0.0
     phase2_proposal_perturbation_zero_fraction: float = 0.0
@@ -212,7 +172,8 @@ class TrainingConfig:
     checkpoint_save_interval: int | None = None
     best_checkpoint_interval_epochs: int = 1
     metric_log_interval_steps: int = 1
-    # True for inD/field-data configs; enables Phase-2 resume constraints-factory guard in trainer.train()
+    # True for inD/field-data configs; enables the Phase-2 resume constraints-factory guard
+    # in trainer.train().
     is_field_data: bool = False
 
     def __post_init__(self) -> None:
@@ -289,9 +250,8 @@ class TrainingConfig:
                 f"[0, 1], got {_min_ratio!r}"
             )
         if _sampling != "fixed" and _min_ratio <= 0.0:
-            # Log-uniform has no support at zero, and a zero lower bound would
-            # make the "uniform" ablation non-comparable with it. Exact-zero
-            # mass belongs in phase2_proposal_perturbation_zero_fraction.
+            # Log-uniform has no support at zero; zero lower bound would make "uniform"
+            # non-comparable with it. Exact-zero mass belongs in ..._zero_fraction.
             raise ValueError(
                 "phase2_proposal_perturbation_scale_min_ratio must be in (0, 1] when "
                 f"phase2_proposal_perturbation_scale_sampling is {_sampling!r}; use "
@@ -323,31 +283,26 @@ class DataConfig:
     perturbation_scale: float = 0.0
     perturbation_scale_per_dim: tuple[float, ...] | None = None
     noise_scale: float = 0.0
-    # "iid_uniform" (default) reproduces E01's canonical white-noise-steering
-    # datasets byte-for-byte. "smooth_ou" opts into a temporally-correlated
-    # Ornstein-Uhlenbeck control profile for inD-like calm driving (E05).
+    # "iid_uniform" (default) reproduces E01's canonical white-noise-steering datasets
+    # byte-for-byte. "smooth_ou" opts into a temporally-correlated Ornstein-Uhlenbeck
+    # control profile for inD-like calm driving (E05).
     control_profile: str = "iid_uniform"
     control_tau: float = 1.5
-    # Minimum longitudinal speed a generated trajectory must maintain at every
-    # timestep (dynamic-bicycle layout only; index 3 is only speed for that
-    # layout). None (default) disables the floor and reproduces byte-identical
-    # legacy generation.
+    # Minimum longitudinal speed a trajectory must maintain at every timestep
+    # (dynamic-bicycle layout only, index 3). None (default) disables the floor and
+    # reproduces byte-identical legacy generation.
     min_speed: float | None = None
-    # The control SAMPLING box, per dimension.
+    # Control SAMPLING box, per dimension.
     #
-    # The dynamic-bicycle sampler narrowed steering to +-0.2 and acceleration to +-1.5 inside a
-    # constraint set of +-0.5 and +-3.0, hardcoded and duplicated in both control samplers, so
-    # that generated data does not sit trivially at the edges of its own scored box.
-    #
-    # None (default) keeps that hardcoded narrowing exactly, so every dataset not being
-    # regenerated stays byte-for-byte reproducible. Set it and the sampler uses these bounds
-    # instead, with the special case skipped rather than retuned.
+    # The dynamic-bicycle sampler hardcodes steering to +-0.2 and acceleration to +-1.5
+    # inside a constraint set of +-0.5 and +-3.0, so generated data doesn't sit trivially at
+    # the edges of its own scored box. None (default) keeps that hardcoded narrowing, so
+    # existing datasets stay byte-for-byte reproducible; set to use these bounds instead.
     control_sample_min: tuple[float, ...] | None = None
     control_sample_max: tuple[float, ...] | None = None
-    # Observation noise added at GENERATION time, on every split.
-    # `noise_scale` above is the magnitude; this switches it on at generation rather than only
-    # at evaluation. False (default) reproduces existing generation, where noise_scale was
-    # carried in the metadata of every dataset and never applied at generation.
+    # Observation noise added at GENERATION time, on every split. `noise_scale` is the
+    # magnitude; this switches it on at generation rather than only at evaluation. False
+    # (default) reproduces existing generation (noise_scale carried in metadata, unapplied).
     add_generation_noise: bool = False
 
     def __post_init__(self) -> None:
@@ -390,10 +345,9 @@ class UpstreamConfig:
     stage1_mu_ineq: float = 1.0
     stage1_mu_dyn: float = 1.0
     stage1_epochs: int = 25
-    # MSE only, strictly. "full" would add an inequality penalty and a discretised
-    # dynamics penalty at unit weight, which would make every predictor in the paper
-    # dynamically consistent with the known model -- the property MaDE exists to supply.
-    # "mse_ineq" and "full" remain as dead options; the default must stay "mse".
+    # MSE only, strictly. "full" would add inequality + discretised-dynamics penalties,
+    # making every predictor dynamically consistent -- the property MaDE exists to supply.
+    # "mse_ineq" and "full" remain as dead options; default must stay "mse".
     stage1_loss: str = "mse"
 
 
@@ -445,11 +399,8 @@ class FABBaselineConfig:
     es_patience: int = 0
     es_min_delta: float = 1e-4
     es_min_epochs: int = 0
-    # Standardise the encoder's input by training-split statistics, and carry those
-    # statistics into inference by storing them on the module.
-    #
-    # Default False. Every published FAB number was produced without it, and flipping the
-    # default would silently restate them. Callers that want normalisation pass it explicitly.
+    # Standardise the encoder's input by training-split statistics, carried into inference
+    # via the module. Default False: every published FAB number was produced without it.
     normalise_inputs: bool = False
 
     def __post_init__(self) -> None:

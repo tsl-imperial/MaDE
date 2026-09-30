@@ -46,9 +46,8 @@ class GatingNetwork(eqx.Module):
 class FABBaseline(eqx.Module):
     """Latent-projection autoencoder baseline.
 
-    Carries optional input-normalisation statistics. They are
-    identity unless `with_input_statistics` sets them, so every existing checkpoint and every
-    published number is unaffected -- asserted bit-identical, not assumed.
+    Carries optional input-normalisation statistics, identity unless `with_input_statistics`
+    sets them, so existing checkpoints stay bit-identical.
     """
 
     encoder: eqx.nn.MLP
@@ -57,22 +56,14 @@ class FABBaseline(eqx.Module):
     state_dim: int
     latent_dim: int
     latent_radius: float
-    # Input normalisation, WITH the statistics carried into
-    # inference. They live on the module rather than in the training loop for exactly that
-    # reason -- statistics that stay in the trainer normalise training inputs and leave the
-    # model evaluated off distribution, which still produces a plausible-looking result.
+    # Input normalisation stats, carried into inference. Identity by default (zero mean, unit
+    # scale) so an instance never given statistics behaves as before.
     #
-    # Identity by default -- zero mean, unit scale -- so an instance that was never given
-    # statistics behaves EXACTLY as the published class did. `(x - 0.0) / 1.0` is exact in
-    # IEEE arithmetic, so that is bit-identity rather than approximate agreement, verified
-    # against the pre-change class directly rather than argued.
-    #
-    # **STATIC leaves, not arrays.** As `jax.Array` fields they would be caught by
-    # `eqx.filter(model, eqx.is_array)`, land in the optimiser state, and be TRAINED as free
-    # parameters -- which silently defeats the entire purpose, because statistics that drift
-    # during training are no longer the training set's statistics. As tuples they are static:
-    # `filter_jit` closes over them, `apply_updates` cannot touch them, and they are constants
-    # by construction rather than by convention.
+    # Static leaves, not arrays: as `jax.Array` fields they would be caught by
+    # `eqx.filter(model, eqx.is_array)`, land in the optimiser state, and train as free
+    # parameters -- statistics that drift during training are no longer the training set's
+    # statistics. As tuples they are static: `filter_jit` closes over them, `apply_updates`
+    # cannot touch them.
     input_mean: tuple[float, ...]
     input_scale: tuple[float, ...]
 
@@ -118,10 +109,9 @@ class FABBaseline(eqx.Module):
     def _stats(self) -> tuple[jax.Array, jax.Array]:
         """Mean and scale, tolerating instances that predate the fields.
 
-        `getattr`, NOT a direct read. `from_checkpoint` UNPICKLES, so an object written before
-        these fields existed comes back without them and a direct read raises AttributeError on
-        every published FAB evaluation. The corrector hit precisely this with `proximity_gamma`.
-        A pre-field checkpoint reads as identity, which is the behaviour it was trained with.
+        Uses `getattr`, not a direct read: `from_checkpoint` unpickles, so an object written
+        before these fields existed comes back without them and a direct read raises
+        AttributeError. A pre-field checkpoint reads as identity, the behaviour it trained with.
         """
         mean = getattr(self, "input_mean", None)
         scale = getattr(self, "input_scale", None)
@@ -135,12 +125,11 @@ class FABBaseline(eqx.Module):
         return (raw - mean) / scale
 
     def denormalise(self, normalised: jax.Array) -> jax.Array:
-        """Normalised -> raw. **Without this the whole change is the defect it guards against.**
+        """Normalised -> raw.
 
-        The decoder reconstructs the encoder's INPUT, so once inputs are normalised its output
+        The decoder reconstructs the encoder's input, so once inputs are normalised its output
         lives in normalised space. Returning that directly would hand the caller a corrected
-        pair in the wrong units -- finite, smooth, and wrong by the scale factor. Carrying the
-        statistics into inference is this method as much as it is `normalise`.
+        pair in the wrong units.
         """
         mean, scale = self._stats()
         return normalised * scale + mean
@@ -184,12 +173,10 @@ class FABBaseline(eqx.Module):
 
     @classmethod
     def from_checkpoint(cls, path: str) -> "FABBaseline":
-        """Load a FABBaseline from a checkpoint directory (Plan 3 contract).
+        """Load a FABBaseline from a checkpoint directory.
 
         Expects the checkpoint layout written by ``save_fab_checkpoint``:
         a ``fab_model.pkl`` file inside ``path``.
-
-        Plan 3 contract: do not break this signature.
         """
         import pickle
         from pathlib import Path
@@ -254,10 +241,9 @@ def _weighted_mean_loss(losses: list[tuple[int, float]]) -> float:
 
 
 
-# A channel with no variation in the training data would divide by zero. This is a
-# POSITIVE-SCALE guard on a normaliser, not a tolerance and not a convergence test; it fires
-# only where the training set is genuinely constant along a dimension, and there the
-# normalised value is zero either way.
+# A channel with no variation in the training data would divide by zero. Positive-scale guard
+# on the normaliser, not a tolerance or convergence test; fires only where the training set is
+# constant along a dimension, where the normalised value is zero either way.
 _SCALE_FLOOR = 1e-8
 
 
@@ -284,17 +270,14 @@ def fab_input_statistics(batches, state_dim: int) -> tuple[tuple[float, ...], tu
 def with_input_statistics(model: "FABBaseline", mean, scale) -> "FABBaseline":
     """Return a copy of `model` carrying `mean`/`scale`.
 
-    A shallow copy with the two fields overwritten, and neither obvious alternative works:
+    Shallow copy with the two fields overwritten:
 
-    - `eqx.tree_at` addresses pytree LEAVES, and the statistics are static tuples precisely so
-      the optimiser cannot reach them. It raises "`where` must use just the PyTree structure".
-    - `dataclasses.replace` routes through `__init__`, and this module's `__init__` takes
-      `state_dim`/`latent_dim`/`key` rather than its own fields, so it raises
-      `unexpected keyword argument 'input_mean'`. Going through `__init__` would also
-      re-initialise the networks from a key, which is the opposite of what is wanted.
+    - `eqx.tree_at` addresses pytree leaves, and the statistics are static tuples precisely so
+      the optimiser cannot reach them; it raises "`where` must use just the PyTree structure".
+    - `dataclasses.replace` routes through `__init__`, which takes `state_dim`/`latent_dim`/
+      `key` rather than these fields, and would re-initialise the networks from a key.
 
-    So: copy, then set. `object.__setattr__` is required because the dataclass is frozen, and
-    it is what equinox does internally for the same reason.
+    `object.__setattr__` is required because the dataclass is frozen.
     """
     import copy
 
@@ -335,9 +318,8 @@ def train_fab_baseline(
     train_batches = list(train_loader)
     val_batches = list(val_loader)
 
-    # Statistics from the TRAINING split only, computed once, baked into the model
-    # BEFORE the optimiser is re-initialised over it, and carried into inference because they
-    # live on the module. Validation batches are deliberately not included.
+    # Statistics from the training split only, computed once, baked into the model before the
+    # optimiser is re-initialised over it. Validation batches are not included.
     if config.normalise_inputs:
         mean, scale = fab_input_statistics(train_batches, model.state_dim)
         model = with_input_statistics(model, mean, scale)

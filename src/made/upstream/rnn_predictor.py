@@ -1,4 +1,4 @@
-"""LSTM upstream trajectory predictor for E05 (inD real-data experiment)."""
+"""LSTM upstream trajectory predictor for the inD real-data experiment."""
 
 from __future__ import annotations
 

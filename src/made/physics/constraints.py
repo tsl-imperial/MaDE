@@ -239,13 +239,10 @@ def inD_physical_constraints(
     )
 
 
-# The empirical speed bound, measured on the inD TRAINING split.
-#
-# 16.3764 m/s is the 99th percentile, with exactly 1.0000% of the 1,572,732 training frames
-# above it. It sits BETWEEN two earlier candidate boxes found in conflict: a published clamp box
-# at 13.9 was BELOW the data's own 99th percentile and so clipped real vehicles, while a
-# published scored box at 22.0 was above even the 99.9th percentile of 19.73. The observed
-# maximum is 27.476.
+# Empirical speed bound, measured on the inD TRAINING split: 99th percentile (1.0000% of
+# 1,572,732 training frames above it), between the 13.9 clamp box (below the data's 99th
+# percentile, clips real vehicles) and the 22.0 scored box (above the 99.9th percentile of
+# 19.73). Observed maximum is 27.476.
 IND_EMPIRICAL_V_MAX: float = 16.376399999999997
 
 
@@ -255,21 +252,17 @@ def inD_empirical_constraints(
     a_min: float = -8.0,
     a_max: float = 4.0,
 ) -> BoxConstraints:
-    """The recorded-data inequality set. ONE object for clamp AND metric.
+    """The recorded-data inequality set. One object for clamp AND metric.
 
-    - **Speed upper bound is EMPIRICAL**, the 99th percentile of the training-split speed
-      distribution. The lower bound stays 0, which is physical rather than empirical, so the
-      set is one-sided.
-    - **Steering and acceleration are HARD-CODED** at the values `inD_physical_constraints()`
-      already carries, deliberately: do not invent new numbers. Empirical control bounds cannot
-      be recovered reliably because the controls are not observed, and any bound would come
-      from inverse-recovered pseudo-controls carrying the recordings' own noise.
-    - **Position stays dropped**, and is ±inf here by construction as in every inD constructor.
-    - **Heading is a wrap, not a bound**, and carries no information at ±pi.
+    - Speed upper bound is empirical: the 99th percentile of training-split speed. Lower
+      bound stays 0 (physical, not empirical), so the set is one-sided.
+    - Steering and acceleration are hard-coded at `inD_physical_constraints()`'s values:
+      empirical control bounds can't be recovered reliably since controls aren't observed.
+    - Position stays dropped (±inf), as in every inD constructor.
+    - Heading is a wrap, not a bound; carries no information at ±pi.
 
-    **The whole point is that ONE object is passed to the clamp projection and to the metric.**
-    Earlier candidate boxes disagreed — clamp projecting real traffic onto a SIMULATED vehicle's
-    13.9 m/s while the metric scored against 22.0 — and that is the defect this removes.
+    One object passed to both clamp projection and metric, so they can't disagree (earlier
+    candidate boxes had clamp project onto 13.9 m/s while the metric scored against 22.0).
     """
     inf = jnp.inf
     return BoxConstraints(

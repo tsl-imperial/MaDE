@@ -1,5 +1,4 @@
-"""Tests for `return_diagnostics` threaded through `apply_made_trajectory_with_controls`
-(rebuttal item C).
+"""Tests for `return_diagnostics` threaded through `apply_made_trajectory_with_controls`.
 
 `apply_made_trajectory_with_controls` applies a frozen `MaDECell` autoregressively
 via `jax.lax.scan`. With `return_diagnostics=True` (only permitted under

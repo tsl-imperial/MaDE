@@ -47,10 +47,8 @@ def _build_inputs() -> dict[str, dict]:
     constraints = kinematic_bicycle_constraints()
     dt = 0.1
 
-    # ------------------------------------------------------------------
     # Standard fixed batch: N=2 trajectories of length 5, kinematic-bicycle.
     # Feasible by construction (small δ, small a, moderate v).
-    # ------------------------------------------------------------------
     key = jax.random.key(0)
     x_corr_a = jnp.array(
         [
@@ -77,33 +75,25 @@ def _build_inputs() -> dict[str, dict]:
     x_gt_batched = x_batched + 0.001  # tiny offset so fidelity is non-zero
     del key
 
-    # ------------------------------------------------------------------
     # Unbatched (single trajectory) — same metric helpers must dispatch
     # via _is_batched and produce a finite scalar.
-    # ------------------------------------------------------------------
     x_unbatched = x_corr_a
     u_unbatched = jnp.tile(jnp.array([0.05, 0.5]), (4, 1))
     x_gt_unbatched = x_unbatched + 0.001
 
-    # ------------------------------------------------------------------
     # Length-1 trajectory — dynamics_violation_known short-circuits to 0.0.
-    # ------------------------------------------------------------------
     x_len1 = x_corr_a[:1]
     u_len1 = jnp.zeros((0, 2))
     x_gt_len1 = x_len1
 
-    # ------------------------------------------------------------------
     # Empty trajectory — fidelity short-circuits to 0.0.
-    # ------------------------------------------------------------------
     x_empty = jnp.zeros((0, 4))
     u_empty = jnp.zeros((0, 2))
     x_gt_empty = jnp.zeros((0, 4))
 
-    # ------------------------------------------------------------------
     # tan(δ) near ±π/2 — Heun + ConstantStepSize stencil must remain finite
     # because of the internal jnp.clip(δ, -1.4, 1.4) in vector_field.
     # 6D state would be DynamicBicycle; we use KB with extreme δ here.
-    # ------------------------------------------------------------------
     delta_extreme = float(jnp.pi / 2 - 1e-3)
     x_extreme = jnp.array(
         [

@@ -1,4 +1,4 @@
-"""Tests for build_system factory (US-006)."""
+"""Tests for build_system factory."""
 
 import pytest
 import jax

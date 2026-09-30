@@ -60,8 +60,8 @@ def true_state_dim(cfg) -> int:
 def _condition(cfg) -> dict:
     """True system, known system and eval regime, all read from the config.
 
-    **The regime is not a constant.** Only the dynamic-bicycle condition is underspecified; on
-    the other three the known model IS the data-generating model, so they are fully specified.
+    Only the dynamic-bicycle condition is underspecified; on the other three the known model
+    is the data-generating model, so they are fully specified.
     """
     true_system = cfg.physics.true_system
     known_system = getattr(cfg.model, "known_system", None)
@@ -94,12 +94,11 @@ def _box(constraints):
 
 
 def _true_step_fn(dt: float, true_params: jax.Array, true_system: str):
-    """One step of the TRUE system — the manifold generator 3 moves along.
+    """One step of the true system, the manifold generator 3 moves along.
 
-    **Whether this is privileged information depends on the condition.** On the underspecified
-    dynamic bicycle the true model is denied to the model, so using it to synthesise negatives
-    is a disclosure. On the three fully-specified conditions the true model IS the known model
-    and there is no asymmetry at all. `_condition` decides which case applies.
+    On the underspecified dynamic bicycle the true model is denied to the model, so using it
+    to synthesise negatives is a disclosure. On the three fully-specified conditions the true
+    model is the known model, so there is no asymmetry. `_condition` decides which case applies.
     """
     true_physics, _ = build_system(true_system)
     dynamics = AugmentedDynamics(true_physics, ZeroResidual(true_physics.state_dim))
@@ -147,7 +146,7 @@ def _train_phase2(
     key: jax.Array,
     normalise: tuple[jax.Array, jax.Array] | None = None,
 ):
-    """The two sides alternate with DISTINCT objectives: not a minimax loss — the
+    """The two sides alternate with distinct objectives: not a minimax loss -- the
     discriminator's gradient never reaches the autoencoder's parameters, nor the reverse.
     """
     d_opt = optax.adam(lr_disc)
@@ -255,15 +254,14 @@ def main() -> int:
 
     config_path = Path(a.config_dir) / f"{PREFIX[a.system]}_fab.json"
     cfg = load_config(str(config_path))
-    # Unnoised feasible pairs for BOTH arms: phase 2's hinge would otherwise place noisy
-    # near-feasible points inside the sphere while generator 2 places perturbations of
-    # similar magnitude outside it, and no result from contradictory labels would mean
-    # anything.
+    # Unnoised feasible pairs for both arms: phase 2's hinge would otherwise place noisy
+    # near-feasible points inside the sphere while generator 2 places similar-magnitude
+    # perturbations outside it, making the labels contradictory.
     #
-    # **That is a statement about the TRAINING pairs and nothing else.** The zero is therefore
-    # passed to the two loaders as an argument and `cfg.data.noise_scale` is left at its
-    # configured value, because `evaluate.main_programmatic` reads the SAME field to decide
-    # whether to add observation noise at evaluation time.
+    # This concerns the training pairs only: the zero is passed to the two loaders as an
+    # argument, and `cfg.data.noise_scale` is left at its configured value, since
+    # `evaluate.main_programmatic` reads the same field to decide whether to add observation
+    # noise at evaluation time.
     cfg = replace(
         cfg,
         training=replace(cfg.training, seed=a.seed),

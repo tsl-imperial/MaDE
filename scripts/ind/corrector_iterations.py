@@ -151,9 +151,9 @@ def main() -> int:
         for family in families:
             for pseed in pseeds:
                 predictor, _ = load_predictor(f"{predictor_root}/{family}_stage1_seed{pseed}")
-                # The predictor is a SINGLE-window callable; the full pass batches it through
-                # `_chunked_predictor_forward`, not by calling it on the whole array (which
-                # silently produces the wrong shape rather than failing cleanly).
+                # The predictor is a single-window callable; batch it through
+                # `_chunked_predictor_forward` rather than call it on the whole array (which
+                # silently produces the wrong shape instead of failing cleanly).
                 x_pred_all = E._chunked_predictor_forward(predictor, context_all, 4096)
                 params_all = made_model.params_from_metadata(metadata_all)
 

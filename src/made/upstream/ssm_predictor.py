@@ -1,8 +1,8 @@
-"""Compact selective state-space (S6) sequence model upstream predictor for E05.
+"""Compact selective state-space (S6) sequence model upstream predictor.
 
 A faithful but small S6 (selective state-space) implementation in Equinox: no
 custom CUDA kernel — the selective scan runs as a ``jax.lax.scan`` over the
-context window, which is entirely adequate at E05 scale (H ≈ 10 steps).
+context window, adequate at this scale (H ≈ 10 steps).
 
 Metadata conditioning enters ONLY through the initial scan state of each block:
 ``h0 [d_inner, d_state] = init_state_proj(static)``, zero-initialised so an

@@ -1,4 +1,4 @@
-"""Tests that all baselines conform to the CorrectionBaseline protocol (US-021).
+"""Tests that all baselines conform to the CorrectionBaseline protocol.
 
 The CorrectionBaseline protocol returns (corrected_x_prev, corrected_x_curr):
 both elements are state-dim arrays representing the corrected consecutive pair.

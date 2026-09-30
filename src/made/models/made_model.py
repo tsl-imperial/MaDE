@@ -156,28 +156,22 @@ class MaDEModel(eqx.Module):
 
     @classmethod
     def from_checkpoint(cls, path: str, *, select: str = "best") -> "MaDEModel":
-        """Load a MaDEModel from a checkpoint directory (Plan 3 contract).
+        """Load a MaDEModel from a checkpoint directory.
 
         Expects the checkpoint layout written by ``CheckpointManager.save``: a numeric step
         subdirectory containing ``state.pkl``.
 
         ``select``:
 
-        - ``"best"`` (default) restores the **best-validation** checkpoint, the step
-          persisted as ``early_stop_best_step``. Checkpoint selection is on the validation
-          loss of the training objective.
-        - ``"last"`` restores the highest available step, which was the earlier default
-          behaviour. **Reproducing a published number requires this**, because the
-          published artifacts were evaluated at the final step: on inD seed 0 the two differ
-          by roughly 15 epochs and 183,000 steps. A caller reproducing published results must
-          pin ``"last"`` for exactly that reason.
+        - ``"best"`` (default) restores the best-validation checkpoint, the step persisted as
+          ``early_stop_best_step``, selected on the validation loss of the training objective.
+        - ``"last"`` restores the highest available step. Reproducing a published number
+          requires this, since published artifacts were evaluated at the final step: on inD
+          seed 0 the two differ by roughly 15 epochs and 183,000 steps.
 
         Falls back to the highest step, with a warning, when ``"best"`` is asked for but no
-        ``early_stop_best_step`` is recorded or its checkpoint is absent — so a checkpoint
+        ``early_stop_best_step`` is recorded or its checkpoint is absent, so a checkpoint
         written before this field existed still loads.
-
-        Plan 3 contract: the positional signature is unchanged. Plan 3 imports ``MaDEModel``
-        and calls ``MaDEModel.from_checkpoint(path)``.
         """
         import sys
 

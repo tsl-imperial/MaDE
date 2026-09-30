@@ -1,8 +1,6 @@
 
 
-# ---------------------------------------------------------------------------
 # The unbounded output map, behind a flag that defaults off.
-# ---------------------------------------------------------------------------
 
 
 def _encoder(unbounded: bool, *, lref_residual: bool = False, param_dim: int = 1,
@@ -69,9 +67,7 @@ def test_encoder_unbounded_flag_on_can_exceed_one():
     assert float(on(meta)[0]) > 0.0  # a wheelbase stays positive under softplus
 
 
-# ---------------------------------------------------------------------------
 # L = L_REF + signed residual, replacing the earlier softplus head.
-# ---------------------------------------------------------------------------
 
 
 def test_lref_residual_equals_l_ref_when_the_mlp_outputs_zero():

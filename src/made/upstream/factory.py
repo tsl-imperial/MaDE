@@ -1,4 +1,4 @@
-"""Construction / serialisation factory for E05 upstream predictors.
+"""Construction / serialisation factory for upstream predictors.
 
 ``make_predictor`` is the single dispatch point from a string ``kind`` to a
 concrete :class:`~made.upstream.base.UpstreamPredictor` subclass.

@@ -1,12 +1,12 @@
 """Correctness tests for train_predictor._chunked_weighted_mean (validation MSE).
 
-Context: the previous code computed validation MSE with a single ``eqx.filter_jit``'d vmap
-over the ENTIRE val split (50,114 windows for real inD data); the SSM predictor's scan
-intermediates made XLA try to allocate 34.10 GiB. ``_chunked_weighted_mean`` evaluates fixed-
-size chunks (default 2048) and combines them as the exact weighted mean, with the last partial
-chunk zero-padded and masked so only one shape is ever traced. This module checks the
-combination is numerically equal to the unchunked mean and that a chunk size that does not
-evenly divide the sample count (forcing a real padded partial last chunk) is handled correctly.
+Vmapping over the entire val split (50,114 windows for real inD data) makes XLA try to
+allocate 34.10 GiB for the SSM predictor's scan intermediates. ``_chunked_weighted_mean``
+evaluates fixed-size chunks (default 2048) and combines them as the exact weighted mean, with
+the last partial chunk zero-padded and masked so only one shape is ever traced. This module
+checks the combination is numerically equal to the unchunked mean and that a chunk size that
+does not evenly divide the sample count (forcing a real padded partial last chunk) is handled
+correctly.
 """
 
 from __future__ import annotations

@@ -19,14 +19,12 @@ def perturb_trajectories(
 
     Args:
         states: Array of shape (N, T, state_dim).
-        config: DataConfig carrying perturbation_type and perturbation_scale.
-        key: PRNG key (used by stochastic types; ignored by deterministic ones).
         state_bounds: Optional ``(state_min, state_max)`` tuple of arrays with shape
-            ``(state_dim,)``.  Required when ``config.perturbation_type ==
-            "bound_violation"``; ignored by all other perturbation types.
+            ``(state_dim,)``. Required when ``config.perturbation_type ==
+            "bound_violation"``; ignored otherwise.
 
     Returns:
-        Perturbed states array with the same shape as *states*.
+        Perturbed states array, same shape as *states*.
     """
     if config.perturbation_scale == 0.0:
         return states

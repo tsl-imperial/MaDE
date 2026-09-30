@@ -1,4 +1,4 @@
-"""Checkpoint save/restore round-trip tests (US-019)."""
+"""Checkpoint save/restore round-trip tests."""
 
 # ruff: noqa: E402
 
@@ -153,10 +153,6 @@ def test_restore_none_on_empty(tmp_path):
     ckpt = CheckpointManager(str(tmp_path / "empty"))
     assert ckpt.restore() is None
 
-
-# ---------------------------------------------------------------------------
-# comparability_signature resume checks (Phase 2 — cadence controls)
-# ---------------------------------------------------------------------------
 
 import json
 from pathlib import Path
@@ -390,7 +386,7 @@ def test_resume_old_meta_without_noise_scale_loads_cleanly(tmp_path):
     """
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
-    # Write meta WITHOUT noise_scale (simulates a pre-Anomaly-1-fix checkpoint).
+    # Write meta without noise_scale (old checkpoint).
     _write_sig(
         tmp_path / "ckpt",
         step=0,
@@ -405,10 +401,6 @@ def test_resume_old_meta_without_noise_scale_loads_cleanly(tmp_path):
     _check_train_meta(ckpt, 0, cfg, data_cfg=DataConfig(noise_scale=0.0))
     _check_train_meta(ckpt, 0, cfg, data_cfg=DataConfig(noise_scale=0.1))
 
-
-# ---------------------------------------------------------------------------
-# pretrained_phase1_path helper tests (Phase C3)
-# ---------------------------------------------------------------------------
 
 from made.training.trainer import (
     _maybe_copy_pretrained_checkpoint,
@@ -479,11 +471,6 @@ def test_pretrained_phase1_path_missing_raises(tmp_path):
     local_dir.mkdir()
     with pytest.raises(FileNotFoundError, match="does_not_exist"):
         _maybe_copy_pretrained_checkpoint(missing, str(local_dir))
-
-
-# ---------------------------------------------------------------------------
-# M2 — Phase-1 source validation tests
-# ---------------------------------------------------------------------------
 
 
 def test_pretrained_phase1_path_rejects_phase2_only_source(tmp_path):
@@ -587,11 +574,6 @@ def test_pretrained_phase1_path_rejects_missing_meta(tmp_path):
         _maybe_copy_pretrained_checkpoint(str(src_dir), str(local_dir))
 
 
-# ---------------------------------------------------------------------------
-# H3 — pretrained_phase1_path in comparability_signature
-# ---------------------------------------------------------------------------
-
-
 def test_pretrained_phase1_path_in_comparability_signature(tmp_path):
     """train_meta.json written by _write_train_meta includes pretrained_phase1_path in sig."""
     from made.training.trainer import _write_train_meta
@@ -649,11 +631,6 @@ def test_pretrained_phase1_path_old_checkpoint_without_field_loads_cleanly(tmp_p
         pretrained_phase1_path="/any/path/checkpoints",
     )
     _check_train_meta(ckpt, 0, cfg)  # must not raise
-
-
-# ---------------------------------------------------------------------------
-# Curriculum meta-rewrite regression test (Phase C4)
-# ---------------------------------------------------------------------------
 
 
 def test_maybe_copy_rewrites_train_meta_for_curriculum(tmp_path):
@@ -824,13 +801,12 @@ def test_rewrite_phase1_seed_meta_is_idempotent(tmp_path):
 
 
 def test_rewrite_phase1_seed_meta_self_heals_stale_partial_seed(tmp_path):
-    """Stale Phase-1 source seed (left by a pre-fix failed run) is migrated on demand.
+    """Stale Phase-1 source seed is migrated on demand.
 
-    Mirrors the production scenario: a curriculum cell crashed before its first
-    Phase-2 checkpoint, leaving a state.pkl + meta with pretrained_phase1_path=None
-    and resume.phase=1. The next train() call's self-heal step calls
-    _rewrite_phase1_seed_meta on the highest step's meta, which then satisfies
-    _check_train_meta on resume.
+    Covers a curriculum cell that crashed before its first Phase-2 checkpoint,
+    leaving state.pkl + meta with pretrained_phase1_path=None and resume.phase=1.
+    The next train() call's self-heal step calls _rewrite_phase1_seed_meta on the
+    highest step's meta, which then satisfies _check_train_meta on resume.
     """
     src_path = "/some/source/checkpoints"
     ckpt_dir = tmp_path / "checkpoints"

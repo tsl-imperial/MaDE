@@ -58,13 +58,8 @@ def _with_flag(value, fn):
 
 
 def test_flag_is_on_by_default():
-    """Default ON since 2026-09-22, for training and evaluation alike.
-
-    The E1 bitwise snapshot was regenerated under this change via the sanctioned
-    MADE_E1_SNAPSHOT_REFRESH route in tests/data/e1_metrics_snapshot_README.md.
-    MADE_FAST_HEUN=0 is the documented fallback and is what the jaxpr structural
-    guards pin.
-    """
+    """Default ON for training and evaluation alike; MADE_FAST_HEUN=0 is the documented
+    fallback and what the jaxpr structural guards pin."""
     os.environ.pop("MADE_FAST_HEUN", None)
     assert AD._fast_heun_enabled() is True
     assert _with_flag("0", AD._fast_heun_enabled) is False

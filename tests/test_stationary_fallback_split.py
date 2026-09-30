@@ -50,12 +50,8 @@ def test_threshold_boundary_is_strict_less_than():
 
 @pytest.mark.parametrize("system", ["kinematic_bicycle", "double_integrator", "unicycle"])
 def test_simulated_construction_never_yields_the_fallback(system):
-    """E01 builds through build_system_for_model, which must hand back the ANALYTIC base.
-
-    This is the regression that matters: simulated data has no sensor jitter, so a guard
-    against jitter must not reach it. (Separately: the fallback IS what shifted the published
-    simulated numbers on the seeds that ran under it.)
-    """
+    """build_system_for_model must hand back the ANALYTIC base: simulated data has no
+    sensor jitter, so the jitter guard must not reach it."""
     physics, _ = build_system_for_model(system, None)
     assert not isinstance(physics, KinematicBicycleFieldData), (
         f"{system} must not receive the field-data fallback"
@@ -63,11 +59,8 @@ def test_simulated_construction_never_yields_the_fallback(system):
 
 
 def test_underspecified_db_known_model_is_not_field_data():
-    """DB-underspecified uses KB as its KNOWN model and is simulated, so it takes the base.
-
-    It measured bit-identical to published because 0.00% of its transitions fall below the
-    threshold -- a data property, not a code boundary. This pins the code boundary too.
-    """
+    """DB-underspecified uses KB as its KNOWN model and is simulated, so it takes the base
+    regardless of transition speeds -- pins the code boundary, not a data property."""
     physics, _ = build_system_for_model("dynamic_bicycle", "kinematic_bicycle")
     assert not isinstance(physics, KinematicBicycleFieldData)
     inner = getattr(physics, "_kinematic", None)

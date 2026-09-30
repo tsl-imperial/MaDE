@@ -13,11 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.sim.run_matrix import _resolve_pretrained_phase1_path
 
 
-# ---------------------------------------------------------------------------
-# M1 — seed substitution in pretrained_phase1_path
-# ---------------------------------------------------------------------------
-
-
 def test_run_e01_seed_substitutes_pretrained_phase1_path():
     """When the path contains 'seed0', it is rewritten to 'seed{N}' for the given seed."""
     path = "outputs/foo/seed0/checkpoints"

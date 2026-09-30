@@ -115,9 +115,8 @@ def test_boundary_location_ids(location_id: float) -> None:
 
 
 def test_single_encoder_layer_constructs_and_runs() -> None:
-    """Regression test: a key-split off-by-one previously left `layer_keys` one
-    key short, which raised IndexError at num_layers=1 (and silently duplicated
-    the last two layers' init keys at the default num_layers=2)."""
+    """Guards a key-split off-by-one: `layer_keys` one key short raises IndexError at
+    num_layers=1 and silently duplicates the last two layers' init keys at num_layers=2."""
     model = TransformerPredictor(
         horizon=F,
         state_mean=STATE_MEAN,

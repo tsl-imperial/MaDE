@@ -50,12 +50,11 @@ def apply_baseline_over_trajectory(
         x_corr: (T, state_dim) corrected state trajectory
         u_corr: (T-1, control_dim) zero-filled control placeholder
     """
-    # states: (T, state_dim), consecutive pairs are (states[:-1], states[1:])
     x_prev_all = states[:-1]  # (T-1, state_dim)
     x_curr_all = states[1:]   # (T-1, state_dim)
     state_dim = states.shape[-1]
 
-    # Carry: rolling history window of shape (history_len, state_dim)
+    # rolling history window, shape (history_len, state_dim)
     init_carry = jnp.broadcast_to(states[0][None], (history_len, state_dim))
 
     def scan_fn(
@@ -71,7 +70,6 @@ def apply_baseline_over_trajectory(
     )
     del final_carry
 
-    # Prepend the first corrected x_prev to get T total corrected states
     x_corr = jnp.concatenate([x_prev_c_all[:1], x_curr_c_all], axis=0)  # (T, state_dim)
     u_corr = jnp.zeros_like(controls)
 

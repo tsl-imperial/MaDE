@@ -1,4 +1,4 @@
-"""Clamp baseline smoke tests for the inD pipeline (Plan 1 / inD baseline coverage).
+"""Clamp baseline smoke tests for the inD pipeline.
 
 Mirrors test_mlp_inD.py: exercises ClampBaseline with kinematic-bicycle box
 constraints on inD-shaped metadata (width 5), verifying shape, finite outputs,

@@ -154,12 +154,11 @@ def _phase1_components(
     l_inv = inverse_consistency_loss(cell, x_prev, u_sampled, params, dt)
     l_norm = minimum_norm_loss(cell, x_prev, u_sampled, params)
     l_delta_i = inverse_residual_norm(cell, x_prev, x_curr, params, x_proposal=x_proposal)
-    # NOTE: lambda_delta_i_norm is now part of the headline phase 1 total so that
-    # `phase1_loss` / `phase2_loss` (and therefore the validation loss + early-
-    # stopping criterion) reflect the same regularizer pressure that the I-side
-    # training is applying. On the T-side the term contributes only a constant
-    # offset (zero gradient) because `phase1_t_loss` / `phase2_t_loss` route the
-    # cell through `stop_i_side`, freezing the inverse-dynamics leaves.
+    # lambda_delta_i_norm is part of the headline phase 1 total so `phase1_loss` /
+    # `phase2_loss` (and the validation loss + early-stopping criterion) reflect the same
+    # regularizer pressure as I-side training. On the T-side it is a constant offset (zero
+    # gradient) since `phase1_t_loss` / `phase2_t_loss` route through `stop_i_side`,
+    # freezing the inverse-dynamics leaves.
     total = (
         l_fwd
         + config.lambda_inv_consistency * l_inv
@@ -229,9 +228,8 @@ def phase1_i_loss(
     x_proposal: jax.Array | None = None,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
     """I-side Phase 1 loss with T/encoder leaves stopped."""
-    # NOTE: lambda_delta_i_norm is part of `_phase1_components` and propagates
-    # into this total automatically via `phase1_loss`. The previous explicit
-    # addition here would now double-count and has been removed.
+    # lambda_delta_i_norm is part of `_phase1_components` and propagates into this
+    # total via `phase1_loss`; do not add it again here.
     return phase1_loss(
         stop_t_side(cell),
         x_prev,
@@ -322,7 +320,7 @@ def phase2_i_loss(
     """I-side Phase 2 loss with T/encoder leaves stopped."""
     stopped = stop_t_side(cell)
     x_proposal_for_vmap = x_curr if x_proposal is None else x_proposal
-    # NOTE: lambda_delta_i_norm propagates through _phase2_components → _phase1_components.
+    # lambda_delta_i_norm propagates through _phase2_components -> _phase1_components.
     totals, metrics_batched, l_ineqs = jax.vmap(
         lambda x_p, x_c, p, u_s, x_pr: _phase2_components(
             stopped, x_p, x_c, p, dt, u_s, config, x_proposal=x_pr

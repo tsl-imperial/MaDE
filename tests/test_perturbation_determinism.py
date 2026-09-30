@@ -1,4 +1,4 @@
-"""Perturbation determinism tests (US-022)."""
+"""Perturbation determinism tests."""
 
 # ruff: noqa: E402
 
@@ -65,11 +65,6 @@ def test_uniform_perturbation_determinism():
     out1 = perturb_trajectories(states, cfg, key)
     out2 = perturb_trajectories(states, cfg, key)
     assert jnp.array_equal(out1, out2)
-
-
-# ---------------------------------------------------------------------------
-# bound_violation tests
-# ---------------------------------------------------------------------------
 
 _BV_MIN = jnp.array([-10.0, -10.0, -5.0, -5.0])
 _BV_MAX = jnp.array([10.0, 10.0, 5.0, 5.0])

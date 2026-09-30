@@ -1,24 +1,18 @@
-"""X1 — fixed-interval EKF/RTS kinodynamic smoother, the classical-engineering baseline.
+"""Fixed-interval EKF/RTS kinodynamic smoother, the classical-engineering baseline.
 
-The strongest single theme in the ICLR 2027 review, raised independently in three of its five
-segments: the paper positions MaDE against generic machine-learning paradigms and never against
-the standard engineering answer for post-hoc kinematic feasibility. This module is that answer.
-
-**D-11: this deliberately does NOT implement `CorrectionBaseline`.** That protocol's unit is
+Deliberately does not implement `CorrectionBaseline`. That protocol's unit is
 `correct_pair(x_prev, x_curr)` -- one consecutive pair, no memory of the rest of the trajectory.
 A fixed-interval smoother's defining property is that the estimate at step k uses observations
-from steps *after* k. Forcing it through `correct_pair` would silently degrade it to a forward
-filter, which is a weaker method wearing the smoother's name. It gets a sibling trajectory-level
-entry point, `smooth_trajectory`, and the drivers call that.
+from steps *after* k; forcing it through `correct_pair` would silently degrade it to a forward
+filter. It instead exposes a trajectory-level entry point, `smooth_trajectory`.
 
-**D-2: the process model is the kinematic bicycle on BOTH panels** -- the same known model MaDE
-itself is given. On the simulated panel the data-generating system is the dynamic bicycle, so
-the smoother is misspecified exactly as MaDE is. Handing it the true DB model would give the
-baseline information MaDE is denied and would answer a different question than the reviewer's,
-which is whether classical filtering matches MaDE *under the same misspecification*.
+The process model is the kinematic bicycle on both panels -- the same known model MaDE itself is
+given. On the simulated panel the data-generating system is the dynamic bicycle, so the smoother
+is misspecified exactly as MaDE is; this answers whether classical filtering matches MaDE under
+the same misspecification.
 
-**D-3: it enforces no inequality constraints.** It is a smoother and is reported as one. Its
-inequality rate and magnitude are measured and printed like every other row.
+It enforces no inequality constraints. Its inequality rate and magnitude are still measured and
+reported like every other row.
 
 ## The augmented state, and why the controls are in it
 
@@ -60,9 +54,8 @@ from made.physics.base import PhysicsModel
 
 # The RTS backward gain needs (P_pred)^-1. P_pred is positive-definite by construction, but a
 # channel with ~zero process noise and ~zero observed variation can drive it toward singular.
-# This ridge is a CONDITIONING GUARD on a matrix solve, exactly as `det_floor` is a
-# divide-by-zero guard elsewhere in this project -- it is NOT a convergence test and NOT a
-# tolerance, and nothing should ever be reported as having "converged to" it.
+# This ridge is a conditioning guard on a matrix solve, like `det_floor` elsewhere in this
+# project -- not a convergence test or tolerance.
 _RTS_RIDGE = 1e-12
 
 

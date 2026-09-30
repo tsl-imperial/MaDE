@@ -1,4 +1,4 @@
-"""Tests for location-aware MetadataEncoder (Phase A6 gate).
+"""Tests for location-aware MetadataEncoder.
 
 Verifies:
 - Location embedding gradient flows end-to-end.
@@ -22,7 +22,7 @@ from made.models.encoder import MetadataEncoder
 
 
 def _make_location_encoder(key: jax.Array) -> MetadataEncoder:
-    """Small location-aware encoder matching Plan 1 inD schema."""
+    """Small location-aware encoder matching the inD metadata schema."""
     param_scales = jnp.ones(1, dtype=jnp.float64)  # 1 physics param for test
     return MetadataEncoder(
         metadata_dim=5,       # [length, width, car_oh, truck_bus_oh, location_id]

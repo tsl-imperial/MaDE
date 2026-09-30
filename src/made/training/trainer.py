@@ -31,25 +31,19 @@ from made.utils.config import DataConfig
 MaDELike = MaDECell | MaDEModel
 _SENTINEL = object()
 
-# Distinct fold-in constants keeping the train-time and validation-time
-# Phase-2 proposal-corruption PRNG streams disjoint from each other AND from
-# the batch-shuffle roots built in train(), which already use
-# fold_in(key(seed), 0) and fold_in(key(seed), 1) -- reusing 0/1 here would
-# make the step-k corruption key identical to the epoch-k shuffle key.
-# They are part of the reproducibility contract: never renumber them.
+# Fold-in constants keep train/val Phase-2 proposal-corruption PRNG streams disjoint from
+# each other and from the batch-shuffle roots in train() (fold_in(key(seed), 0/1)). Never
+# renumber: part of the reproducibility contract.
 _PROPOSAL_KEY_STREAM_TRAIN: int = 1001
 _PROPOSAL_KEY_STREAM_VAL: int = 1002
 
-# Sub-streams folded into the per-(step, batch_index) proposal key for the
-# per-sample randomisation draws. Distinct from each other and from the
-# base key, which keeps carrying the Gaussian noise draw itself so that
-# `sampling == "fixed"` runs stay byte-identical to pre-randomisation ones.
-# Also part of the reproducibility contract: never renumber them.
+# Sub-streams folded into the per-(step, batch_index) proposal key for per-sample
+# randomisation draws, distinct from the base key (which carries the Gaussian noise draw so
+# `sampling == "fixed"` stays byte-identical to pre-randomisation runs). Never renumber.
 _PROPOSAL_SUBSTREAM_SCALE: int = 1
 _PROPOSAL_SUBSTREAM_CLEAN_MASK: int = 2
 
-# Pre-compiled validation loss functions — defined once at module level so the
-# JIT cache persists across validation epochs rather than being rebuilt each call.
+# Defined once at module level so the JIT cache persists across validation epochs.
 _jit_val_phase1_loss = eqx.filter_jit(phase1_loss)
 _jit_val_phase2_loss = eqx.filter_jit(phase2_loss)
 
@@ -57,23 +51,17 @@ _jit_val_phase2_loss = eqx.filter_jit(phase2_loss)
 def _rewrite_phase1_seed_meta(meta_path: Path, pretrained_path: str) -> bool:
     """Convert a Phase-1 source's train_meta.json into a Phase-2 curriculum-seed meta.
 
-    Idempotent and self-healing: if the meta already reflects a curriculum-seed
+    Idempotent: no-op (returns False) if the meta already reflects a curriculum-seed
     state (signature.pretrained_phase1_path == str(pretrained_path) and
-    resume.phase != 1), this is a no-op and returns False. Otherwise the four
-    invariants from commit cb94ba1 are applied and the meta is rewritten.
+    resume.phase != 1). Otherwise applies four invariants and rewrites the meta.
+    Returns True iff the rewrite was applied.
 
-    Returns True if the rewrite was applied, False if no-op or unreadable.
-
-    Note on the ``resume_phase != 1`` disjunction: ``_maybe_copy_pretrained_checkpoint``
-    rewrites the freshly-copied meta atomically (single ``write_text`` after
-    ``shutil.copytree``), so a legitimate curriculum cell on disk advances past
-    ``resume.phase=1`` immediately and never legitimately reaches ``phase=1`` again.
-    The only way to observe ``pretrained_phase1_path`` matching but
-    ``resume.phase=1`` is the stale-partial-seed migration path itself, which IS
-    what we want to migrate. So the guard treating any ``phase=1`` meta (regardless
-    of stored signature path) as a rewrite candidate is intentional.
+    ``_maybe_copy_pretrained_checkpoint`` rewrites a freshly-copied meta atomically, so a
+    legitimate curriculum cell advances past ``resume.phase=1`` immediately and never
+    legitimately reaches ``phase=1`` again. Observing ``pretrained_phase1_path`` matching but
+    ``resume.phase=1`` therefore only happens on the stale-partial-seed migration path this
+    function targets, so any ``phase=1`` meta is treated as a rewrite candidate.
     """
-    # Idempotency guard: check if meta is already in the curriculum-seed state.
     if not meta_path.exists():
         return False
     try:
@@ -89,16 +77,13 @@ def _rewrite_phase1_seed_meta(meta_path: Path, pretrained_path: str) -> bool:
     if already_curriculum:
         return False
 
-    # Apply the four invariants.
     # (a) Fix comparability_signature.pretrained_phase1_path.
     if "comparability_signature" in meta:
         meta["comparability_signature"]["pretrained_phase1_path"] = str(pretrained_path)
-        # The Phase-2 proposal corruption is a Phase-2-only knob, so the
-        # Phase-1 seed run legitimately carries different values (normally
-        # the 'none'/0.0/None defaults). Drop the keys here so
-        # _check_train_meta's overlap-intersection skips them; the
-        # curriculum cell writes its own correct values on its first
-        # _write_train_meta call, which still guards same-run resumes.
+        # Phase-2 proposal corruption is a Phase-2-only knob, so the Phase-1 seed run
+        # legitimately carries different values. Drop these keys so
+        # _check_train_meta's overlap-intersection skips them; the curriculum cell writes
+        # its own values on its first _write_train_meta call.
         for _p2_key in (
             "phase2_proposal_perturbation_type",
             "phase2_proposal_perturbation_scale",
@@ -141,13 +126,10 @@ def _self_heal_curriculum_seed_meta(
     checkpoint_manager: CheckpointManager,
     pretrained_phase1_path: str | None,
 ) -> None:
-    """When a curriculum cell has a stale Phase-1 source meta on disk
-    (e.g. from a pre-fix failed run that triggered the
-    _maybe_copy_pretrained_checkpoint short-circuit), rewrite the
-    highest-step train_meta.json into a curriculum-seed meta so
-    _check_train_meta accepts the resume. Idempotent — no-op once the
-    meta is already in the curriculum-seed state, on a non-curriculum
-    config (pretrained_phase1_path is None), or on an empty checkpoints dir.
+    """Rewrite a stale Phase-1 source meta on disk into a curriculum-seed meta so
+    _check_train_meta accepts the resume. Idempotent — no-op once the meta is already
+    in the curriculum-seed state, on a non-curriculum config (pretrained_phase1_path is
+    None), or on an empty checkpoints dir.
     """
     if pretrained_phase1_path is None:
         return
@@ -167,30 +149,21 @@ def _maybe_copy_pretrained_checkpoint(
 ) -> None:
     """Seed the local checkpoint dir from a previous run's directory.
 
-    Selects the highest-step subdirectory in the source whose
-    ``train_meta.json`` records ``resume.phase == 1``, and copies that
-    one step directory (plus any non-numeric top-level items) into
-    ``local_dir``. Phase-2 step dirs in the source are intentionally
-    skipped — standard MaDE runs train Phase 1 and Phase 2 contiguously
-    in the same ``checkpoints/`` tree, so the literal highest step is
+    Selects the highest-step subdirectory in the source whose ``train_meta.json`` records
+    ``resume.phase == 1``, and copies that step dir (plus non-numeric top-level items)
+    into ``local_dir``. Phase-2 step dirs are skipped: a standard MaDE run trains both
+    phases contiguously in one ``checkpoints/`` tree, so the literal highest step is
     typically Phase-2 even when a Phase-1-end checkpoint is present.
-    The curriculum needs Phase-1 weights, so we look past the latest
-    Phase-2 entries to find the last Phase-1 entry.
 
-    After copying, the ``train_meta.json`` in the destination step dir is
-    rewritten via ``_rewrite_phase1_seed_meta`` so that: (a) ``comparability_signature.pretrained_phase1_path``
-    matches the curriculum config's value (``pretrained_path``), (b) the
-    resume cursor is advanced to ``phase=2, epoch_in_phase=0`` so the
-    trainer skips Phase 1 and runs only Phase 2 on the inherited weights,
-    and (c) Phase-2 early-stopping state is reset to its default so the
-    curriculum cell starts tracking fresh validation history.
+    After copying, the destination's ``train_meta.json`` is rewritten via
+    ``_rewrite_phase1_seed_meta`` so ``comparability_signature.pretrained_phase1_path``
+    matches ``pretrained_path``, the resume cursor advances to ``phase=2,
+    epoch_in_phase=0``, and Phase-2 early-stopping state resets.
 
-    No-op when ``local_dir`` already contains a numeric step subdir with
-    ``state.pkl`` (preserves partial runs). Raises ``FileNotFoundError``
-    if ``pretrained_path`` is set but does not exist; ``ValueError`` if
-    the source has no numeric step subdirs, the highest-step dir is
-    missing ``train_meta.json``, or no step subdir records
-    ``resume.phase == 1``.
+    No-op when ``local_dir`` already has a numeric step subdir with ``state.pkl``
+    (preserves partial runs). Raises ``FileNotFoundError`` if ``pretrained_path`` does not
+    exist; ``ValueError`` if the source has no numeric step subdirs, the highest-step dir
+    is missing ``train_meta.json``, or no step subdir records ``resume.phase == 1``.
     """
     if pretrained_path is None:
         return
@@ -220,12 +193,9 @@ def _maybe_copy_pretrained_checkpoint(
             "directory appears corrupted."
         )
 
-    # Walk steps descending; take the highest-numbered step subdir whose
-    # train_meta.json records resume.phase==1. A standard `made` run that
-    # trains Phase 1 + Phase 2 contiguously leaves both phases' step dirs
-    # in the same tree (Phase-1 dirs are not pruned), so the literal
-    # highest step is Phase 2 but earlier numeric subdirs hold the
-    # Phase-1-end checkpoint that the curriculum needs.
+    # Highest-numbered step subdir whose train_meta.json records resume.phase==1.
+    # Phase-1 dirs are not pruned, so earlier numeric subdirs hold the Phase-1-end
+    # checkpoint the curriculum needs even though the literal highest step is Phase 2.
     phase1_step_dir: Path | None = None
     highest_phase: int | None = None
     for candidate in descending:
@@ -260,15 +230,11 @@ def _maybe_copy_pretrained_checkpoint(
     if has_local_ckpt:
         return
     local.mkdir(parents=True, exist_ok=True)
-    # Copy only the chosen Phase-1 step dir; skip every other numeric step
-    # dir in the source so the local tree starts as a Phase-1-only
-    # snapshot (Phase-2 step dirs from the source's continued training
-    # would otherwise mislead _load_resume_cursor into resuming Phase 2).
+    # Copy only the chosen Phase-1 step dir: other numeric step dirs would mislead
+    # _load_resume_cursor into resuming Phase 2.
     dest = local / phase1_step_dir.name
     if not dest.exists():
         shutil.copytree(phase1_step_dir, dest)
-    # Copy any non-numeric items (top-level config files, sidecars) that
-    # live alongside step dirs.
     for item in src.iterdir():
         if item.is_dir() and item.name.isdigit():
             continue
@@ -280,9 +246,6 @@ def _maybe_copy_pretrained_checkpoint(
         else:
             shutil.copy2(item, target)
 
-    # Rewrite the copied train_meta.json so the curriculum trainer sees the
-    # correct comparability_signature, skips Phase 1, and starts fresh
-    # Phase-2 early-stopping tracking.
     _rewrite_phase1_seed_meta(dest / "train_meta.json", str(pretrained_path))
 
 
@@ -307,10 +270,9 @@ class _EarlyStoppingState:
     best_loss: float = float("inf")
     best_step: int | None = None
     wait: int = 0
-    # The epoch the best was found in, so the burn-in guard can test the BEST
-    # rather than the current epoch. `None` on a state restored from a checkpoint written
-    # before this field existed, which the guard treats as "not known to be inside burn-in"
-    # so a resumed legacy run behaves as it did rather than refusing to stop forever.
+    # Epoch the best was found in, so the burn-in guard tests the BEST epoch rather than
+    # the current one. `None` on a checkpoint written before this field existed; the guard
+    # treats that as "not known to be inside burn-in" so a legacy resume behaves as before.
     best_epoch_in_phase: int | None = None
     history: list[dict[str, float]] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
@@ -330,9 +292,6 @@ class _EarlyStoppingState:
         return cls(
             best_loss=float(payload.get("best_loss", float("inf"))),
             best_step=payload.get("best_step"),
-            # Absent on a state written before this field existed. Restored as None, which the
-            # guard reads as "not known to be inside burn-in" so a legacy resume behaves as the
-            # run originally did instead of refusing to stop for ever.
             best_epoch_in_phase=(None if payload.get("best_epoch_in_phase") is None
                                  else int(payload["best_epoch_in_phase"])),
             wait=int(payload.get("wait", 0)),
@@ -453,13 +412,11 @@ def _migrate_opt_state_for_zero_nans(
 ):
     """Adapt a checkpoint's opt_state to the current optimizer chain.
 
-    The optimizer chain gained a leading `optax.zero_nans()` transform on
-    2026-05-04. Pre-existing checkpoints saved their opt_state as a tuple one
-    element shorter than the new chain expects. Calling `chain.update` on a
-    mismatched-length tuple raises "The number of updates and states has to be
-    the same in chain". This helper detects the mismatch and prepends a fresh
-    `zero_nans` state, preserving the saved Adam moments and clip-norm state
-    so resume is momentum-faithful.
+    The chain gained a leading `optax.zero_nans()` transform, so pre-existing checkpoints
+    save an opt_state tuple one element shorter than the current chain expects, and
+    `chain.update` on a mismatched-length tuple raises. Detects the mismatch and prepends
+    a fresh `zero_nans` state, preserving saved Adam moments and clip-norm state so resume
+    stays momentum-faithful.
     """
     expected_state = new_opt.init(params)
     if not isinstance(expected_state, tuple) or not isinstance(opt_state, tuple):
@@ -503,12 +460,10 @@ def _resolve_params(model: MaDELike, params: jax.Array | None, metadata: jax.Arr
 def _proposal_perturbation_key(seed: int, stream: int, *counters: int) -> jax.Array:
     """Derive the PRNG key for one Phase-2 proposal corruption draw.
 
-    The key depends ONLY on the run's training seed, a stream constant
-    (`_PROPOSAL_KEY_STREAM_TRAIN` / `_PROPOSAL_KEY_STREAM_VAL`) and host-side
-    counters (global step, and batch index for validation). It never consumes
-    from `TrainState.key`, so the existing key order for every other code path
-    is untouched and a checkpoint resume replays a bit-identical corruption
-    sequence.
+    Depends only on the run's training seed, a stream constant
+    (`_PROPOSAL_KEY_STREAM_TRAIN` / `_PROPOSAL_KEY_STREAM_VAL`) and host-side counters
+    (global step, and batch index for validation) — never `TrainState.key` — so a
+    checkpoint resume replays a bit-identical corruption sequence.
     """
     key = jax.random.fold_in(jax.random.key(seed), stream)
     for counter in counters:
@@ -525,32 +480,28 @@ def _compute_x_proposal(
 ) -> jax.Array:
     """Compute the proposal input x̃_t for the I-module.
 
-    Returns x_curr unchanged unless we are in Phase 2 with a non-trivial
-    `phase2_proposal_perturbation_type`. Two families are supported:
+    Returns x_curr unchanged unless in Phase 2 with a non-trivial
+    `phase2_proposal_perturbation_type`. Two families:
 
-    * ``bound_violation`` — deterministic (no PRNG dependency): each component
-      is pushed outward from the box midpoint. ``key`` is ignored.
-    * ``gaussian`` — additive zero-mean Gaussian noise; ``key`` is REQUIRED.
+    * ``bound_violation`` — deterministic, no PRNG: each component pushed outward from
+      the box midpoint. ``key`` ignored.
+    * ``gaussian`` — additive zero-mean Gaussian noise; ``key`` required.
 
-    Magnitudes come from one of two sources. When
-    ``phase2_proposal_perturbation_scale_per_dim`` is ``None`` (the default),
-    the scalar ``phase2_proposal_perturbation_scale`` is a FRACTION OF THE BOX
-    RANGE (`scale * (state_max - state_min)`) and ±inf range entries (unbounded
-    dims like x,y on inD/field-data) yield ZERO perturbation on that dimension.
-    When the per-dimension tuple IS set it OVERRIDES the scalar and its entries
-    are ABSOLUTE magnitudes in state units (sigma for gaussian, push distance
-    for bound_violation), with 0.0 meaning that dimension is never perturbed;
-    no box range is consulted, so infinite-bound dimensions can be corrupted.
+    Magnitude source: if ``phase2_proposal_perturbation_scale_per_dim`` is ``None``
+    (default), the scalar ``phase2_proposal_perturbation_scale`` is a fraction of the box
+    range (`scale * (state_max - state_min)`); ±inf range entries (unbounded dims like x,y
+    on inD/field-data) give zero perturbation there. If the per-dimension tuple is set, it
+    overrides the scalar with absolute magnitudes in state units (sigma for gaussian, push
+    distance for bound_violation; 0.0 means never perturbed); no box range is consulted, so
+    infinite-bound dims can be corrupted.
 
-    On the ``gaussian`` path the resolved magnitude is the UPPER bound
-    sigma_max per dimension. When
-    ``phase2_proposal_perturbation_scale_sampling`` is not ``"fixed"`` and/or
-    ``phase2_proposal_perturbation_zero_fraction`` is nonzero, the REALISED
-    sigma additionally varies per batch element and per dimension — see
-    `TrainingConfig` for the sampling semantics. A dimension with sigma_max
-    == 0.0 stays exactly unperturbed under every mode, and a sample drawn
-    clean is returned bit-identical on every dimension. Those two knobs are
-    gaussian-only; ``bound_violation`` raises if either is set.
+    On the gaussian path the resolved magnitude is the upper-bound sigma_max per
+    dimension. If ``phase2_proposal_perturbation_scale_sampling`` is not ``"fixed"``
+    and/or ``phase2_proposal_perturbation_zero_fraction`` is nonzero, the realised sigma
+    also varies per batch element and dimension (see `TrainingConfig`). sigma_max == 0.0
+    stays exactly unperturbed under every mode; a clean-drawn sample is bit-identical on
+    every dimension. Both knobs are gaussian-only; ``bound_violation`` raises if either is
+    set.
     """
     if phase != 2:
         return x_curr
@@ -571,10 +522,8 @@ def _compute_x_proposal(
         magnitude = jnp.asarray(per_dim, dtype=x_curr.dtype)
     else:
         constraints = cell.constraints
-        # ±inf range entries (unbounded dims like x,y on inD/field-data) result
-        # in ZERO perturbation on that dimension. Callers wanting nonzero
-        # positional perturbation must pass a finite-range box or use the
-        # per-dimension (absolute) scales.
+        # ±inf range entries give zero perturbation there; use per-dim absolute scales
+        # for nonzero perturbation on unbounded dims.
         range_ = constraints.state_max - constraints.state_min
         safe_range = jnp.where(jnp.isfinite(range_), range_, 0.0)
         magnitude = training_config.phase2_proposal_perturbation_scale * safe_range
@@ -590,13 +539,11 @@ def _compute_x_proposal(
                 "phase2_proposal_perturbation_type='gaussian' requires a PRNG key; "
                 "_compute_x_proposal was called with key=None."
             )
-        # Drawn FIRST and directly from `key`, before any fold_in, so the base
-        # noise stream stays byte-identical to the pre-randomisation
-        # implementation. The per-sample draws below live on disjoint
+        # Drawn directly from `key`, before any fold_in, so the base noise stream stays
+        # byte-identical when randomisation is off. Per-sample draws use disjoint
         # fold_in sub-streams.
         noise = jax.random.normal(key, x_curr.shape, dtype=x_curr.dtype)
         if not randomised:
-            # Historical path: consume no additional randomness at all.
             return x_curr + magnitude * noise
 
         if sampling == "fixed":
@@ -612,8 +559,8 @@ def _compute_x_proposal(
                     maxval=1.0,
                 )
             elif sampling == "loguniform":
-                # log m ~ U(log min_ratio, 0); min_ratio > 0 is enforced by
-                # TrainingConfig.__post_init__ for every non-"fixed" mode.
+                # log m ~ U(log min_ratio, 0); min_ratio > 0 enforced by
+                # TrainingConfig.__post_init__.
                 log_multiplier = jax.random.uniform(
                     scale_key,
                     x_curr.shape,
@@ -626,14 +573,13 @@ def _compute_x_proposal(
                 raise ValueError(
                     f"Unknown phase2_proposal_perturbation_scale_sampling: {sampling!r}"
                 )
-        # sigma_max == 0.0 on a dimension keeps this product exactly 0.0, so the
-        # zero-dimension contract holds under every sampling mode.
+        # sigma_max == 0.0 keeps this product exactly 0.0 under every sampling mode.
         perturbed = x_curr + (magnitude * multiplier) * noise
         if zero_fraction == 0.0:
             return perturbed
 
-        # Whole-sample clean mask (leading axes = batch), so a clean sample is
-        # returned untouched on EVERY dimension.
+        # Whole-sample clean mask (leading axes = batch): a clean sample is untouched
+        # on every dimension.
         mask_key = jax.random.fold_in(key, _PROPOSAL_SUBSTREAM_CLEAN_MASK)
         keep_clean = jax.random.bernoulli(
             mask_key, zero_fraction, x_curr.shape[:-1] + (1,)
@@ -641,9 +587,9 @@ def _compute_x_proposal(
         return jnp.where(keep_clean, x_curr, perturbed)
 
     if randomised:
-        # The per-sample randomisation knobs are gaussian-only by design.
-        # Silently ignoring them here would hand a caller a fully deterministic
-        # corruption while their config claims domain randomisation.
+        # Per-sample randomisation knobs are gaussian-only; ignoring them here would
+        # silently hand a caller deterministic corruption despite the config requesting
+        # randomisation.
         raise ValueError(
             "phase2_proposal_perturbation_scale_sampling / "
             "phase2_proposal_perturbation_zero_fraction apply only to "
@@ -654,15 +600,12 @@ def _compute_x_proposal(
     constraints = cell.constraints
     midpoint = 0.5 * (constraints.state_min + constraints.state_max)
     if per_dim is not None:
-        # +/-inf bounds make the midpoint NaN, and `x >= NaN` is False, which
-        # would push every sample in the -1 direction on that dimension. Fall
-        # back to 0.0 so "outward" stays well defined on unbounded dims. This
-        # guard is confined to the per-dim branch so the scalar path (whose
-        # magnitude is already 0.0 on those dims) stays byte-identical.
+        # +/-inf bounds make midpoint NaN, and `x >= NaN` is False, pushing every sample
+        # in the -1 direction. Fall back to 0.0 so "outward" is well defined on unbounded
+        # dims. Confined to the per-dim branch: the scalar path's magnitude is already
+        # 0.0 there, so it stays byte-identical.
         midpoint = jnp.where(jnp.isfinite(midpoint), midpoint, 0.0)
     sign = jnp.where(x_curr >= midpoint, 1.0, -1.0)
-    # `sign` is exactly ±1.0, so `sign * (scale * safe_range)` is bitwise equal
-    # to the historical `sign * scale * safe_range` on the scalar path.
     return x_curr + sign * magnitude
 
 
@@ -1014,25 +957,14 @@ def _early_stop_reason(
 
     loss = metrics.get("loss", float("inf"))
 
-    # NO best is tracked inside the burn-in window. `best_loss`, `best_step` and
-    # `best_epoch_in_phase` do not update while
-    # `epoch_in_phase + 1 < early_stopping_min_epochs`, so the first best is whatever validation
-    # is at the first epoch past the window and patience counts from there.
-    #
-    # This makes the "should not stop on an unsettled run" criterion satisfiable BY
-    # CONSTRUCTION rather than by hope: a best inside burn-in can no longer exist, so the
-    # "train to the ceiling and still come back with a best inside the window" edge case
-    # cannot arise.
-    #
-    # THE DELIBERATE COST: the saved checkpoint is now the best from the end of burn-in onward,
-    # not the global best. A run whose validation genuinely peaks at epoch 2 and then degrades
-    # saves a worse model than it reached. This is a deliberate design choice -- a best found
-    # inside burn-in is not a best worth keeping -- and it means a retrained checkpoint may show
-    # a HIGHER validation loss than its predecessor without that being a regression.
-    #
-    # `wait` is not accumulated inside the window either. It does not need an explicit reset:
-    # `best_loss` is still infinite at the first post-window epoch, so that epoch takes the best
-    # and zeroes `wait` on its own.
+    # No best is tracked inside the burn-in window: `best_loss`/`best_step`/
+    # `best_epoch_in_phase` do not update while `epoch_in_phase + 1 <
+    # early_stopping_min_epochs`, so a best inside burn-in can never exist and patience
+    # counts only from the first post-window epoch. Deliberate cost: the saved checkpoint
+    # is the best from end-of-burn-in onward, not the global best, so a run whose
+    # validation genuinely peaks inside burn-in saves a worse model than it reached.
+    # `wait` self-resets at the first post-window epoch (best_loss still infinite there),
+    # so it needs no explicit reset.
     in_burn_in = epoch_in_phase + 1 < cfg.early_stopping_min_epochs
     if not in_burn_in:
         if loss < state.best_loss - cfg.early_stopping_min_delta:
@@ -1043,31 +975,21 @@ def _early_stop_reason(
         else:
             state.wait += 1
 
-    # Appended every epoch, burn-in included, so history indices stay equal to epoch_in_phase.
-    # The audit recovers best_epoch by indexing this history against best_step.
+    # Indices stay equal to epoch_in_phase (appended every epoch, burn-in included), so
+    # best_epoch can be recovered by indexing history against best_step.
     state.history.append(metrics)
 
-    # Two burn-in conditions, and the second is the bug being fixed.
-    #
-    # The first tests the CURRENT epoch and was always here: do not stop before the minimum.
-    #
-    # The second tests the BEST epoch, and its absence is what let seed 2 stop at epoch 14
-    # against its siblings' 47 and 46. The minimum-epoch window exists to stop a run being
-    # judged before it has settled; a best found INSIDE that window is not a converged best,
-    # and patience counted from it stops a run that has barely started. Testing only the end
-    # epoch satisfies the guard on a run whose reference point never left burn-in.
-    #
-    # While the best sits inside burn-in, stopping does not fire at all. Patience restarts
-    # from the first best found outside the window; if none ever is, the run goes to its
-    # ceiling, which is the intended behaviour rather than an oversight.
+    # Two burn-in guards: the current epoch (don't stop before the minimum), and the best
+    # epoch (a best found inside the window is not a converged best, so patience counted
+    # from it would stop a run that has barely started). Stopping never fires while the
+    # best sits inside burn-in; patience restarts from the first best found outside the
+    # window, or the run goes to its ceiling if none is ever found.
     if in_burn_in:
         return None
 
-    # Kept as an ASSERTION THAT NEVER FIRES rather than deleted. Under the
-    # no-best-inside-burn-in rule above, `best_epoch_in_phase` cannot be inside the window, so
-    # this returning None would mean the burn-in logic is broken. A legacy checkpoint restores
-    # `best_epoch_in_phase` as None, which this reads as "not known to be inside burn-in" so the
-    # resumed run behaves as it originally did.
+    # Assertion that never fires under the no-best-inside-burn-in rule above: if it did,
+    # the burn-in logic is broken. `best_epoch_in_phase is None` (e.g. a legacy checkpoint)
+    # is read as "not known to be inside burn-in" so a legacy resume behaves as before.
     if state.best_epoch_in_phase is not None and (
         state.best_epoch_in_phase + 1 < cfg.early_stopping_min_epochs
     ):
@@ -1089,9 +1011,6 @@ def _early_stopping_meta(stopper: _EarlyStoppingState) -> dict[str, Any]:
         "early_stop_reasons": stopper.reasons,
         "early_stop_best_loss": stopper.best_loss,
         "early_stop_best_step": stopper.best_step,
-        # Without best_epoch in the artifact the burn-in bug is INVISIBLE in what
-        # the trainer produces -- the audit had to recover it by indexing the history against
-        # best_step. Recorded from here on.
         "early_stop_best_epoch_in_phase": stopper.best_epoch_in_phase,
         "early_stop_epochs_run_in_phase": len(stopper.history),
     }
@@ -1404,17 +1323,10 @@ def train(
     """Train MaDE across Phase 1 and Phase 2.
 
     Args:
-        cell: Initial MaDECell or MaDEModel.
-        train_loader: Iterable of training batches.
-        val_loader: Iterable of validation batches.
-        config: Full experiment config.
-        checkpoint_manager: Orbax checkpoint manager.
-        mesh: Optional JAX device mesh for data-parallel training.
-        constraints_factory: Optional zero-arg builder returning a freshly-built
-            BoxConstraints. When provided, the cell's constraints are FORCED to
-            constraints_factory() immediately after checkpoint restore (or after
-            fresh state creation). Mandatory on the inD/field-data path to
-            prevent stale finite-x,y bounds from being resurrected via
+        constraints_factory: Optional zero-arg builder for a fresh BoxConstraints. When
+            given, the cell's constraints are forced to constraints_factory() right after
+            checkpoint restore (or fresh state creation) -- mandatory on the inD/field-data
+            path to prevent stale finite-x,y bounds resurfacing via
             eqx.tree_deserialise_leaves. E01 callers omit this kwarg.
     """
     training_config = config.training
@@ -1452,9 +1364,9 @@ def train(
         _check_train_meta(
             checkpoint_manager, state.step, training_config, num_devices, data_cfg=config.data
         )
-        # Pre-2026-05-04 checkpoints saved opt_state with a 2-transform chain
-        # (clip_by_global_norm + adam); the current chain has 3 transforms
-        # (zero_nans + clip + adam). Prepend a fresh zero_nans state on resume.
+        # Older checkpoints saved opt_state with a 2-transform chain (clip_by_global_norm
+        # + adam); the current chain has 3 (zero_nans + clip + adam). Prepend a fresh
+        # zero_nans state on resume.
         inverse_params = eqx.filter(_cell(state.model).inverse_dynamics, eqx.is_array)
         residual_params = eqx.filter(_t_trainable(state.model), eqx.is_array)
         migrated_opt_I = _migrate_opt_state_for_zero_nans(
@@ -1541,8 +1453,8 @@ def train(
         dynamic_ncols=True,
     )
     last_epoch_in_phase = 0
-    # What the phase-2 boundary did, recorded so a reader can say it rather than
-    # inferring it from a step number. Stays None when the option is off.
+    # What the phase-2 boundary did, so a reader need not infer it from a step number.
+    # None when the option is off.
     _phase1_best_restored: dict | None = None
     try:
         phase_specs = (
@@ -1561,15 +1473,14 @@ def train(
             if phase == 2 and resume_phase == 2:
                 start_epoch = max(start_epoch, completed_phase2_epochs)
 
-            # Phase 2 otherwise inherits whatever state phase 1 left in
-            # `compiled_state`, which is phase 1's FINAL model. Where early stopping picked an
-            # earlier epoch, that means phase 2 starts from a model the run itself judged worse
-            # than the one it found best. The only existing restore runs AFTER this loop and
-            # applies to the final phase alone, so it cannot help here.
+            # Phase 2 otherwise inherits `compiled_state` as left by phase 1 -- its FINAL
+            # model. If early stopping picked an earlier epoch, phase 2 would start from a
+            # model the run judged worse than its best; the only other restore runs after
+            # this loop and applies to the final phase alone.
             #
-            # Guarded on `start_epoch == 0` so this fires only when phase 2 is genuinely
-            # BEGINNING. Resuming into a partially trained phase 2 must not rewind to phase 1's
-            # best -- that would silently discard completed phase-2 epochs.
+            # Guarded on `start_epoch == 0` so this fires only when phase 2 genuinely
+            # begins -- resuming a partially trained phase 2 must not rewind to phase 1's
+            # best and silently discard completed phase-2 epochs.
             if (
                 phase == 2
                 and training_config.restore_phase1_best_before_phase2
@@ -1585,10 +1496,9 @@ def train(
                         "early_stopping_enabled, or turn this option off."
                     )
                 if best1 != host_step_int:
-                    # Captured BEFORE the restore below reassigns `state`. `from_step` is the
-                    # step phase 2 WOULD have started from -- phase 1's final -- which is the
-                    # informative half of this record; reading it after the reassignment made it
-                    # a duplicate of `best_step` and could not distinguish a restore from a no-op.
+                    # Captured before the restore below reassigns `state`: `from_step` is the
+                    # step phase 2 would have started from (phase 1's final), which
+                    # distinguishes a restore from a no-op.
                     phase1_final_step = int(host_step_int)
                     restored = checkpoint_manager.restore(best1)
                     if restored is None:

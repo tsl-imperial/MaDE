@@ -1,7 +1,7 @@
 """Per-recording CSV ingestion for the inD dataset.
 
-CRLF tolerance: Python's csv.DictReader with newline='' handles both LF and CRLF
-transparently (per Python docs). We enforce this by always opening with newline=''.
+Always opens files with newline='' so csv.DictReader handles both LF and CRLF (inD
+ships CRLF) transparently.
 """
 
 from __future__ import annotations
@@ -26,11 +26,7 @@ class RecordingTables:
 
 
 def _load_csv_rows(path: Path) -> list[dict[str, str]]:
-    """Load all rows from a CSV file.
-
-    Opens with newline='' so csv.DictReader strips CRLF line endings correctly
-    regardless of the file's actual line-ending convention (inD ships CRLF).
-    """
+    """Load all rows from a CSV file."""
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
 

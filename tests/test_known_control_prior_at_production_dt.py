@@ -54,9 +54,7 @@ def _heun_step(
     return sol.ys[-1]
 
 
-# ---------------------------------------------------------------------------
 # KinematicBicycle: closed-form Heun inverse must be exact (machine zero).
-# ---------------------------------------------------------------------------
 
 
 def test_kinematic_bicycle_inverse_exact_at_production_dt():
@@ -159,9 +157,7 @@ def test_kinematic_bicycle_inverse_exact_multi_regime():
         )
 
 
-# ---------------------------------------------------------------------------
 # DynamicBicycle: Newton-on-Heun inverse should match Heun forward to ~1e-8.
-# ---------------------------------------------------------------------------
 
 
 def test_dynamic_bicycle_inverse_machine_zero_at_production_dt():
@@ -240,9 +236,7 @@ def test_dynamic_bicycle_inverse_vmap_at_production_dt():
     assert jnp.all(jnp.abs(out - control[None]) < 1e-8)
 
 
-# ---------------------------------------------------------------------------
 # KinematicBicycleAsDynamicState delegation regression: bytewise equality.
-# ---------------------------------------------------------------------------
 
 
 def test_kinematic_bicycle_as_dynamic_state_delegation_is_identical():

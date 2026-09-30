@@ -1,4 +1,4 @@
-"""Transformer upstream trajectory predictor for E05 (inD real-data experiment).
+"""Transformer upstream trajectory predictor for the inD real-data experiment.
 
 Design reference: Giuliari et al. 2020, "Transformer Networks for Trajectory
 Forecasting" (arXiv:2003.08111) — encode the observed history with a

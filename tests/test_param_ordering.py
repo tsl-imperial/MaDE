@@ -1,4 +1,4 @@
-"""Tests for resolve_params canonical ordering (US-003)."""
+"""Tests for resolve_params canonical ordering."""
 
 # ruff: noqa: E402
 
@@ -49,9 +49,7 @@ def test_dynamic_bicycle_partial_overrides():
     """Unspecified parameters use defaults, not arbitrary values."""
     result_partial = resolve_params("dynamic_bicycle", {"C_f": 99999.0})
     result_default = resolve_params("dynamic_bicycle", {})
-    # C_f (index 0) should differ
     assert float(result_partial[0]) == pytest.approx(99999.0)
-    # Other params should use defaults
     assert float(result_partial[1]) == pytest.approx(float(result_default[1]))
 
 

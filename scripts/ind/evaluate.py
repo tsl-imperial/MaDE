@@ -63,7 +63,7 @@ def main() -> None:
         default=THRESH_M,
         help=(
             "Track-level displacement threshold in metres. A NEGATIVE VALUE DISABLES THE "
-            "FILTER ENTIRELY and evaluates every window. Note that 0.0 does NOT disable it: "
+            "FILTER ENTIRELY and evaluates every window. 0.0 does NOT disable it: "
             "make_prediction_windows still takes its filtering path and drops windows with "
             "exactly zero displacement, leaving only a fraction of the full split."
         ),
@@ -146,9 +146,8 @@ def main() -> None:
     x_gt, x0, meta = win["future"], win["context"][:, -1, :], win["metadata"]
     envelope, gt_residual, _ = load_train_envelope_and_residual(
         data_dir, use_stub=False, dt=dt, smoke_seed=0, split="train")
-    # One constraint object, read by the clamp projection AND the metric -- so
-    # clamp_and_metric_share_one_object is true by construction, not merely true of
-    # the values it happens to produce.
+    # One constraint object, read by the clamp projection AND the metric, so
+    # clamp_and_metric_share_one_object is true by construction, not just of the values.
     scored = inD_physical_constraints()
     clamp_box = scored          # THE SAME OBJECT, deliberately, not an equal copy
     phys = scored
@@ -203,7 +202,6 @@ def main() -> None:
         "cells": [],
     }
 
-
     made_cache: dict[int, object] = {}
     t0 = time.time()
     for fam in fams:
@@ -213,12 +211,11 @@ def main() -> None:
             x_pred = E._chunked_predictor_forward(pred, ctx, a.chunk_size)
             arms = [("raw", "eval", None, x_pred, None),
                     ("clamp", "eval", None, E._clamp_rows(clamp_model, x_pred), None)]
-            # Two smoother arms, not one: the training-split tuning put the ADE-optimal and
-            # the known-model-residual-optimal covariances several decades apart in q_scale,
-            # with Dyn.-K differing between them by a large factor. Built per FAMILY because
-            # the covariances describe a predictor family's error statistics; `None` for
-            # u_row, because like raw and clamp the smoother emits no controls until its own
-            # row is scored below.
+            # Two smoother arms: training-split tuning put the ADE-optimal and the
+            # known-model-residual-optimal covariances several decades apart in q_scale, with
+            # Dyn.-K differing between them by a large factor. Built per family since the
+            # covariances describe a predictor family's error statistics; `u_row` is `None`
+            # here since, like raw and clamp, the smoother emits no controls until scored below.
             if a.smoother_noise:
                 for _r, (_sm, _t) in E._load_smoother_arms(
                         a.smoother_noise, fam, "ind", dt,
@@ -238,16 +235,15 @@ def main() -> None:
                 t = time.time()
                 x_full = E._full_sequence(x0, x_row)
                 u_kb = E._derive_dynamics_controls(x_full, dt)
-                # Convention: a row that EMITS controls is scored on its own emitted
-                # controls; a row that emits none is scored on controls recovered from its
-                # states through the inverse known model. MaDE always emits. The smoother
-                # also emits -- its augmented state carries the controls and the RTS pass
-                # smooths them -- so both smoother arms pass their own `u_row` rather than
-                # `None`. Raw and clamp emit nothing and keep the recovered controls.
+                # Convention: a row that emits controls is scored on its own; a row that
+                # emits none is scored on controls recovered through the inverse known model.
+                # MaDE always emits. The smoother also emits (its augmented state carries the
+                # controls, smoothed by the RTS pass), so both smoother arms pass their own
+                # `u_row`. Raw and clamp emit nothing and keep the recovered controls.
                 u_for_ineq = u_row if u_row is not None else u_kb
-                # The smoother's controls feed the INEQUALITY scorer only. Every dynamics
-                # input stays on controls recovered through the known model, so the
-                # dynamics column stays labelled Dyn.-K correctly.
+                # Smoother controls feed the inequality scorer only; dynamics inputs stay on
+                # controls recovered through the known model, so the dynamics column stays
+                # labelled Dyn.-K correctly.
                 is_smoother = row in ("smoother", "smoother_dyn")
                 u_for_dyn = u_kb if (u_row is None or is_smoother) else u_row
                 u_dyn_kb = None if (u_row is None or is_smoother) else u_kb
@@ -261,11 +257,10 @@ def main() -> None:
                 per_fde = np.asarray(
                     jax.device_get(jax.vmap(M._trajectory_position_fde)(x_row, x_gt)))
                 label = f"{row}/{fam}/pseed{ps}" + (f"/mseed{ms}" if ms is not None else "")
-                # Save the per-window vector for every metric the panel reports, not only
-                # dynamics, so any later question about their distribution does not need a
-                # full re-run of the panel. The vectors below are the ones the scalars in
-                # `scalar_metrics` are reduced from, taken with the same per-trajectory
-                # primitives, not a second measurement.
+                # Save the per-window vector for every metric the panel reports, so a later
+                # question about their distribution needs no re-run. These are the same
+                # vectors `scalar_metrics` reduces from (same per-trajectory primitives, not
+                # a second measurement).
                 if per_window_dir is not None:
                     kb_phys = KinematicBicycle()
                     kb_par = jnp.asarray([E.L_REF], dtype=jnp.float64)
@@ -275,9 +270,9 @@ def main() -> None:
                     vecs = {
                         "ade": per_ade,
                         "fde": per_fde,
-                        # The SAME control `_row_metrics` reduces this scalar from: for a row
-                        # that emits controls the panel still scores Dyn.-K on the KB-RECOVERED
-                        # ones (`u_dyn_kb`), not on the emitted ones.
+                        # Same control `_row_metrics` reduces this scalar from: for a row
+                        # that emits controls, Dyn.-K is still scored on the KB-recovered
+                        # ones (`u_dyn_kb`), not the emitted ones.
                         "dynamics_violation": np.asarray(jax.device_get(jax.vmap(
                             lambda xf, uu: M._trajectory_dynamics_violation_known(
                                 xf, uu, kb_phys, kb_par, dt))(

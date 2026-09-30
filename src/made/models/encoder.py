@@ -1,17 +1,15 @@
 """Metadata encoder for system parameters.
 
-Location-aware mode (Plan 1 / inD):
-  When ``num_locations > 0``, the encoder expects a metadata vector of shape
-  ``[metadata_dim]`` whose column at ``location_id_index`` carries an integer
-  location ID in the vendor range ``{1..num_locations}`` (NOT zero-indexed).
-  Internally the encoder:
-    1. Extracts the integer column and applies ``id - 1`` to convert to a
-       zero-indexed row into an ``eqx.nn.Embedding`` table.
-    2. Concatenates the embedding with the remaining float columns.
-    3. Passes the concatenated vector through the existing MLP.
+Location-aware mode: when ``num_locations > 0``, the encoder expects a metadata vector of
+shape ``[metadata_dim]`` whose column at ``location_id_index`` carries an integer location ID
+in the vendor range ``{1..num_locations}`` (not zero-indexed). Internally the encoder:
+  1. Extracts the integer column and applies ``id - 1`` to get a zero-indexed row into an
+     ``eqx.nn.Embedding`` table.
+  2. Concatenates the embedding with the remaining float columns.
+  3. Passes the concatenated vector through the MLP.
 
-  Backward-compat: when ``num_locations <= 0`` the ``Embedding`` field is
-  ``None`` and the call path is identical to the original scalar-only encoder.
+When ``num_locations <= 0`` the ``Embedding`` field is ``None`` and the call path is identical
+to the scalar-only encoder.
 """
 
 from __future__ import annotations
@@ -98,20 +96,17 @@ class MetadataEncoder(eqx.Module):
         else:
             inputs = metadata
         raw = self.mlp(inputs)
-        # L = L_REF + raw: signed, unbounded, no clamp. L_REF is imported from the
-        # single constant the scorers use rather than written again here, so the known model and
-        # the scored model cannot drift apart.
+        # L = L_REF + raw: signed, unbounded, no clamp. L_REF is imported from the single
+        # constant the scorers use so the known model and the scored model cannot drift apart.
         if getattr(self, "lref_residual", False):
             from made.evaluation.real_data_eval import L_REF
 
             return L_REF + raw
-        # `getattr` with a default, NOT `self.unbounded_scale`. Checkpoints saved before this
-        # field existed deserialise into a MetadataEncoder that has no such field at all, and a
-        # direct attribute read raises `AttributeError` on every one of them -- which would break
-        # every existing inD checkpoint rather than leaving it bit-identical.
+        # `getattr` with a default, not `self.unbounded_scale`: checkpoints saved before this
+        # field existed deserialise into a MetadataEncoder with no such field, and a direct
+        # read would raise AttributeError on every existing inD checkpoint.
         if getattr(self, "unbounded_scale", False):
-            # Positive and UNBOUNDED ABOVE. `param_scales` is deliberately not
-            # applied here: multiplying softplus by it would reintroduce a scale this
-            # deliberately removes, and on the inD path that scale is 1.0 anyway.
+            # Positive and unbounded above. `param_scales` is deliberately not applied here:
+            # multiplying softplus by it would reintroduce a scale this removes.
             return jax.nn.softplus(raw)
         return jax.nn.sigmoid(raw) * self.param_scales

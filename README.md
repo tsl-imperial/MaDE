@@ -11,8 +11,8 @@ Kevin Yu<sup>1</sup>, Tao Guo<sup>2</sup>, Constantinos Antoniou<sup>2</sup>, Pa
 [![JAX](https://img.shields.io/badge/built%20with-JAX-orange.svg)](https://github.com/jax-ml/jax)
 
 MaDE is a time-invariant post-hoc operator that maps state-transition proposals onto a learned
-feasible dynamics manifold. It is trained on feasible states without ground-truth controls. For
-each transition it infers a control, recomputes the state through a completion model of known
+feasible dynamics manifold, trained on feasible states without ground-truth controls. For each
+transition it infers a control, recomputes the state through a completion model of known
 physics plus a learned residual, and corrects that control by gradient-based inequality
 reduction.
 
@@ -77,8 +77,8 @@ step is `dt=0.2`.
 ### Data
 
 **Simulated systems.** Generated locally by the first step of `scripts/sim/run_all.sh`
-(`scripts/sim/generate_data.py --system all --seed 0`), in about 7.5 minutes on CPU. Output goes
-to `data/generated/`. Dynamic-bicycle controls are sampled in ±0.2 rad and ±1.5 m/s², inside the
+(`scripts/sim/generate_data.py --system all --seed 0`), about 7.5 minutes on CPU. Output goes to
+`data/generated/`. Dynamic-bicycle controls are sampled in ±0.2 rad and ±1.5 m/s², inside the
 ±0.5 rad and ±3.0 m/s² constraint box (`configs/sim/data_generation.json`).
 
 **inD.** We do not redistribute inD. Request access from levelXdata at
@@ -116,9 +116,9 @@ bash scripts/ind/run_all.sh   # inD, GPU
 | Prior-only comparator (Appendix) | `scripts/sim/build_tables.py` | `prior_only_comparison` in `outputs/tables/tab_e01_seed_level.json` |
 | Per-model breakdown (Appendix) | `scripts/ind/evaluate.py` | `outputs/ind/panel.json` |
 
-Figures 1 and 2 are drawings. Tables 4 and 7 list metric definitions and default hyperparameters.
-None of the four has associated code. Run `measure_latency.py` alone on an idle GPU, since it
-measures wall-clock time.
+Figures 1 and 2 are drawings. Tables 4 and 7 list metric definitions and default
+hyperparameters. None of the four has associated code. Run `measure_latency.py` alone on an
+idle GPU: it measures wall-clock time.
 
 The simulated tables are built from a separate scoring pass (`score_all.py`), not from the
 evaluation that `run_matrix.py` writes next to each checkpoint. To rebuild the tables from

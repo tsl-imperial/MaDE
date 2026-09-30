@@ -1,8 +1,7 @@
 """FAB phase 2 — latent space structuring, implemented from arXiv:2604.03489.
 
-This implements the paper's second training phase faithfully; the earlier
-baseline was phase 1 plus the latent projection and none of
-phase 2.
+Implements the paper's second training phase; `fab_baseline` covers phase 1 plus the
+latent projection only.
 
 **What the paper specifies, and where.** Section 3.1, "Two-phase autoencoder training", and
 Algorithm 1. Phase 1 is the L2 reconstruction of Eq. 4 on exclusively feasible points, which is
@@ -28,11 +27,9 @@ is (n, k) and `J J^T` would be (n, n), not (k, k). For the stated shape the Gram
 the k x k one, so this file computes `J^T J + eps I_k`. That is also the quantity that measures
 "how much the decoder locally stretches or shrinks the space", which is the paper's own gloss.
 
-*Latent radius.* **The claim that the paper does not state it was FALSE, and it is what caused
-a divergence with upstream.** The paper states a 0.5-radius hypersphere EXPLICITLY in both
-Section 4 and Section 5, and upstream hardcodes 0.5 as a literal in both autoencoder classes.
-The probe now passes `latent_radius=0.5`. The comment is corrected here as well as the value,
-because a wrong comment is what let 1.0 be re-derived as reasonable.
+*Latent radius.* The paper states a 0.5-radius hypersphere explicitly in Sections 4 and 5,
+and upstream hardcodes 0.5 as a literal in both autoencoder classes. The probe passes
+`latent_radius=0.5`.
 
 *Epsilon* genuinely is not stated. `eps` is 1e-6, recorded as our choice rather than the
 authors'.
@@ -57,11 +54,9 @@ import jax.numpy as jnp
 
 from made.baselines.fab_baseline import FABBaseline
 
-# Appendix A.2, the Safety Gym setting, governs. The upstream README
-# records that THE SOURCE CONTRADICTS ITSELF: the upstream README's own Safety Gym example
-# command passes recon 1.5, feas 1.0, latent 1.0, geom 0.025, hinge 0.5 -- the Appendix A.1
-# GRID's low end, and what this file used to carry. A.2 states the values below. A reviewer
-# who checks the README will find the disagreement, so it is recorded rather than hidden.
+# Appendix A.2 (Safety Gym setting) governs. The upstream README's own Safety Gym example
+# command instead passes recon 1.5, feas 1.0, latent 1.0, geom 0.025, hinge 0.5 (Appendix
+# A.1 grid's low end); the two sources disagree, and A.2's values are used here.
 LAMBDA_RECON: float = 1.0
 LAMBDA_FEASIBILITY: float = 0.5
 LAMBDA_HINGE: float = 0.5
@@ -183,11 +178,10 @@ def geometric_loss(
     geometry — which is why k is fixed at 8 for the dynamic bicycle.
     """
 
-    # Undisclosed upstream behaviour the paper does not state. Upstream caps
-    # the term at 32 latent samples and filters to finite, positive determinants before taking
-    # the variance. The cap changes what the term computes on any batch larger than 32, and the
-    # filter silently drops degenerate determinants that would otherwise make the variance
-    # non-finite. Both adopted; recorded so the divergence list is complete in BOTH directions.
+    # Upstream (undisclosed by the paper) caps the term at 32 latent samples and filters to
+    # finite, positive determinants before taking the variance; the cap changes the term's
+    # value on batches larger than 32, and the filter drops degenerate determinants that
+    # would otherwise make the variance non-finite. Both adopted here.
     z_samples = z_samples[:GEOM_MAX_SAMPLES]
 
     def _logdet(z: jax.Array) -> jax.Array:
@@ -219,30 +213,20 @@ def feasibility_loss(
     discriminator: Discriminator,
     feasible_pairs: jax.Array,
 ) -> jax.Array:
-    """`L_feasibility` -- the fifth term, which HAS NO EQUATION IN THE PAPER.
+    """`L_feasibility` -- a fifth term with no equation in the paper.
 
-    `lambda_feasibility` appears in Appendix A.2 for both settings and in the
-    upstream CLI, but **Eq. 6 enumerates only four weights** -- `lambda_recon, lambda_latent,
-    lambda_hinge, lambda_geom` -- and Algorithm 1 line 23 names only four terms. So this term
-    exists in the source's hyperparameters and code and not in its mathematics.
+    `lambda_feasibility` appears in Appendix A.2 and the upstream CLI, but Eq. 6 enumerates
+    only four weights (`lambda_recon, lambda_latent, lambda_hinge, lambda_geom`) and
+    Algorithm 1 line 23 names only four terms; this term exists in upstream's code and
+    hyperparameters, not its mathematics.
 
-    Upstream, in `training.py`::
+    Upstream (`training.py`) targets the Safety Gym branch at ONES, not the input's own
+    label (Appendix A.2 sets Safety Gym as the setting), pushing the reconstruction to be
+    called feasible regardless of the input's own label -- the generic (non-Safety-Gym)
+    branch instead targets that label. Followed here.
 
-        logits_recon = _predict_feas(x_recon, batch_x)
-        if shape_name == 'safety_gym' or force_mask_labels:
-            ae_class_loss = classification_criterion(logits_recon,
-                                                     torch.ones_like(logits_recon))
-        else:
-            ae_class_loss = classification_criterion(logits_recon, batch_y_original)
-
-    **The Safety Gym branch targets ONES, not the input's own label**, and Appendix A.2 settles
-    Safety Gym as the setting. So the reconstruction is pushed to be called FEASIBLE whatever
-    the input was, which is the projector behaviour one would want and is NOT what the
-    non-Safety-Gym branch does. Implementing this from the paper alone was impossible, and
-    implementing it from the generic branch would have been wrong.
-
-    **It is not a rename of `L_latent`.** `L_latent` scores decodes of BALL DRAWS, `R(z)` for
-    `z ~ S`; this scores the RECONSTRUCTION PATH, `R(E(y, x))`, of a real input.
+    Not a rename of `L_latent`: `L_latent` scores decodes of ball draws, `R(z)` for `z ~ S`;
+    this scores the reconstruction path, `R(E(y, x))`, of a real input.
     """
     state_dim = model.state_dim
     def _one(pair: jax.Array) -> jax.Array:

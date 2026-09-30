@@ -146,12 +146,11 @@ def test_phase2_t_loss_total_excludes_delta_i_term(small_cell, sample_batch):
 
 
 def test_phase1_loss_total_includes_delta_i_term(small_cell, sample_batch):
-    """Headline `phase1_loss` total now carries the lambda_delta_i_norm penalty.
+    """`phase1_loss` total carries the lambda_delta_i_norm penalty.
 
-    The ΔI penalty was previously added only inside `phase1_i_loss`, which kept
-    `val/loss` (and the validation-driven early-stopping criterion) blind to the
-    regularizer pressure that I-side training was applying. Including it in the
-    headline total makes early stopping fire when ΔI saturates.
+    Keeps `val/loss` (and validation-driven early stopping) sensitive to the
+    regularizer pressure I-side training applies, so early stopping fires
+    when ΔI saturates.
     """
     cell = _cell_with_nonzero_delta_i(small_cell)
     x_prev, x_curr, params, dt, u_sampled = _loss_batch(sample_batch)
@@ -167,8 +166,8 @@ def test_phase1_loss_total_includes_delta_i_term(small_cell, sample_batch):
 
 
 def test_phase2_loss_total_includes_delta_i_term(small_cell, sample_batch):
-    """Headline `phase2_loss` total now carries the lambda_delta_i_norm penalty
-    via `phase1_loss`, so validation/early-stop signals inherit it."""
+    """`phase2_loss` total carries the lambda_delta_i_norm penalty via
+    `phase1_loss`, so validation/early-stop signals inherit it."""
     cell = _cell_with_nonzero_delta_i(small_cell)
     x_prev, x_curr, params, dt, u_sampled = _loss_batch(sample_batch)
     cfg_off = TrainingConfig(lambda_delta_i_norm=0.0)
@@ -580,11 +579,6 @@ def test_phase2_metrics_include_phase_local_axes(
     assert phase2_val_rows[-1][1]["val/phase_step"] == 2.0
 
 
-# ---------------------------------------------------------------------------
-# Phase-2 proposal perturbation tests
-# ---------------------------------------------------------------------------
-
-
 def _perturbation_config(tmp_path, *, perturbation_type: str) -> ExperimentConfig:
     """Small 1-epoch-per-phase config with supervised training for speed."""
     base = ExperimentConfig(output_dir=str(tmp_path))
@@ -687,11 +681,6 @@ def test_compute_x_proposal_phase2_bound_violation_pushes_outward(small_cell):
     assert jnp.all(outside), (
         f"Expected all components outside [{state_min}, {state_max}], got {result[0]}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Phase-2 proposal perturbation: "gaussian" type + per-dimension absolute scales
-# ---------------------------------------------------------------------------
 
 
 def _box_cell(state_min, state_max):
@@ -1078,10 +1067,6 @@ def test_curriculum_seed_meta_allows_new_phase2_perturbation(tmp_path, small_cel
     _check_train_meta(checkpoint_manager, state.step, phase2_cfg)
 
 
-# ---------------------------------------------------------------------------
-# Phase-2 proposal corruption: per-sample randomised sigma (domain randomisation)
-# ---------------------------------------------------------------------------
-
 _RANDOMISED_SIGMA_MAX = (0.4, 0.2, 0.0, 0.1)
 
 
@@ -1096,11 +1081,10 @@ def _randomised_cfg(**overrides) -> TrainingConfig:
 
 
 def test_randomised_defaults_reproduce_fixed_sigma_bit_for_bit(small_cell):
-    """The new fields default to 'fixed'/0.0 and change nothing, bit-for-bit.
+    """Default fields ('fixed'/0.0) change nothing, bit-for-bit.
 
-    Regression guard for the byte-equivalence requirement: the default config
-    must not consume any extra randomness, so the historical
-    `x_curr + sigma_max * normal(key)` result is reproduced exactly.
+    The default config must not consume extra randomness, so
+    `x_curr + sigma_max * normal(key)` is reproduced exactly.
     """
     cfg = _randomised_cfg()
     assert cfg.phase2_proposal_perturbation_scale_sampling == "fixed"
@@ -1129,7 +1113,7 @@ def _expected_multiplier_mean(cfg: TrainingConfig) -> float:
 
 @pytest.mark.parametrize("sampling", ["loguniform", "uniform"])
 def test_randomised_sigma_varies_across_samples(small_cell, sampling):
-    """Realised |dx| / sigma_max has nonzero spread across rows (it does not today)."""
+    """Realised |dx| / sigma_max has nonzero spread across rows."""
     cfg = _randomised_cfg(
         phase2_proposal_perturbation_scale_sampling=sampling,
         phase2_proposal_perturbation_scale_min_ratio=0.01,
@@ -1264,14 +1248,10 @@ def test_randomised_knobs_rejected_for_bound_violation(small_cell):
         _compute_x_proposal(jnp.zeros((2, 4)), 2, cfg, small_cell)
 
 
-# ---------------------------------------------------------------------------
-# restore_phase1_best_before_phase2
-#
-# Phase 2 otherwise inherits phase 1's FINAL state. Where early stopping picked an earlier epoch,
-# that starts phase 2 from a model the run itself judged worse. These three tests cover: default
-# off is unchanged, on with best == final is unchanged, and on with best != final actually
-# restores the best.
-# ---------------------------------------------------------------------------
+# restore_phase1_best_before_phase2: phase 2 otherwise inherits phase 1's FINAL state, so
+# when early stopping picked an earlier epoch, phase 2 starts from a model the run itself
+# judged worse. Covers: default off unchanged, on with best == final unchanged, on with
+# best != final actually restores the best.
 
 
 def _final_train_meta(checkpoints_dir) -> dict:

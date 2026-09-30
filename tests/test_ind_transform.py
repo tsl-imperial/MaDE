@@ -20,9 +20,7 @@ from made.data.ind.transform import (
 )
 
 
-# ---------------------------------------------------------------------------
 # Helpers to build synthetic row data
-# ---------------------------------------------------------------------------
 
 def _make_track_rows(
     track_id: int,
@@ -57,9 +55,7 @@ def _make_meta_row(track_id: int, class_: str = "car") -> dict[str, str]:
     }
 
 
-# ---------------------------------------------------------------------------
 # _wrap_to_pi
-# ---------------------------------------------------------------------------
 
 def test_wrap_to_pi_in_range() -> None:
     for angle in [0.0, math.pi - 0.001, -math.pi + 0.001, math.pi * 1.5, -math.pi * 2.5]:
@@ -67,9 +63,7 @@ def test_wrap_to_pi_in_range() -> None:
         assert -math.pi < result <= math.pi, f"wrap_to_pi({angle}) = {result} out of (-π, π]"
 
 
-# ---------------------------------------------------------------------------
 # _filter_vehicle_track_ids
-# ---------------------------------------------------------------------------
 
 def test_filter_vehicle_track_ids_excludes_non_vehicles() -> None:
     meta = [
@@ -82,9 +76,7 @@ def test_filter_vehicle_track_ids_excludes_non_vehicles() -> None:
     assert ids == {0, 1}
 
 
-# ---------------------------------------------------------------------------
 # _downsample_track
-# ---------------------------------------------------------------------------
 
 def test_downsample_stride() -> None:
     """Downsampled rows are exactly DOWNSAMPLE_FACTOR native frames apart."""
@@ -104,9 +96,7 @@ def test_downsample_non_divisible_length_correct() -> None:
     assert [int(r["frame"]) for r in down] == [0, 5, 10]
 
 
-# ---------------------------------------------------------------------------
 # _rows_to_state
-# ---------------------------------------------------------------------------
 
 def test_rows_to_state_shape() -> None:
     rows = _make_track_rows(track_id=0, n_frames=8)
@@ -142,9 +132,7 @@ def test_rows_to_state_theta_is_wrapped() -> None:
     assert -math.pi < theta <= math.pi
 
 
-# ---------------------------------------------------------------------------
 # process_recording_tracks (end-to-end)
-# ---------------------------------------------------------------------------
 
 def test_process_recording_tracks_state_shape() -> None:
     """End-to-end: output states have shape (T, 4) per trajectory."""

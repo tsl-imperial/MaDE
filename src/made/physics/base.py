@@ -31,8 +31,8 @@ class PhysicsModel(eqx.Module, ABC):
     ) -> jax.Array:
         """Return an analytical control estimate from consecutive states.
 
-        This is an approximate or exact inverse of the known discrete transition.
-        Subclasses should override this with a closed-form per-system formula.
+        Approximate or exact inverse of the known discrete transition. Subclasses override
+        with a closed-form per-system formula.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement known_control_prior."
@@ -55,12 +55,9 @@ class PhysicsModel(eqx.Module, ABC):
 
     @property
     def param_scales(self) -> jax.Array:
-        """Characteristic scales for each parameter dimension.
-
-        Used to normalise raw param values before they enter learned MLPs.
-        Returns ones by default (no normalisation). Override in subclasses
-        whose params span very different magnitudes (e.g. DynamicBicycle).
-        """
+        """Characteristic scales per parameter dimension, for normalising raw params before
+        learned MLPs. Ones by default; override when params span very different
+        magnitudes (e.g. DynamicBicycle)."""
         return jnp.ones(self.param_dim)
 
 

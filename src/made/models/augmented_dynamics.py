@@ -78,16 +78,12 @@ class ZeroResidual(eqx.Module):
 def _fast_heun_enabled() -> bool:
     """Whether the single-step Heun fast path in ``integrate`` is active.
 
-    Default ON since 2026-09-22. Set ``MADE_FAST_HEUN=0`` to fall back to driving
-    ``diffeqsolve`` for the single-step case. Read per call rather than cached so a test
-    can toggle it; the read is a dict lookup and is not on the device path.
+    Default on. Set ``MADE_FAST_HEUN=0`` to fall back to driving ``diffeqsolve`` for the
+    single-step case. Read per call rather than cached so a test can toggle it; the read is a
+    dict lookup and is not on the device path.
 
-    Enabled by default on this evidence, all verified rather than assumed:
-    forward 1.1e-16, isolated gradient 5.6e-17, full training gradient 5.6e-17 abs /
-    6.9e-16 rel, a full MaDE cell output 3.5e-18 in x and exactly 0.0 in u, an
-    R4-REEVAL made_pnp cell reproducing published ADE and FDE at exactly 0.0 difference,
-    60 real optimiser steps agreeing to 4.4e-16 with no compounding, and the full test
-    suite passing with only four independently-verified pre-existing failures.
+    Agreement with the ``diffeqsolve`` path is at machine epsilon (forward 1.1e-16, gradient
+    5.6e-17 abs / 6.9e-16 rel), mathematically identical but not bit-identical.
     """
     return os.environ.get("MADE_FAST_HEUN", "1") != "0"
 
@@ -128,17 +124,14 @@ class AugmentedDynamics(eqx.Module):
         adjoint: diffrax.AbstractAdjoint | None = None,
         fast: bool | None = None,
     ) -> jax.Array:
-        # Fast path: the default configuration is Heun() + ConstantStepSize() over
-        # t0=0 -> t1=dt with dt0=dt, i.e. EXACTLY ONE Heun step, which is the explicit
-        # trapezoid k1=f(y,u,0), k2=f(y+dt*k1,u,dt), y' = y + dt/2*(k1+k2). Running
-        # diffeqsolve's stepping/controller/save machinery to evaluate two vector-field
-        # calls costs ~28x the arithmetic on the differentiated path. DirectAdjoint is
-        # admitted here because it means "differentiate through the solver's operations",
-        # which is exactly what autodiff through this expression does.
-        #
-        # Mathematically identical, NOT bit-identical: agreement is at machine epsilon
-        # (forward 1.1e-16, gradient 5.6e-17 absolute / 6.9e-16 relative). Guarded by
-        # MADE_FAST_HEUN, default ON since 2026-09-22; set it to 0 to fall back. See tests/test_fast_heun_equivalence.py.
+        # Fast path: the default config is Heun() + ConstantStepSize() over t0=0 -> t1=dt with
+        # dt0=dt, i.e. exactly one Heun step -- the explicit trapezoid k1=f(y,u,0),
+        # k2=f(y+dt*k1,u,dt), y' = y + dt/2*(k1+k2). Running diffeqsolve's stepping/controller/
+        # save machinery to evaluate the same two vector-field calls costs ~28x the arithmetic
+        # on the differentiated path. DirectAdjoint is admitted here because it means
+        # "differentiate through the solver's operations", exactly what autodiff through this
+        # expression does. Mathematically identical, not bit-identical (see
+        # `_fast_heun_enabled`); guarded by MADE_FAST_HEUN.
         use_fast = _fast_heun_enabled() if fast is None else fast
         if (
             use_fast

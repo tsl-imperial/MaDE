@@ -1,4 +1,4 @@
-"""Shared input-feature canonicalisation for E05 upstream predictors."""
+"""Shared input-feature canonicalisation for upstream predictors."""
 
 from __future__ import annotations
 

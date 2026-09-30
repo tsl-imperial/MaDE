@@ -1,4 +1,4 @@
-"""Tests for `return_diagnostics` threaded through `MaDECell.__call__` (rebuttal item C).
+"""Tests for `return_diagnostics` threaded through `MaDECell.__call__`.
 
 `Corrector.__call__`/`Corrector._correct_eval` already support an opt-in
 `return_diagnostics=True` keyword that returns a `(x, u, CorrectorDiagnostics)`

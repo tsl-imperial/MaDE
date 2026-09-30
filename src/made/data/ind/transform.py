@@ -1,19 +1,15 @@
 """Per-track filtering, grouping, downsampling, and state extraction.
 
-Downsample rule (Decision P5):
-  Keep frames where (track_frame_index % DOWNSAMPLE_FACTOR == DOWNSAMPLE_PHASE),
-  where track_frame_index = 0, 1, 2, ... counts from the track's first native frame.
-  This is a per-track relative phase, not a global frame index.
+Downsample rule: keep frames where (track_frame_index % DOWNSAMPLE_FACTOR ==
+DOWNSAMPLE_PHASE), where track_frame_index = 0, 1, 2, ... counts from the track's
+first native frame -- a per-track relative phase, not a global frame index.
 
-State schema (Decision P7, P8):
-  (x, y, theta_rad, v) where:
-    x, y   -- xCenter, yCenter from the inD CSV (metres)
-    theta  -- deg2rad(heading) wrapped to (-pi, pi]
-    v      -- hypot(xVelocity, yVelocity)  [NOT lonVelocity -- body-frame gotcha]
+State schema: (x, y, theta_rad, v) where x, y are xCenter/yCenter from the inD CSV
+(metres); theta is deg2rad(heading) wrapped to (-pi, pi]; v is
+hypot(xVelocity, yVelocity), NOT lonVelocity (body-frame gotcha).
 
-Metadata schema (plan §3):
-  [length, width, class_one_hot[0], class_one_hot[1], location_id_float]
-  class_one_hot over ("car", "truck_bus") -- exactly two slots.
+Metadata schema (plan §3): [length, width, class_one_hot[0], class_one_hot[1],
+location_id_float], class_one_hot over ("car", "truck_bus").
 """
 
 from __future__ import annotations
@@ -94,7 +90,7 @@ def _rows_to_state(rows: list[dict[str, str]]) -> np.ndarray:
         theta = _wrap_to_pi(math.radians(heading_deg))
         vx = float(row["xVelocity"])
         vy = float(row["yVelocity"])
-        v = math.hypot(vx, vy)  # ground-frame speed magnitude (Decision P8)
+        v = math.hypot(vx, vy)  # ground-frame speed magnitude
         states[i, 0] = x
         states[i, 1] = y
         states[i, 2] = theta

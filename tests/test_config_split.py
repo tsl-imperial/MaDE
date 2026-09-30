@@ -1,4 +1,4 @@
-"""Tests for PhysicsConfig/ModelConfig known-true split and EvaluationConfig (US-001, US-005)."""
+"""Tests for PhysicsConfig/ModelConfig known-true split and EvaluationConfig."""
 
 from made.utils.config import (
     EvaluationConfig,

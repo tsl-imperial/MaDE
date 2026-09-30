@@ -37,9 +37,8 @@ class CheckpointManager:
     """Wrapper around Orbax checkpoint directories used by the project."""
 
     def __init__(self, directory: str, max_to_keep: int = 3, save_interval: int = 1000):
-        # Orbax tensorstore raises in a daemon thread when given a relative path →
-        # main process exits 0 → silent partial save. Absolutise here so programmatic
-        # callers (notebooks, future scripts) get the same protection.
+        # Orbax tensorstore raises in a daemon thread when given a relative path, so the
+        # main process can exit 0 on a silent partial save. Absolutise to avoid that.
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.save_interval = save_interval
@@ -75,11 +74,10 @@ class CheckpointManager:
             except Exception:
                 pass
 
-        # Orbax may create or populate the numeric step directory depending on
-        # the installed Orbax/JAX pair.  Write the project-owned pickle fallback
-        # after the Orbax attempt (and after any async save is finished) so
-        # restore() and train_meta sidecars have a stable location regardless of
-        # Orbax API drift.
+        # Orbax may create or populate the numeric step directory depending on the
+        # installed Orbax/JAX pair. Write the pickle fallback after the Orbax attempt
+        # (and after any async save finishes) so restore() has a stable location
+        # regardless of Orbax API drift.
         step_dir = self._step_dir(step)
         step_dir.mkdir(parents=True, exist_ok=True)
         with step_dir.joinpath("state.pkl").open("wb") as handle:

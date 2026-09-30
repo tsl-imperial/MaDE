@@ -83,9 +83,8 @@ def test_per_dim_length_mismatch_raises():
 def test_per_dim_zero_scalar_is_not_a_noop_when_per_dim_set():
     """perturbation_scale=0 short-circuits before bound_violation is even reached.
 
-    This documents current behavior: the early-return at the top of perturb_trajectories
-    fires on the scalar field, so a non-trivial per_dim scale is ignored when the scalar
-    is zero. Configs that want per-dim shoves must set a non-zero scalar perturbation_scale.
+    The early return fires on the scalar field, so a non-zero per_dim scale is ignored
+    when the scalar is zero; configs wanting per-dim shoves need a non-zero scalar too.
     """
     states = _states_above_midpoint()
     cfg = DataConfig(

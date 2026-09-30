@@ -84,12 +84,8 @@ def test_inequality_gradient_finite(small_cell):
 
 
 def test_dynamic_bicycle_known_prior_gradient_finite():
-    """Gradients through DynamicBicycle.known_control_prior are finite, non-NaN.
-
-    Covers two autodiff paths:
-    1. Grad w.r.t. x_prev (state input).
-    2. Grad w.r.t. params (physics parameters).
-    """
+    """Gradients through DynamicBicycle.known_control_prior are finite, non-NaN, w.r.t. both
+    x_prev and params."""
     from made.physics import DynamicBicycle, resolve_params
 
     physics = DynamicBicycle()
@@ -98,7 +94,6 @@ def test_dynamic_bicycle_known_prior_gradient_finite():
     x_prev = jnp.array([0.0, 0.0, 0.0, 8.0, 0.2, 0.05], dtype=jnp.float64)
     x_curr = jnp.array([0.08, 0.0, 0.015, 8.15, 0.22, 0.06], dtype=jnp.float64)
 
-    # Grad w.r.t. x_prev.
     def loss_xp(xp):
         return physics.known_control_prior(xp, x_curr, params, dt).sum()
 
@@ -106,7 +101,6 @@ def test_dynamic_bicycle_known_prior_gradient_finite():
     assert jnp.isfinite(val_xp), f"Loss (x_prev grad) is non-finite: {val_xp}"
     assert jnp.all(jnp.isfinite(grad_xp)), f"Grad w.r.t. x_prev has non-finite values: {grad_xp}"
 
-    # Grad w.r.t. params.
     def loss_p(p):
         return physics.known_control_prior(x_prev, x_curr, p, dt).sum()
 

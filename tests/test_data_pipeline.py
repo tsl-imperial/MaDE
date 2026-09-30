@@ -1,4 +1,4 @@
-"""Tests for InMemoryDataLoader noise injection (Anomaly 1 fix)."""
+"""Tests for InMemoryDataLoader noise injection."""
 
 # ruff: noqa: E402
 
@@ -16,9 +16,7 @@ jax.config.update("jax_enable_x64", True)
 from made.data.grain_pipeline import InMemoryDataLoader
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -42,9 +40,7 @@ def _collect_batches(loader: InMemoryDataLoader) -> list[dict]:
     return list(loader)
 
 
-# ---------------------------------------------------------------------------
 # Zero noise: byte-identical to pre-noise behavior
-# ---------------------------------------------------------------------------
 
 
 def test_loader_zero_noise_byte_identical(synthetic_samples):
@@ -62,9 +58,7 @@ def test_loader_zero_noise_byte_identical(synthetic_samples):
             )
 
 
-# ---------------------------------------------------------------------------
 # Nonzero noise: batches differ from clean
-# ---------------------------------------------------------------------------
 
 
 def test_loader_nonzero_noise_changes_batches(synthetic_samples):
@@ -83,9 +77,7 @@ def test_loader_nonzero_noise_changes_batches(synthetic_samples):
     assert found_diff, "Expected at least one batch to differ when noise_scale=0.1"
 
 
-# ---------------------------------------------------------------------------
 # Empirical std check
-# ---------------------------------------------------------------------------
 
 
 def test_loader_noise_empirical_std(synthetic_samples):
@@ -109,9 +101,7 @@ def test_loader_noise_empirical_std(synthetic_samples):
         )
 
 
-# ---------------------------------------------------------------------------
 # Determinism: same (seed, noise_scale) → identical sequences across epochs
-# ---------------------------------------------------------------------------
 
 
 def test_loader_noise_determinism(synthetic_samples):
@@ -130,9 +120,7 @@ def test_loader_noise_determinism(synthetic_samples):
                 )
 
 
-# ---------------------------------------------------------------------------
 # Per-epoch variation: different noise per epoch
-# ---------------------------------------------------------------------------
 
 
 def test_loader_noise_distinct_per_epoch(synthetic_samples):
@@ -150,9 +138,7 @@ def test_loader_noise_distinct_per_epoch(synthetic_samples):
     assert found_diff, "Expected noise to differ between epoch 0 and epoch 1"
 
 
-# ---------------------------------------------------------------------------
 # State-only noise: params and u_gt untouched
-# ---------------------------------------------------------------------------
 
 
 def test_loader_noise_does_not_perturb_params_or_controls(synthetic_samples):

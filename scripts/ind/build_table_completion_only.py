@@ -55,16 +55,12 @@ def _pop_sd(v: list[float]) -> float:
 def _primary(cell: dict, metric: str) -> float | None:
     """The figure for this row: emitted controls where the row emits them.
 
-    Two artifact vintages have to be read, since a scoring convention flip once changed which
-    scoring owns the bare key:
+    Two artifact vintages exist:
 
-    * older artifacts -- bare key is the RECOVERED scoring and the emitted one sits under the
-      diagnostic suffix `__emitted_controls`;
-    * current artifacts -- bare key is the EMITTED scoring and the diagnostic sits under
-      `__recovered_controls`.
+    * older -- bare key is the RECOVERED scoring, emitted sits under `__emitted_controls`;
+    * current -- bare key is the EMITTED scoring, recovered sits under `__recovered_controls`.
 
-    Taking `__emitted_controls` where it exists and the bare key otherwise gives the correct
-    figure from either vintage.
+    Taking `__emitted_controls` where it exists and the bare key otherwise is correct for either.
     """
     sm = cell.get("scalar_metrics", {})
     if cell["row"].startswith("made"):

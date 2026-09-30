@@ -141,11 +141,9 @@ def _build_data_loaders(
         stub_seed=seed + 1,
     )
 
-    # "Filtered" for MaDE training means TRACK-level -- drop a track whose end-to-end
-    # displacement is at most the threshold, keep every transition pair of a surviving
-    # track. Applied to train AND val, because the validation loss is what early
-    # stopping reads and a split protocol between the two would make that signal meaningless.
-    # Default None reproduces published behaviour exactly.
+    # Track-level filter: drop a track whose end-to-end displacement is at most the
+    # threshold, keep every transition pair of a surviving track. Applied to train and val,
+    # since val loss drives early stopping. Default None reproduces published behaviour exactly.
     if stationary_filter_m is not None:
         n_tr0, n_va0 = int(train_states.shape[0]), int(val_states.shape[0])
         train_states, train_lengths, train_meta, _ = filter_stationary_tracks(
@@ -193,11 +191,6 @@ def _build_data_loaders(
     return train_loader, val_loader, train_states, train_lengths
 
 
-# ---------------------------------------------------------------------------
-# Empirical-envelope helpers.
-# ---------------------------------------------------------------------------
-
-
 def _compute_or_load_envelope(
     train_states: Any,
     train_lengths: Any,
@@ -206,9 +199,8 @@ def _compute_or_load_envelope(
 ) -> EmpiricalEnvelope:
     """Return an EmpiricalEnvelope estimated from the inD training split.
 
-    On the first call the envelope is computed from ``train_states`` /
-    ``train_lengths`` and written to ``cache_path`` as JSON.  Subsequent calls
-    load from the cache, avoiding redundant quantile computation across seeds.
+    Computed once from ``train_states`` / ``train_lengths`` and cached to ``cache_path`` as
+    JSON; later calls load from the cache to avoid redundant quantile computation across seeds.
     """
     if cache_path.exists():
         data = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -233,11 +225,6 @@ def _compute_or_load_envelope(
     return envelope
 
 
-# ---------------------------------------------------------------------------
-# Per-variant training adapters.
-# ---------------------------------------------------------------------------
-
-
 _MADE_VARIANT_NAMES = frozenset({"made_phase1", "made_phase2", "made_no_residual", "made_no_corrector"})
 
 
@@ -252,14 +239,13 @@ def _train_made(
 ) -> tuple[object, int]:
     """Train a MaDE cell. Phase 1, Phase 2, no_residual, and no_corrector all share this path.
 
-    Phase-2 honours ``config.training.pretrained_phase1_path`` (already implemented
-    in ``made.training.train``). The two ablations are configured purely via
-    ``config.model.residual`` and ``config.corrector.mode`` — no code branch
-    needed beyond passing them through.
+    Phase-2 honours ``config.training.pretrained_phase1_path``. The two ablations are
+    configured purely via ``config.model.residual`` and ``config.corrector.mode`` — no
+    extra branch needed.
 
-    When ``envelope`` is provided (inD real-world data), the empirical-envelope
-    constraint replaces ``kinematic_bicycle_constraints()`` so Phase-2 inequality
-    penalties are calibrated to the actual coordinate range of the dataset.
+    When ``envelope`` is given (inD real-world data), it replaces
+    ``kinematic_bicycle_constraints()`` so Phase-2 inequality penalties match the dataset's
+    actual coordinate range.
     """
     config = replace(config, training=replace(config.training, is_field_data=True))
     os.environ.setdefault("MADE_DEBUG_ASSERT_XY", "1")
@@ -367,16 +353,11 @@ def _train_clamp(
     return None, 0
 
 
-# ---------------------------------------------------------------------------
-# Finite-loss sentinel.
-# ---------------------------------------------------------------------------
-
-
 def _final_loss_for(variant: str, trained_model, val_loader) -> float:
     """Re-evaluate one val batch post-training to capture a final loss snapshot.
 
-    Cheap (~0.5 s; one batch through one filter_jit'd loss). Convention-matched
-    return of 0.0 for the parameterless clamp variant.
+    Cheap (~0.5 s; one batch through one filter_jit'd loss). Returns 0.0 for the
+    parameterless clamp variant.
     """
     if variant == "clamp" or trained_model is None:
         return 0.0
@@ -415,15 +396,10 @@ def _final_loss_for(variant: str, trained_model, val_loader) -> float:
 
 
 def _early_stopping_summary(output_dir: Path) -> dict:
-    """Per-phase `epochs_run`, `best_epoch` and `termination_reason`, read back from the run.
-
-    Reconstructs a compact per-phase early-stopping summary (`epochs_run`,
-    `best_epoch_in_phase`, `best_step`, `best_loss`, `termination_reason`) so the
-    outcome of each training phase is visible without re-deriving it from configs
-    and checkpoint metadata.
-
-    Read from the last checkpoint's `train_meta.json` rather than threaded through the training
-    loop, so the summary cannot disagree with the checkpoint it describes.
+    """Per-phase `epochs_run`, `best_epoch_in_phase`, `best_step`, `best_loss` and
+    `termination_reason`, read from the last checkpoint's `train_meta.json` rather than
+    threaded through the training loop, so the summary cannot disagree with the checkpoint
+    it describes.
     """
     ck = output_dir / "checkpoints"
     if not ck.is_dir():
@@ -471,12 +447,9 @@ def _write_training_summary(
 ) -> None:
     """Write ``training_summary.json``.
 
-    NaN-from-step-1 runs fail because ``final_loss`` is non-finite; downstream
-    smoke tests assert ``math.isfinite(summary["final_loss"])``.
-
-    Includes the per-phase early-stopping block (`epochs_run`, `best_epoch_in_phase`,
-    `termination_reason`) so how each training phase ended is visible directly from
-    this artefact.
+    Downstream smoke tests assert ``math.isfinite(summary["final_loss"])``, so a
+    NaN-from-step-1 run fails here. Includes the per-phase early-stopping block
+    (`epochs_run`, `best_epoch_in_phase`, `termination_reason`).
     """
     final_loss = _final_loss_for(variant, trained_model, val_loader)
     summary = {
@@ -487,11 +460,6 @@ def _write_training_summary(
         **_early_stopping_summary(output_dir),
     }
     (output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
-
-
-# ---------------------------------------------------------------------------
-# Variant dispatch.
-# ---------------------------------------------------------------------------
 
 
 _VARIANT_TRAINERS = {
@@ -516,8 +484,7 @@ def _train_variant(
 ) -> None:
     """Dispatch to the per-variant trainer based on ``config.variant``.
 
-    Writes the per-cell ``training_summary.json`` artefact regardless of branch,
-    so every variant has a uniform sentinel to inspect.
+    Always writes ``training_summary.json`` so every variant has a uniform artefact.
     """
     variant = config.variant
     if variant not in _LEGAL_VARIANTS:
@@ -568,7 +535,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # --- Load or build config ---
     if args.config is not None:
         config = load_config(args.config)
     else:
@@ -598,10 +564,8 @@ def main() -> None:
             ),
         )
 
-    # Apply CLI overrides
     for ov in args.override:
         key, _, val_str = ov.partition("=")
-        # Try numeric parse
         try:
             val = int(val_str)
         except ValueError:
@@ -627,9 +591,7 @@ def main() -> None:
         )
 
     num_devices = max(jax.device_count(), 1)
-    # Orbax's tensorstore backend requires absolute paths; resolve so that
-    # `--output-dir outputs/...` from the runbook still produces a working
-    # checkpoint write.
+    # Orbax's tensorstore backend requires absolute paths.
     output_dir = Path(config.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     save_config(config, str(output_dir / "config.json"))
@@ -639,7 +601,6 @@ def main() -> None:
     print(f"[train_made_inD] metadata_dim={config.model.metadata_dim}  "
           f"num_locations={config.model.num_locations}", file=sys.stderr)
 
-    # --- Build data loaders ---
     train_loader, val_loader, train_states, train_lengths = _build_data_loaders(
         args.data_dir,
         config,
@@ -660,7 +621,6 @@ def main() -> None:
                 training=replace(config.training, steps_per_epoch=capped),
             )
 
-    # --- Compute empirical envelope from train split (cached across seeds) ---
     # Shared one directory above the per-variant output so all seeds reuse it.
     envelope_cache = output_dir.parent / "train_envelope.json"
     envelope = _compute_or_load_envelope(train_states, train_lengths, envelope_cache, config.physics.dt)
@@ -670,7 +630,6 @@ def main() -> None:
         file=sys.stderr,
     )
 
-    # --- Dispatch to per-variant trainer ---
     _train_variant(config, train_loader, val_loader, output_dir, args.seed, envelope=envelope)
 
     print(f"[train_made_inD] training complete (variant={config.variant})", file=sys.stderr)

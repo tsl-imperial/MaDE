@@ -192,9 +192,9 @@ def _collect_overrides(args: argparse.Namespace, kind: str) -> dict[str, Any]:
 def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
     """Mirrors made.training.trainer._progress_output exactly.
 
-    Renders fine under the queue's ``script -e -q -f -c`` pty wrapping (a pty
-    reports ``isatty() == True``); falls back to ``/dev/tty`` only when stderr
-    itself is redirected (e.g. piped to a file with no controlling terminal).
+    Renders under the queue's ``script -e -q -f -c`` pty wrapping (a pty reports
+    ``isatty() == True``); falls back to ``/dev/tty`` only when stderr itself is
+    redirected (e.g. piped to a file with no controlling terminal).
     """
     if sys.stderr.isatty():
         return sys.stderr, False, None
@@ -235,10 +235,9 @@ def _load_windows(args: argparse.Namespace, split: str, stub_seed: int) -> dict[
         history=args.history,
         horizon=args.horizon,
         stride=args.stride,
-        # The predictors train AND are evaluated on prediction windows, so they take the
-        # window-level filter, which keeps their train and eval protocols identical. MaDE
-        # takes the track-level one instead because it trains on transition pairs and never
-        # builds a prediction window.
+        # Predictors train and are evaluated on prediction windows, so they use the
+        # window-level filter (train/eval protocols identical). MaDE uses the track-level
+        # filter instead, since it trains on transition pairs, not prediction windows.
         min_displacement_m=args.stationary_filter_m,
     )
 
@@ -249,20 +248,18 @@ def _chunked_weighted_mean(
     arrays: list[jax.Array],
     chunk_size: int,
 ) -> float:
-    """Combine per-window MSE over ``arrays`` (all sharing axis-0 length) into the exact
-    weighted mean, evaluating ``chunk_stats_fn`` over fixed-size chunks instead of one giant
-    vmap'd call over the whole split.
+    """Combine per-window MSE over ``arrays`` (shared axis-0 length) into the exact weighted
+    mean, evaluating ``chunk_stats_fn`` over fixed-size chunks instead of one giant vmap'd
+    call over the whole split.
 
-    ``chunk_stats_fn(model, *array_chunks, mask_chunk) -> (sum_sq, count)`` must be an
-    ``eqx.filter_jit``'d function returning the SUM (not mean) of per-window MSE over the chunk
-    and the count of valid (unmasked) windows in it -- this is what makes the combination exact
-    rather than a mean-of-means approximation.
+    ``chunk_stats_fn(model, *array_chunks, mask_chunk) -> (sum_sq, count)`` must be
+    ``eqx.filter_jit``'d and return the SUM (not mean) of per-window MSE over the chunk and
+    the count of valid (unmasked) windows, so the combination is exact rather than a
+    mean-of-means approximation.
 
-    The last chunk is zero-padded up to a full chunk and masked out (contributes exactly 0 to
-    both the sum and the count), so every call to ``chunk_stats_fn`` sees the SAME shape --
-    only one shape is ever traced, regardless of how many chunks there are. The effective chunk
-    size is capped at ``num_samples`` so small test splits don't pad up to a wastefully large
-    ``chunk_size``.
+    The last chunk is zero-padded to full size and masked out, so every call sees the same
+    shape and only one shape is ever traced. Effective chunk size is capped at ``num_samples``
+    so small splits don't pad to a wastefully large ``chunk_size``.
     """
     n = arrays[0].shape[0]
     if n == 0:
@@ -295,9 +292,8 @@ def _chunked_weighted_mean(
 def _make_frozen_inverse_dynamics(key: jax.Array) -> InverseDynamics:
     """Frozen kinematic-only I used by Stage-1's inequality/dynamics penalties.
 
-    ``use_residual=False`` with ``known_physics`` set means no MLP is built
-    (``I = I_known`` exactly) — the ``key`` is required by the constructor
-    signature but unused on this branch.
+    ``use_residual=False`` with ``known_physics`` set builds no MLP (``I = I_known``
+    exactly); ``key`` is required by the constructor signature but unused here.
     """
     return InverseDynamics(
         state_dim=4,
@@ -399,11 +395,9 @@ def _train_stage1(
                 f"[train_upstream_inD] stage1 epoch={epoch} "
                 f"train_loss={train_loss:.6g} val_mse={val_mse:.6g}"
             )
-            # Early-stopping policy: burn-in 5, patience 10, validated every epoch,
-            # min_delta 0 by default. Mirrors made.training.trainer's early-stop rule:
-            # wait resets on improvement and increments otherwise, and the burn-in
-            # gates the STOP rather than the counter, so epochs before it still
-            # accumulate wait.
+            # Mirrors made.training.trainer's early-stop rule: wait resets on improvement,
+            # else increments; burn-in gates the STOP, not the counter, so epochs before it
+            # still accumulate wait.
             if np.isfinite(val_mse) and val_mse < best_val - args.es_min_delta:
                 best_val = val_mse
                 best_predictor = predictor
@@ -493,8 +487,7 @@ def main() -> None:
         "seed": args.seed,
         "use_stub": args.use_stub,
         "best_val_mse": best_val,
-        # Every run records WHICH criterion ended it and where, rather than
-        # leaving it to be reconstructed from logs afterwards.
+        # Records which criterion ended the run and where.
         "termination_reason": stop_reason,
         "epochs_run": len(history),
         "epoch_ceiling": args.epochs,

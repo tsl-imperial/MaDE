@@ -1,21 +1,17 @@
-"""The latency-only harness: timing rows for raw / clamp / smoother / made_pnp on the
+"""Latency-only harness: timing rows for raw / clamp / smoother / made_pnp on the
 trained predictors and MaDE checkpoints.
 
-A full inD evaluation pass adds, beyond the panel it already carries, only the two latency
-columns, one metric the paper does not report, and a provenance block. This takes the narrow
-route: the two columns and the provenance, and nothing else.
+Adds only the latency columns and a provenance block to a full inD evaluation pass.
 
-**The timing code is not reimplemented.** ``eval_lib.py`` is imported and its
-``_time_pipeline`` is called with the same arguments and the same defaults the full pass uses
-(``timing_batch_size`` 16, ``timing_repeats`` 5), so a figure from here is comparable to a
-figure from there. The ``made_pnp`` callable is reconstructed from the same three module-level
-pieces the full pass closes over.
+Reuses ``eval_lib.py``'s ``_time_pipeline`` with the same arguments and defaults as the
+full pass (``timing_batch_size`` 16, ``timing_repeats`` 5), so figures are comparable.
+``made_pnp`` is reconstructed from the same three module-level pieces the full pass closes
+over.
 
-Provenance recorded: git commit, hardware string, timing batch size, repeat count, and the
-number of windows timed over — the fields the full artifact carries that anyone would later
-want.
+Provenance recorded: git commit, hardware string, timing batch size, repeat count, and
+number of windows timed over.
 
-Nothing under ``outputs/`` is written except the requested ``--out`` artifact.
+Writes only the requested ``--out`` artifact.
 """
 
 from __future__ import annotations
@@ -48,13 +44,11 @@ FAMILIES = ("lstm", "ssm", "transformer")
 PRED_SEEDS = (0, 1, 2, 3, 4)
 MADE_SEEDS = (0, 1, 2)
 OUT = ROOT / "outputs/ind/latency.json"
-# DERIVED, NOT RESTATED. The corrector's eval loop runs to a tolerance, so the step size
-# changes its iteration count and therefore the latency being measured -- importing the
-# single definition from evaluate.py makes a mismatched protocol impossible here.
+# The corrector's eval loop runs to a tolerance, so step size affects iteration count and
+# therefore latency. Import the single definition from evaluate.py to avoid mismatch.
 from scripts.ind.evaluate import WINDOW_SPEC, THRESH_M as THRESHOLD_M  # noqa: E402
 
-# The panel's own step size, stated independently of WINDOW_SPEC so the assertion below has
-# something to compare against rather than comparing a value with itself.
+# Panel's step size, checked against WINDOW_SPEC's below.
 PANEL_DT: float = 0.2
 TIMING_BATCH_SIZE = 16
 TIMING_REPEATS = 5
@@ -65,13 +59,10 @@ from scripts.common.run_guard import claim_output, require_idle_devices  # noqa:
 
 
 def _machine_state(idle_scope) -> dict:
-    """What was actually on the cards when the measurement started, recorded not asserted.
+    """Record what was on the cards when the measurement started (not just a pass/fail flag).
 
-    The machine should be VERIFIED quiet rather than assumed, because a card that has just
-    been busy would not otherwise announce a straggler. A boolean from the guard is not that:
-    it says a threshold was met, not what the machine was doing. This records the compute
-    processes, their cards and each card's sustained utilisation so a reader can judge the
-    figure rather than trust it.
+    Captures compute processes, their cards, and each card's sustained utilisation, so a
+    reader can judge the figure rather than trust an idle-check boolean.
     """
     import subprocess
 
@@ -132,11 +123,11 @@ def main() -> None:
     ap.add_argument("--timing-batch-size", type=int, default=TIMING_BATCH_SIZE)
     ap.add_argument("--timing-repeats", type=int, default=TIMING_REPEATS)
     ap.add_argument("--smoother-noise", default=None,
-                    help="X1: TRAIN-SPLIT tuning artifact. When given, both smoother arms are "
-                         "timed on this same instrument alongside the other rows.")
+                    help="TRAIN-SPLIT tuning artifact. When given, both smoother arms are "
+                         "timed alongside the other rows.")
     ap.add_argument("--idle-devices", default=None,
                     help="Narrow the blanket idle check to these physical device indices, "
-                         "e.g. '1'. A DISCLOSED DEPARTURE from the standard protocol: use "
+                         "e.g. '1'. A disclosed departure from the standard protocol: use "
                          "only when a non-MaDE process that cannot be stopped holds another "
                          "card. What was running is recorded in the artifact either way.")
     ap.add_argument("--predictor-root", default=str(ROOT / "outputs" / "ind" / "predictors"),
@@ -158,17 +149,13 @@ def main() -> None:
     pseeds = [int(s) for s in args.pred_seeds.split(",") if s.strip()]
     mseeds = [int(s) for s in args.made_seeds.split(",") if s.strip()]
 
-    # Refuse rather than warn. Read before anything is loaded, so a busy machine costs a
+    # Refuse rather than warn, checked before anything loads, so a busy machine costs a
     # second rather than ten minutes and a wrong table.
     #
-    # `--idle-devices` NARROWS the blanket check, and narrowing it is a disclosed departure
-    # from the standard protocol, not a convenience. Leave it unset and the blanket check
-    # runs, which is what the paper's measurement protocol requires. The one situation it
-    # exists for is a NON-MaDE process that cannot be stopped holding the other card -- a
-    # remote desktop server, a compositor -- where the choice is between a scoped measurement
-    # that says so and no measurement at all. **Whatever is passed here is recorded in the
-    # artifact together with what was actually running**, so the figure can never be read as
-    # having met the blanket standard when it did not.
+    # `--idle-devices` narrows the blanket check (disclosed departure from standard protocol);
+    # leave unset for the full check the paper's protocol requires. Meant for a non-MaDE
+    # process that cannot be stopped holding another card. Either way what was running is
+    # recorded in the artifact.
     idle_scope = (tuple(int(d) for d in args.idle_devices.split(",") if d.strip())
                   if args.idle_devices else None)
     require_idle_devices(devices=idle_scope)
@@ -187,10 +174,7 @@ def main() -> None:
     from made.upstream.factory import load_predictor
 
     dt = float(WINDOW_SPEC["dt"])
-    # Assert the step size against the panel's rather than only recording it and trusting the
-    # reader to compare. Importing WINDOW_SPEC makes divergence impossible by construction;
-    # this asserts it anyway, since a measurement at the wrong step size would silently
-    # describe a different configuration.
+    # A measurement at the wrong step size would silently describe a different configuration.
     if abs(dt - PANEL_DT) > 1e-12:
         raise SystemExit(
             f"STEP-SIZE ASSERTION FAILED: measuring at dt={dt} against a panel at "
@@ -215,7 +199,7 @@ def main() -> None:
         constraints=drop_position_bounds(kinematic_bicycle_constraints())
     )
 
-    # Built once per family, outside the timing loop, so building them is never timed.
+    # Built once per family, outside the timing loop.
     smoother_arms = {}
     if args.smoother_noise:
         for family in families:
@@ -248,11 +232,8 @@ def main() -> None:
             rows.append({"row": "clamp", "family": family, "predictor_seed": pseed,
                          "made_seed": None, **timing})
 
-            # X1. The spec asks for the smoother's "runtime per trajectory on the same
-            # instrument as Table 6", and this harness IS that instrument -- the panel runs
-            # also record timing columns, but those were measured with the other card busy and
-            # are not latency figures. Both tuned arms, because they differ only in the
-            # covariances and a reader will want to know whether that costs anything.
+            # Both tuned arms differ only in covariances; a reader will want to know
+            # whether that costs anything.
             if smoother_arms:
                 for row_name, (sm, tuning) in smoother_arms[family].items():
                     timing = E._time_pipeline(
@@ -269,7 +250,7 @@ def main() -> None:
             for mseed in mseeds:
                 made_model = MaDEModel.from_checkpoint(str(made_checkpoints(mseed)))
 
-                # The same three lines the full pass closes over, reconstructed verbatim.
+                # Same three lines the full pass closes over.
                 def _made_pnp_pipeline(ctx, meta, x0, _m=made_model):
                     x_pred = predictor(ctx)
                     params = _m.params_from_metadata(meta)
@@ -299,7 +280,7 @@ def main() -> None:
         }
 
     report = {
-        # Derived from the actual output path, not hand-written.
+        # Derived from the output path.
         "artifact": _display(Path(args.out)),
         "what": f"Latency only, measured on predictors at {_display(predictor_root)} and "
                 f"the frozen MaDE models.",
@@ -310,10 +291,8 @@ def main() -> None:
             "git_sha": _git_sha(),
             "hardware": f"{platform.system()} {platform.release()} | {platform.machine()} | "
                         f"jax_devices={jax.devices()}",
-            # Record THE PHYSICAL DEVICE. `jax.devices()` reports the LOGICAL id, which
-            # CUDA_VISIBLE_DEVICES remaps to 0 whatever card is actually in use -- so on its own
-            # it would say "id=0" regardless of which physical card ran the measurement. The
-            # physical index is recorded explicitly.
+            # `jax.devices()` reports the logical id, always 0 under CUDA_VISIBLE_DEVICES
+            # remapping, so the physical index is recorded explicitly.
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "physical_gpu": (os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0] or None,
             "device_rule": "the paper's latency figures were measured on a single idle "
