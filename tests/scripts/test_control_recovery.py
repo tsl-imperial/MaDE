@@ -6,9 +6,7 @@ import json
 
 import jax
 import numpy as np
-import pytest
 
-from made.physics import build_system_for_model
 from made.utils import CheckpointManager, load_config
 from made.utils.checkpointing import TrainState
 from made.models import MaDECell
