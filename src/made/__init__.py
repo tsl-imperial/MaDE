@@ -1,0 +1,1 @@
+"""MaDE package."""

@@ -1,0 +1,142 @@
+{
+  "corrector": {
+    "eval_max_steps": 50,
+    "eval_tol": 1e-06,
+    "mode": "enabled",
+    "momentum": 0,
+    "proximity_gamma": 0.0,
+    "step_size": 0.01,
+    "tracking_gamma": 0.0,
+    "train_steps": 5
+  },
+  "data": {
+    "add_generation_noise": false,
+    "control_profile": "iid_uniform",
+    "control_sample_max": null,
+    "control_sample_min": null,
+    "control_tau": 1.5,
+    "min_speed": null,
+    "noise_scale": 0,
+    "num_trajectories_test": 128,
+    "num_trajectories_train": 1024,
+    "num_trajectories_val": 128,
+    "perturbation_scale": 0.1,
+    "perturbation_scale_per_dim": [
+      0.1,
+      0.1,
+      0.05,
+      0.1
+    ],
+    "perturbation_type": "bound_violation",
+    "trajectory_length": 32
+  },
+  "evaluation": {
+    "perturbation_seed": 42
+  },
+  "experiment_name": "clamp",
+  "fab_baseline": {
+    "es_min_delta": 0.0001,
+    "es_min_epochs": 0,
+    "es_patience": 0,
+    "lr": 0.001,
+    "normalise_inputs": false,
+    "num_epochs": 100,
+    "steps_per_epoch": null
+  },
+  "mlp_baseline": {
+    "es_min_delta": 0.0001,
+    "es_min_epochs": 0,
+    "es_patience": 0,
+    "lr": 0.001,
+    "num_epochs": 100,
+    "steps_per_epoch": null
+  },
+  "model": {
+    "embedding_dim": 8,
+    "encoder_hidden": [
+      64,
+      64
+    ],
+    "encoder_lref_residual": false,
+    "encoder_unbounded_scale": false,
+    "inverse_hidden": [
+      256,
+      256
+    ],
+    "known_params": {},
+    "known_system": null,
+    "location_id_index": 4,
+    "metadata_dim": 0,
+    "num_locations": 0,
+    "residual": "learned",
+    "residual_hidden": [
+      256,
+      256
+    ],
+    "residual_init_scale": 0,
+    "use_inverse_residual": true,
+    "use_metadata_encoder": false
+  },
+  "output_dir": "outputs/sim/runs/unicycle/fully-specified/clamp",
+  "physics": {
+    "dt": 0.1,
+    "true_params": {},
+    "true_system": "unicycle"
+  },
+  "training": {
+    "alternation_period": 10,
+    "batch_size": 512,
+    "best_checkpoint_interval_epochs": 1,
+    "checkpoint_save_interval": null,
+    "control_sampling": "mixture",
+    "early_stopping_delta_i_norm_tol": 1e-06,
+    "early_stopping_enabled": true,
+    "early_stopping_forward_tol": 1e-06,
+    "early_stopping_inverse_tol": 1e-06,
+    "early_stopping_min_delta": 0,
+    "early_stopping_min_epochs": 5,
+    "early_stopping_minimum_norm_tol": 1e-06,
+    "early_stopping_patience": 10,
+    "early_stopping_physical_exact": true,
+    "early_stopping_physical_saturation": true,
+    "early_stopping_saturation_delta": 1e-05,
+    "early_stopping_saturation_window": 5,
+    "i_side_grad_clip_norm": 1.0,
+    "inverse_training": "cycle",
+    "is_field_data": false,
+    "isolate_ineq_gradient": false,
+    "lambda_delta_i_norm": 0.01,
+    "lambda_ineq": 1,
+    "lambda_inv_consistency": 1,
+    "lambda_min_norm": 0.01,
+    "lr_I": 0.001,
+    "lr_T": 0.001,
+    "metric_log_interval_steps": 1,
+    "num_epochs_phase1": 100,
+    "num_epochs_phase2": 100,
+    "phase2_proposal_perturbation_scale": 0.0,
+    "phase2_proposal_perturbation_scale_min_ratio": 0.0,
+    "phase2_proposal_perturbation_scale_per_dim": null,
+    "phase2_proposal_perturbation_scale_sampling": "fixed",
+    "phase2_proposal_perturbation_type": "none",
+    "phase2_proposal_perturbation_zero_fraction": 0.0,
+    "pretrained_phase1_path": null,
+    "restore_phase1_best_before_phase2": false,
+    "seed": 0,
+    "solver_eval": "tsit5",
+    "solver_train": "heun",
+    "steps_per_epoch": null,
+    "t_side_grad_clip_norm": 1.0,
+    "val_steps_per_epoch": null,
+    "validation_interval_epochs": 1,
+    "warmup_steps": 100,
+    "zero_nans_enabled": true
+  },
+  "upstream": {
+    "stage1_epochs": 25,
+    "stage1_loss": "full",
+    "stage1_mu_dyn": 1,
+    "stage1_mu_ineq": 1
+  },
+  "variant": "made_phase2"
+}

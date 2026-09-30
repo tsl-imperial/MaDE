@@ -1,0 +1,11 @@
+# Package versions used to produce the paper's results (Linux, CUDA 12, RTX 3090).
+
+jax==0.10.0
+jaxlib==0.10.0
+jax-cuda12-plugin==0.10.0
+jax-cuda12-pjrt==0.10.0
+equinox==0.13.7
+diffrax==0.7.2
+optax==0.2.5
+orbax-checkpoint==0.11.5
+numpy==2.4.4

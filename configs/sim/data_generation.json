@@ -1,0 +1,3 @@
+{
+  "dynamic_bicycle": {"control_sample_min": [-0.2, -1.5], "control_sample_max": [0.2, 1.5]}
+}

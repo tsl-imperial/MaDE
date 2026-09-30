@@ -1,0 +1,47 @@
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.python-version
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.ipynb_checkpoints/
+
+# Local environment and secrets
+.env
+.env.*
+
+# Experiment data, outputs and checkpoints (regenerated/downloaded locally; see README)
+wandb/
+/data/
+/outputs/
+/checkpoints/
+/artifacts/
+/logs/
+*.ckpt
+*.ckpt.*
+*.orbax/
+*.msgpack
+
+.obsidian/
+.cache
+
+# `claim_output`'s exclusive-lock sidecars. Transient: created beside an artifact while a
+# driver holds it and removed on release, so a crashed run can leave one behind. They are
+# machine state, never results, and committing one would make a stale lock look authoritative
+# to the next checkout.
+*.json.lock

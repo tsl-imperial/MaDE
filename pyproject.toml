@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "made"
+version = "0.1.0"
+description = "Markovian Dynamics Enforcer: a frozen, plug-and-play correction layer that projects state-transition predictions onto a physically feasible manifold."
+requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
+authors = [
+  { name = "Kevin Yu", email = "k.qu23@imperial.ac.uk" },
+  { name = "Tao Guo" },
+  { name = "Constantinos Antoniou" },
+  { name = "Panagiotis Angeloudis" },
+]
+dependencies = [
+  "jax>=0.4.30",
+  "equinox>=0.11",
+  "diffrax>=0.6",
+  "optax>=0.2",
+  "orbax-checkpoint>=0.9",
+  "cloudpickle>=2.0",
+  "numpy>=1.26",
+  "tqdm>=4.66",
+  "wandb>=0.18",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+cuda12 = [
+  "jax[cuda12]>=0.4.30; platform_system == 'Linux'",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/made"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+# Default invocation excludes the `slow` tier (end-to-end smokes, ~5 min wall).
+# Run `pytest -m slow` to exercise it.
+addopts = "-m 'not slow'"
+markers = [
+  "slow: mark test as part of the slow tier (end-to-end smokes, ~5 min wall)",
+]

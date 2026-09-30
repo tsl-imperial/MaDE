@@ -1,0 +1,58 @@
+{
+  "batched": {
+    "compute_metrics": {
+      "dynamics_violation_known": 0.01098800608043783,
+      "dynamics_violation_learned": 0.010988006080437858,
+      "dynamics_violation_true": 0.01098800608043783,
+      "fidelity": 0.001999999999999874,
+      "inequality_violation_magnitude": 0.0,
+      "inequality_violation_rate": 0.0
+    },
+    "dynamics_violation_known": 0.01098800608043783,
+    "dynamics_violation_learned": 0.010988006080437858,
+    "dynamics_violation_true": 0.01098800608043783,
+    "fidelity": 0.001999999999999874
+  },
+  "empty": {
+    "compute_metrics": null,
+    "dynamics_violation_known": 0.0,
+    "dynamics_violation_learned": 0.0,
+    "dynamics_violation_true": 0.0,
+    "fidelity": 0.0
+  },
+  "extreme_delta": {
+    "compute_metrics": {
+      "dynamics_violation_known": 1.1320816471593556,
+      "dynamics_violation_learned": 1.1320816471593556,
+      "dynamics_violation_true": 1.1320816471593556,
+      "fidelity": 0.0,
+      "inequality_violation_magnitude": 1.0697963267948967,
+      "inequality_violation_rate": 1.0
+    },
+    "dynamics_violation_known": 1.1320816471593556,
+    "dynamics_violation_learned": 1.1320816471593556,
+    "dynamics_violation_true": 1.1320816471593556,
+    "fidelity": 0.0
+  },
+  "len1": {
+    "compute_metrics": null,
+    "dynamics_violation_known": 0.0,
+    "dynamics_violation_learned": 0.0,
+    "dynamics_violation_true": 0.0,
+    "fidelity": 0.0
+  },
+  "unbatched": {
+    "compute_metrics": {
+      "dynamics_violation_known": 0.010356228696771906,
+      "dynamics_violation_learned": 0.010356228696771962,
+      "dynamics_violation_true": 0.010356228696771906,
+      "fidelity": 0.0020000000000001345,
+      "inequality_violation_magnitude": 0.0,
+      "inequality_violation_rate": 0.0
+    },
+    "dynamics_violation_known": 0.010356228696771906,
+    "dynamics_violation_learned": 0.010356228696771962,
+    "dynamics_violation_true": 0.010356228696771906,
+    "fidelity": 0.0020000000000001345
+  }
+}

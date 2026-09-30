@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Markovian Dynamics Enforcer: Feasibility Preserving Correction on Learned Dynamics Manifolds"
+authors:
+  - given-names: Kevin
+    family-names: Yu
+  - given-names: Tao
+    family-names: Guo
+  - given-names: Constantinos
+    family-names: Antoniou
+  - given-names: Panagiotis
+    family-names: Angeloudis
+license: MIT
+repository-code: "https://github.com/tsl-imperial/MaDE"
+preferred-citation:
+  type: conference-paper
+  title: "Markovian Dynamics Enforcer: Feasibility Preserving Correction on Learned Dynamics Manifolds"
+  authors:
+    - given-names: Kevin
+      family-names: Yu
+    - given-names: Tao
+      family-names: Guo
+    - given-names: Constantinos
+      family-names: Antoniou
+    - given-names: Panagiotis
+      family-names: Angeloudis
+  conference:
+    name: "Advances in Neural Information Processing Systems (NeurIPS)"
+  year: 2026
