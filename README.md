@@ -4,11 +4,13 @@ Kevin Yu<sup>1</sup>, Tao Guo<sup>2</sup>, Constantinos Antoniou<sup>2</sup>, Pa
 
 <sup>1</sup>Imperial College London, UK &nbsp; <sup>2</sup>Technical University of Munich, Germany
 
-[![arXiv](https://img.shields.io/badge/arXiv-2609.39888-b31b1b.svg)](https://arxiv.org/abs/2609.39888)
-[![NeurIPS 2026](https://img.shields.io/badge/NeurIPS-2026-4b44ce.svg)](https://neurips.cc/virtual/2026/poster/XXXXX) <!-- TODO: replace -->
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
-[![JAX](https://img.shields.io/badge/built%20with-JAX-orange.svg)](https://github.com/jax-ml/jax)
+<p align="center">
+  <a href="https://arxiv.org/abs/2609.39888"><img src="https://img.shields.io/badge/arXiv-2609.39888-b31b1b.svg" alt="arXiv"></a>
+  <a href="https://neurips.cc/virtual/2026/poster/XXXXX"><img src="https://img.shields.io/badge/NeurIPS-2026-4b44ce.svg" alt="NeurIPS 2026"></a> <!-- TODO: replace -->
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11-blue.svg" alt="Python 3.11"></a>
+  <a href="https://github.com/jax-ml/jax"><img src="https://img.shields.io/badge/built%20with-JAX-orange.svg" alt="JAX"></a>
+</p>
 
 MaDE is a time-invariant post-hoc operator that maps state-transition proposals onto a learned
 feasible dynamics manifold, trained on feasible states without ground-truth controls. For each
