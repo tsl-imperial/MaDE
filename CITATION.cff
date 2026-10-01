@@ -12,6 +12,12 @@ authors:
     family-names: Angeloudis
 license: MIT
 repository-code: "https://github.com/tsl-imperial/MaDE"
+identifiers:
+  - type: doi
+    value: 10.48550/arXiv.2609.39888
+    description: arXiv preprint
+  - type: url
+    value: "https://arxiv.org/abs/2609.39888"
 preferred-citation:
   type: conference-paper
   title: "Markovian Dynamics Enforcer: Feasibility Preserving Correction on Learned Dynamics Manifolds"

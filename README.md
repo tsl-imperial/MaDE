@@ -4,7 +4,7 @@ Kevin Yu<sup>1</sup>, Tao Guo<sup>2</sup>, Constantinos Antoniou<sup>2</sup>, Pa
 
 <sup>1</sup>Imperial College London, UK &nbsp; <sup>2</sup>Technical University of Munich, Germany
 
-[![arXiv](https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg)](https://arxiv.org/abs/XXXX.XXXXX) <!-- TODO: replace -->
+[![arXiv](https://img.shields.io/badge/arXiv-2609.39888-b31b1b.svg)](https://arxiv.org/abs/2609.39888)
 [![NeurIPS 2026](https://img.shields.io/badge/NeurIPS-2026-4b44ce.svg)](https://neurips.cc/virtual/2026/poster/XXXXX) <!-- TODO: replace -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
@@ -133,13 +133,12 @@ python scripts/ind/build_table_completion_only.py
 
 ## Citation
 
-<!-- TODO: replace with the arXiv identifier, then with the NeurIPS 2026 @inproceedings entry -->
+<!-- TODO: replace with the NeurIPS 2026 @inproceedings entry -->
 ```bibtex
-% Placeholder. Will be replaced by the NeurIPS 2026 @inproceedings entry.
 @article{yu2026made,
   title   = {Markovian Dynamics Enforcer: Feasibility Preserving Correction on Learned Dynamics Manifolds},
   author  = {Yu, Kevin and Guo, Tao and Antoniou, Constantinos and Angeloudis, Panagiotis},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  journal = {arXiv preprint arXiv:2609.39888},
   year    = {2026},
 }
 ```
