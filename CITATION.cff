@@ -19,7 +19,7 @@ identifiers:
   - type: url
     value: "https://arxiv.org/abs/2609.39888"
 preferred-citation:
-  type: conference-paper
+  type: article
   title: "Markovian Dynamics Enforcer: Feasibility Preserving Correction on Learned Dynamics Manifolds"
   authors:
     - given-names: Kevin
@@ -30,6 +30,7 @@ preferred-citation:
       family-names: Antoniou
     - given-names: Panagiotis
       family-names: Angeloudis
-  conference:
-    name: "Advances in Neural Information Processing Systems (NeurIPS)"
+  journal: "arXiv preprint arXiv:2609.39888"
   year: 2026
+  doi: 10.48550/arXiv.2609.39888
+  url: "https://arxiv.org/abs/2609.39888"
