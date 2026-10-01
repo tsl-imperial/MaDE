@@ -1,4 +1,14 @@
-"""Phase 1 acceptance tests for made.data.ind.ingest.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Tests for made.data.ind.ingest.
 
 Covers CRLF-tolerance, vehicle counts, frameRate, and locationId assertions
 using the synthetic fixture at tests/fixtures/ind_mini/data/ (recordings 00–04,
@@ -20,12 +30,14 @@ FIXTURE_IDS = [0, 1, 2, 3, 4]
 
 @pytest.mark.parametrize("rec_id", FIXTURE_IDS)
 def test_frame_rate_25(rec_id: int) -> None:
+    """Checks frame rate 25."""
     tables = _load_recording(FIXTURE_DIR, rec_id)
     assert abs(tables.frame_rate - 25.0) < 1e-6
 
 
 @pytest.mark.parametrize("rec_id", FIXTURE_IDS)
 def test_location_id_valid(rec_id: int) -> None:
+    """Checks location id valid."""
     tables = _load_recording(FIXTURE_DIR, rec_id)
     assert tables.location_id in VALID_LOCATION_IDS
 

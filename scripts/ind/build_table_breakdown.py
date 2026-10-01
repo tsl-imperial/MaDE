@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Render the appendix inequality breakdown tables (`tab_ineq_breakdown_ind_rate`,
 `tab_ineq_breakdown_ind_magnitude`): rate and magnitude, each split into the state-bound and
 control-bound components plus the combined figure, from the inD panel.
@@ -64,18 +74,39 @@ TEXTWIDTH_PT = 458.74
 
 
 def _display(p: Path) -> str:
+    """Format a path relative to the repository root when possible.
+
+    Args:
+        p: Path to format.
+
+    Returns:
+        The root-relative path as a string, or the path unchanged when outside the root.
+    """
     try:
         return str(p.relative_to(ROOT))
     except ValueError:
         return str(p)
 
 
-def _pop_sd(v):
+def _pop_sd(v: list[float]) -> float:
+    """Population standard deviation (divides by n).
+
+    Args:
+        v: Non-empty sequence of values.
+
+    Returns:
+        The population standard deviation.
+    """
     m = sum(v) / len(v)
     return math.sqrt(sum((x - m) ** 2 for x in v) / len(v))
 
 
 def main() -> int:
+    """Render the table from the source artifact and write the outputs.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", default=str(SOURCE))
     ap.add_argument("--out-dir", default=str(OUT_DIR))

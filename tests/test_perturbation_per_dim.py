@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Per-component scale tests for the bound_violation perturbation."""
 
 # ruff: noqa: E402
@@ -21,10 +31,15 @@ _RANGE = _BV_MAX - _BV_MIN
 
 
 def _states_above_midpoint() -> jax.Array:
+    """Return a single state sitting above the midpoint of its range.
+
+    Returns:
+        A (1, 1, 4) state array.
+    """
     return jnp.array([[[5.0, 5.0, 1.0, 4.0]]])
 
 
-def test_per_dim_scale_matches_expected_shove_magnitudes():
+def test_per_dim_scale_matches_expected_shove_magnitudes() -> None:
     """Each component is shoved by exactly scale[i] * range[i]."""
     states = _states_above_midpoint()
     per_dim = (0.10, 0.10, 0.05, 0.10)
@@ -39,7 +54,7 @@ def test_per_dim_scale_matches_expected_shove_magnitudes():
     assert jnp.allclose(delta, expected, atol=1e-12), (delta, expected)
 
 
-def test_per_dim_scale_overrides_scalar():
+def test_per_dim_scale_overrides_scalar() -> None:
     """When perturbation_scale_per_dim is set, scalar perturbation_scale is ignored for shove magnitude."""
     states = _states_above_midpoint()
     per_dim = (0.20, 0.05, 0.05, 0.10)
@@ -54,7 +69,7 @@ def test_per_dim_scale_overrides_scalar():
     assert jnp.allclose(delta, expected, atol=1e-12)
 
 
-def test_per_dim_scale_none_falls_back_to_scalar():
+def test_per_dim_scale_none_falls_back_to_scalar() -> None:
     """perturbation_scale_per_dim=None uses scalar perturbation_scale for all dims."""
     states = _states_above_midpoint()
     cfg = DataConfig(
@@ -68,7 +83,7 @@ def test_per_dim_scale_none_falls_back_to_scalar():
     assert jnp.allclose(delta, expected, atol=1e-12)
 
 
-def test_per_dim_length_mismatch_raises():
+def test_per_dim_length_mismatch_raises() -> None:
     """Length mismatch between per-dim scale and state_dim is rejected with a clear message."""
     states = _states_above_midpoint()
     cfg = DataConfig(
@@ -80,7 +95,7 @@ def test_per_dim_length_mismatch_raises():
         perturb_trajectories(states, cfg, jax.random.key(0), state_bounds=(_BV_MIN, _BV_MAX))
 
 
-def test_per_dim_zero_scalar_is_not_a_noop_when_per_dim_set():
+def test_per_dim_zero_scalar_is_not_a_noop_when_per_dim_set() -> None:
     """perturbation_scale=0 short-circuits before bound_violation is even reached.
 
     The early return fires on the scalar field, so a non-zero per_dim scale is ignored
@@ -96,7 +111,7 @@ def test_per_dim_zero_scalar_is_not_a_noop_when_per_dim_set():
     assert jnp.array_equal(out, states)
 
 
-def test_per_dim_other_perturbation_types_ignore_field():
+def test_per_dim_other_perturbation_types_ignore_field() -> None:
     """Gaussian and uniform perturbations don't read perturbation_scale_per_dim."""
     states = _states_above_midpoint()
     for ptype in ("gaussian", "uniform"):

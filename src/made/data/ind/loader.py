@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Loader API for preprocessed inD artefacts.
 
 Public surface:
@@ -98,6 +108,15 @@ class InDRecordingBundle:
 
 
 def _load_manifest(data_dir: Path) -> dict:
+    """Read manifest.json from a preprocessed root.
+
+    Args:
+        data_dir: Preprocessed root.
+    Returns:
+        Parsed manifest.
+    Raises:
+        FileNotFoundError: If manifest.json is absent.
+    """
     manifest_path = data_dir / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"manifest.json not found in {data_dir}")
@@ -108,7 +127,15 @@ def _load_split_arrays(
     split_dir: Path,
     location_filter: "list[int] | None" = None,
 ) -> tuple[np.ndarray, ...]:
-    """Load raw numpy arrays from a split directory, with optional location filtering."""
+    """Load raw numpy arrays from a split directory, with optional location filtering.
+
+    Args:
+        split_dir: Directory of one split.
+        location_filter: Optional location ids to keep.
+    Returns:
+        Tuple (states, metadata, lengths, location_ids, recording_ids, track_ids, map_variants,
+        start_frame_native).
+    """
     npz = np.load(split_dir / "trajectories.npz")
     states = npz["states"].astype(np.float64)
     lengths = npz["lengths"].astype(np.int32)
@@ -144,21 +171,15 @@ def load_ind_split(
 ) -> InDSplitArrays:
     """Load a preprocessed inD split as an :class:`InDSplitArrays`.
 
-    Parameters
-    ----------
-    data_dir:
-        Path to the versioned preprocessed root (e.g. ``data/inD-preprocessed/v1``).
-    split:
-        One of ``"train"``, ``"val"``, ``"test"``.
-    location_filter:
-        If given, only trajectories whose location_id is in this list are returned.
-    return_metadata:
-        If ``False``, the ``metadata`` field contains a zero-shape placeholder
-        (kept for API compatibility when metadata is unused).
+    Args:
+        data_dir: Path to the versioned preprocessed root (e.g. ``data/inD-preprocessed/v1``).
+        split: One of ``"train"``, ``"val"``, ``"test"``.
+        location_filter: If given, only trajectories whose location_id is in this list are returned.
+        return_metadata: If ``False``, the ``metadata`` field contains a zero-shape placeholder
+            (kept for API compatibility when metadata is unused).
 
-    Returns
-    -------
-    InDSplitArrays
+    Returns:
+        InDSplitArrays
     """
     data_path = Path(data_dir)
     split_dir = data_path / split
@@ -196,16 +217,12 @@ def iter_recordings(
     recording-local T_max (smallest padding that fits all tracks in the recording).
     Entry point for per-recording batching.
 
-    Parameters
-    ----------
-    data_dir:
-        Path to the versioned preprocessed root.
-    split:
-        One of ``"train"``, ``"val"``, ``"test"``.
+    Args:
+        data_dir: Path to the versioned preprocessed root.
+        split: One of ``"train"``, ``"val"``, ``"test"``.
 
-    Yields
-    ------
-    InDRecordingBundle
+    Yields:
+        InDRecordingBundle: One bundle per recording.
     """
     data_path = Path(data_dir)
     split_dir = data_path / split
@@ -241,5 +258,11 @@ def iter_recordings(
 
 
 def load_manifest(data_dir: str) -> dict:
-    """Load and return the manifest.json from a preprocessed inD root."""
+    """Load and return the manifest.json from a preprocessed inD root.
+
+    Args:
+        data_dir: Preprocessed root.
+    Returns:
+        Parsed manifest.
+    """
     return _load_manifest(Path(data_dir))

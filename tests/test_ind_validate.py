@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for made.data.ind.validate.
 
 Builds minimal preprocessed bundles in tmp_path and verifies that
@@ -36,11 +46,24 @@ _SPLIT_SIZES = {"train": 3, "val": 1, "test": 1}
 
 
 def _make_trajectory(t: int = 10) -> np.ndarray:
-    """Return a [t, 4] float64 state array with a plausible class one-hot."""
+    """Return a [t, 4] float64 state array with a plausible class one-hot.
+
+    Args:
+        t: Number of time steps.
+
+    Returns:
+        State array.
+    """
     return np.random.default_rng(0).standard_normal((t, 4)).astype(np.float64)
 
 
 def _write_split(split_dir: Path, n: int) -> None:
+    """Write a synthetic split directory with ``n`` trajectories.
+
+    Args:
+        split_dir: Directory to write into.
+        n: Number of trajectories.
+    """
     split_dir.mkdir(parents=True, exist_ok=True)
 
     t_len = 10
@@ -85,6 +108,11 @@ def _write_split(split_dir: Path, n: int) -> None:
 
 
 def _make_valid_bundle(root: Path) -> None:
+    """Write a complete valid inD bundle.
+
+    Args:
+        root: Bundle root directory.
+    """
     (root / "manifest.json").write_text(json.dumps(_VALID_MANIFEST), encoding="utf-8")
     (root / "stats.json").write_text("{}", encoding="utf-8")
     for split, n in _SPLIT_SIZES.items():
@@ -92,12 +120,14 @@ def _make_valid_bundle(root: Path) -> None:
 
 
 def test_valid_bundle_passes(tmp_path: Path) -> None:
+    """Checks valid bundle passes."""
     _make_valid_bundle(tmp_path)
     report = validate_preprocessed(str(tmp_path))
     assert report.passed, f"Expected pass; errors: {report.errors}"
     assert report.errors == []
 
 def test_missing_manifest_key_fails(tmp_path: Path) -> None:
+    """Checks missing manifest key fails."""
     _make_valid_bundle(tmp_path)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     del manifest["delta_t_seconds"]
@@ -136,6 +166,7 @@ def test_split_overlap_fails(tmp_path: Path) -> None:
 
 
 def test_missing_manifest_file_fails(tmp_path: Path) -> None:
+    """Checks missing manifest file fails."""
     report = validate_preprocessed(str(tmp_path))
     assert not report.passed
     assert any("manifest.json" in e for e in report.errors)

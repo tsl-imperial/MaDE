@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Verify a LaTeX fragment builds before it is written.
 
 `assert_compiles` wraps a fragment in a minimal document and runs the LaTeX engine, raising
@@ -40,6 +50,14 @@ class TexDoesNotCompile(RuntimeError):
 
 
 def _engine() -> str:
+    """Find an installed LaTeX engine.
+
+    Returns:
+        Name of the first available engine (``pdflatex`` or ``tectonic``).
+
+    Raises:
+        TexDoesNotCompile: If no engine is installed.
+    """
     for name in ("pdflatex", "tectonic"):
         if shutil.which(name):
             return name
@@ -50,7 +68,15 @@ def _engine() -> str:
 
 
 def assert_compiles(fragment: str, *, name: str = "fragment") -> None:
-    """Build *fragment* inside a minimal document. Raise if the engine fails."""
+    """Build *fragment* inside a minimal document. Raise if the engine fails.
+
+    Args:
+        fragment: LaTeX source to check.
+        name: Label used in the error message.
+
+    Raises:
+        TexDoesNotCompile: If the engine fails or none is installed.
+    """
     engine = _engine()
     with tempfile.TemporaryDirectory(prefix="texcheck_") as tmp:
         tex = Path(tmp) / "check.tex"
@@ -68,7 +94,11 @@ def assert_compiles(fragment: str, *, name: str = "fragment") -> None:
 
 
 def self_test() -> bool:
-    """Negative control: a fragment with a known off-by-one column span must be rejected."""
+    """Negative control: a fragment with a known off-by-one column span must be rejected.
+
+    Returns:
+        True when the good fragment compiles and the bad one is rejected.
+    """
     good = (
         r"\begin{tabular}{llccccc}" "\n" r"\toprule" "\n"
         r" & & \multicolumn{4}{c}{Ablations} & \multicolumn{1}{c}{Reference} \\" "\n"
@@ -129,6 +159,13 @@ def overfull_pt(fragment: str, *, textwidth: str = ICLR_TEXTWIDTH) -> float:
 
     Parses the engine's own "Overfull \\hbox (Xpt too wide)" rather than estimating from
     character counts, which is what makes this a measurement instead of a guess.
+
+    Args:
+        fragment: LaTeX source to measure.
+        textwidth: Text block width as a LaTeX length.
+
+    Returns:
+        The worst overflow in points, or 0.0 when the fragment fits.
     """
     import re
     engine = _engine()
@@ -149,7 +186,19 @@ def overfull_pt(fragment: str, *, textwidth: str = ICLR_TEXTWIDTH) -> float:
 
 def assert_fits_width(fragment: str, *, name: str = "fragment",
                       textwidth: str = ICLR_TEXTWIDTH) -> float:
-    """Raise if the fragment overflows `textwidth`. Returns the measured overflow (0.0)."""
+    """Raise if the fragment overflows `textwidth`. Returns the measured overflow (0.0).
+
+    Args:
+        fragment: LaTeX source to measure.
+        name: Label used in the error message.
+        textwidth: Text block width as a LaTeX length.
+
+    Returns:
+        The measured overflow in points (always 0.0 when no error is raised).
+
+    Raises:
+        TexDoesNotCompile: If the fragment overflows ``textwidth``.
+    """
     over = overfull_pt(fragment, textwidth=textwidth)
     if over > 0.0:
         raise TexDoesNotCompile(

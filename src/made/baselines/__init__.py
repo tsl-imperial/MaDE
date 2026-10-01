@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Baseline models."""
 
 from __future__ import annotations
@@ -60,6 +70,14 @@ def apply_baseline_over_trajectory(
     def scan_fn(
         carry: jax.Array, xs: tuple[jax.Array, jax.Array]
     ) -> tuple[jax.Array, tuple[jax.Array, jax.Array]]:
+        """One scan step: correct the pair ending at the current state and roll the history.
+
+        Args:
+            carry: Rolling history window, shape (history_len, state_dim).
+            xs: Tuple (x_prev, x_curr) of consecutive states.
+        Returns:
+            Tuple (new_carry, (x_prev_corrected, x_curr_corrected)).
+        """
         x_prev, x_curr = xs
         x_prev_c, x_curr_c = baseline.correct_pair(carry[-1], x_curr)
         new_carry = jnp.concatenate([carry[1:], x_curr_c[None]], axis=0)

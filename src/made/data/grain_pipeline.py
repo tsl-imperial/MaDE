@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Deterministic data-source and loader helpers."""
 
 from __future__ import annotations
@@ -34,16 +44,37 @@ class _MapTransformBase:
     """Fallback base class when Grain is unavailable."""
 
     def map(self, value: dict[str, Any]) -> list[dict[str, Any]]:
+        """Transform one value into a list of samples.
+
+        Args:
+            value: Input record.
+        Returns:
+            List of sample dicts.
+        Raises:
+            NotImplementedError: Always; subclasses override.
+        """
         raise NotImplementedError
 
 
 class TrajectoryWindowTransform(_MapTransformBase):
     """Extract overlapping `(x_prev, x_curr)` windows from one trajectory."""
 
-    def __init__(self, window_size: int = 2):
+    def __init__(self, window_size: int = 2) -> None:
+        """Store the window size.
+
+        Args:
+            window_size: Number of states per window.
+        """
         self.window_size = window_size
 
     def map(self, trajectory_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Emit one (x_prev, x_curr) window per consecutive state pair.
+
+        Args:
+            trajectory_data: Dict with states, optional controls, length and params.
+        Returns:
+            List of window dicts.
+        """
         states = trajectory_data["states"]
         controls = trajectory_data.get("controls")
         length = int(trajectory_data.get("length", states.shape[0]))
@@ -65,6 +96,13 @@ class MetadataAttachTransform(_MapTransformBase):
     """Attach per-trajectory metadata to each emitted window."""
 
     def map(self, trajectory_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Attach the trajectory metadata to every window.
+
+        Args:
+            trajectory_data: Dict with windows and optional metadata.
+        Returns:
+            List of window dicts, with metadata when present.
+        """
         metadata = trajectory_data.get("metadata")
         windows = trajectory_data["windows"]
         if metadata is None:
@@ -79,9 +117,19 @@ class InMemoryDataSource:
     samples: list[dict[str, Any]]
 
     def __iter__(self) -> Iterable[dict[str, Any]]:
+        """Iterate over the samples.
+
+        Returns:
+            Iterator over the sample dicts.
+        """
         return iter(self.samples)
 
     def __len__(self) -> int:
+        """Number of samples.
+
+        Returns:
+            Sample count.
+        """
         return len(self.samples)
 
 
@@ -97,7 +145,17 @@ class InMemoryDataLoader:
         seed: int,
         drop_remainder: bool = True,
         noise_scale: float = 0.0,
-    ):
+    ) -> None:
+        """Pre-stack the samples into contiguous arrays and store loader settings.
+
+        Args:
+            samples: List of sample dicts with identical keys.
+            batch_size: Samples per batch.
+            shuffle: Whether to shuffle each epoch.
+            seed: Seed for shuffling and noise.
+            drop_remainder: Drop a final partial batch.
+            noise_scale: Std of additive Gaussian noise on x_prev and x_curr; 0 disables.
+        """
         self.samples = samples
         self.batch_size = batch_size
         self.shuffle = shuffle
@@ -116,6 +174,11 @@ class InMemoryDataLoader:
             }
 
     def __iter__(self) -> Iterable[dict[str, jax.Array]]:
+        """Yield batches for one epoch.
+
+        Yields:
+            Dict of batched arrays keyed like the samples.
+        """
         indices = np.arange(len(self.samples))
         if self.shuffle:
             rng = np.random.default_rng(self.seed)
@@ -163,6 +226,13 @@ class InMemoryDataLoader:
 
 
 def _simulated_params(data_dir: str) -> jax.Array:
+    """Resolve the true physics parameters recorded with a simulated dataset.
+
+    Args:
+        data_dir: Dataset directory containing metadata.json.
+    Returns:
+        Parameter array.
+    """
     metadata_path = Path(data_dir) / "metadata.json"
     payload = json.loads(metadata_path.read_text(encoding="utf-8"))
     physics_config = payload["physics_config"]
@@ -175,7 +245,17 @@ def create_data_source(
     split: str,
     config: DataConfig,
 ) -> InMemoryDataSource:
-    """Create a deterministic in-memory source for one dataset split."""
+    """Create a deterministic in-memory source for one dataset split.
+
+    Args:
+        data_dir: Dataset directory.
+        split: Split name: train, val or test.
+        config: Data configuration.
+    Returns:
+        Source holding every transition window of the split.
+    Raises:
+        ValueError: If `config.noise_scale` is negative.
+    """
     if config.noise_scale < 0:
         raise ValueError(f"DataConfig.noise_scale must be >= 0, got {config.noise_scale}")
     window_transform = TrajectoryWindowTransform(window_size=2)
@@ -204,7 +284,21 @@ def create_data_loader(
     drop_remainder: bool = True,
     noise_scale: float = 0.0,
 ) -> InMemoryDataLoader:
-    """Create a deterministic data loader over a source."""
+    """Create a deterministic data loader over a source.
+
+    Args:
+        source: Sample source.
+        batch_size: Global batch size.
+        num_devices: Number of devices the batch is split over.
+        shuffle: Whether to shuffle each epoch.
+        seed: Seed for shuffling and noise.
+        drop_remainder: Drop a final partial batch.
+        noise_scale: Std of additive Gaussian noise; 0 disables.
+    Returns:
+        Batch loader.
+    Raises:
+        AssertionError: If `batch_size` is not divisible by `num_devices`.
+    """
     if batch_size % num_devices != 0:
         raise AssertionError(
             f"Batch size {batch_size} must be divisible by number of devices {num_devices}."

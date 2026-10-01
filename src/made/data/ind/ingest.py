@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Per-recording CSV ingestion for the inD dataset.
 
 Always opens files with newline='' so csv.DictReader handles both LF and CRLF (inD
@@ -26,7 +36,13 @@ class RecordingTables:
 
 
 def _load_csv_rows(path: Path) -> list[dict[str, str]]:
-    """Load all rows from a CSV file."""
+    """Load all rows from a CSV file.
+
+    Args:
+        path: CSV file path.
+    Returns:
+        Rows as dicts keyed by column name.
+    """
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
 
@@ -63,6 +79,15 @@ _REQUIRED_REC_COLUMNS: frozenset[str] = frozenset(
 
 
 def _check_columns(rows: list[dict[str, str]], required: frozenset[str], label: str) -> None:
+    """Check that the rows contain every required column.
+
+    Args:
+        rows: Parsed CSV rows.
+        required: Required column names.
+        label: Description used in the error message.
+    Raises:
+        ValueError: If a required column is missing.
+    """
     if not rows:
         return
     present = frozenset(rows[0].keys())
@@ -74,25 +99,17 @@ def _check_columns(rows: list[dict[str, str]], required: frozenset[str], label: 
 def _load_recording(raw_dir: str | Path, recording_id: int) -> RecordingTables:
     """Parse all three CSV files for a single inD recording.
 
-    Parameters
-    ----------
-    raw_dir:
-        Path to the inD `data/` directory (the one containing the CSV files).
-    recording_id:
-        Integer recording ID, 0–32.
+    Args:
+        raw_dir: Path to the inD `data/` directory (the one containing the CSV files).
+        recording_id: Integer recording ID, 0–32.
 
-    Returns
-    -------
-    RecordingTables
-        Parsed tables; does not filter or transform data.
+    Returns:
+        RecordingTables: Parsed tables; does not filter or transform data.
 
-    Raises
-    ------
-    FileNotFoundError
-        If any of the three required CSV files is absent.
-    ValueError
-        If frameRate != 25, locationId is not in {1,2,3,4}, or a required column
-        is missing.
+    Raises:
+        FileNotFoundError: If any of the three required CSV files is absent.
+        ValueError: If frameRate != 25, locationId is not in {1,2,3,4}, or a required column is
+            missing.
     """
     raw_dir = Path(raw_dir)
     prefix = f"{recording_id:02d}"

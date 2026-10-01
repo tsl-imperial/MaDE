@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Fixed-interval EKF/RTS kinodynamic smoother, the classical-engineering baseline.
 
 Deliberately does not implement `CorrectionBaseline`. That protocol's unit is
@@ -83,31 +93,65 @@ class KinodynamicSmoother(eqx.Module):
 
     @property
     def state_dim(self) -> int:
+        """Dimension of the observed state.
+
+        Returns:
+            State dimension.
+        """
         return int(self.physics.state_dim)
 
     @property
     def control_dim(self) -> int:
+        """Dimension of the control input.
+
+        Returns:
+            Control dimension.
+        """
         return int(self.physics.control_dim)
 
     @property
     def aug_dim(self) -> int:
+        """Dimension of the augmented state (state plus control).
+
+        Returns:
+            Augmented dimension.
+        """
         return self.state_dim + self.control_dim
 
     # -- process model ------------------------------------------------------------------
 
     def _augmented_field(self, z: jax.Array) -> jax.Array:
-        """d/dt of the augmented state. Controls are a random walk: zero drift."""
+        """d/dt of the augmented state. Controls are a random walk: zero drift.
+
+        Args:
+            z: Augmented state, shape (aug_dim,).
+        Returns:
+            Time derivative of the augmented state, shape (aug_dim,).
+        """
         n = self.state_dim
         x_dot = self.physics.vector_field(z[:n], z[n:], self.params, 0.0)
         return jnp.concatenate([x_dot, jnp.zeros((self.control_dim,), dtype=z.dtype)])
 
     def _step(self, z: jax.Array) -> jax.Array:
-        """One Heun step of the augmented field, matching the project's solver convention."""
+        """One Heun step of the augmented field, matching the project's solver convention.
+
+        Args:
+            z: Augmented state, shape (aug_dim,).
+        Returns:
+            Augmented state after one step, shape (aug_dim,).
+        """
         k1 = self._augmented_field(z)
         k2 = self._augmented_field(z + self.dt * k1)
         return z + 0.5 * self.dt * (k1 + k2)
 
     def _transition_jacobian(self, z: jax.Array) -> jax.Array:
+        """Jacobian of one augmented step with respect to the augmented state.
+
+        Args:
+            z: Augmented state, shape (aug_dim,).
+        Returns:
+            Jacobian, shape (aug_dim, aug_dim).
+        """
         return jax.jacfwd(self._step)(z)
 
     # -- forward pass -------------------------------------------------------------------
@@ -117,6 +161,12 @@ class KinodynamicSmoother(eqx.Module):
 
         Returns the filtered means and covariances, the one-step-ahead predicted means and
         covariances, and the transition Jacobians -- all five of which the RTS pass needs.
+
+        Args:
+            measurements: Observed states, shape (T, state_dim).
+        Returns:
+            Tuple (filtered means, filtered covariances, predicted means, predicted covariances,
+            Jacobians).
         """
         n, m = self.state_dim, self.aug_dim
         q = jnp.diag(self.q_diag)
@@ -126,7 +176,18 @@ class KinodynamicSmoother(eqx.Module):
              jnp.zeros((n, self.control_dim), dtype=measurements.dtype)], axis=1)
         eye = jnp.eye(m, dtype=measurements.dtype)
 
-        def update(z_pred: jax.Array, p_pred: jax.Array, meas: jax.Array):
+        def update(
+            z_pred: jax.Array, p_pred: jax.Array, meas: jax.Array
+        ) -> tuple[jax.Array, jax.Array]:
+            """Measurement update in Joseph form.
+
+            Args:
+                z_pred: Predicted augmented mean.
+                p_pred: Predicted augmented covariance.
+                meas: Observed state at this step.
+            Returns:
+                Tuple (updated mean, updated covariance).
+            """
             innovation = meas - h @ z_pred
             s = h @ p_pred @ h.T + r
             gain = jnp.linalg.solve(s.T, (p_pred @ h.T).T).T
@@ -145,7 +206,17 @@ class KinodynamicSmoother(eqx.Module):
         p0_pred = jnp.diag(self.p0_diag)
         z0, p0 = update(z0_pred, p0_pred, measurements[0])
 
-        def scan_fn(carry, meas):
+        def scan_fn(
+            carry: tuple[jax.Array, jax.Array], meas: jax.Array
+        ) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, ...]]:
+            """One forward EKF step: predict, then update with the next measurement.
+
+            Args:
+                carry: Previous (mean, covariance).
+                meas: Observed state at this step.
+            Returns:
+                Tuple (new carry, per-step outputs for the RTS pass).
+            """
             z_prev, p_prev = carry
             jac = self._transition_jacobian(z_prev)
             z_pred = self._step(z_prev)
@@ -176,12 +247,25 @@ class KinodynamicSmoother(eqx.Module):
         stencil scores.** Every no-control row on both panels (raw, clamp) is scored on
         pseudo-controls recovered by the panel's own inverse, and the smoother is scored the
         same way. The inferred controls are returned for diagnosis only.
+
+        Args:
+            measurements: Observed states, shape (T, state_dim).
         """
         zf, pf, zp, pp, jacs = self._filter(measurements)
         m = self.aug_dim
         ridge = _RTS_RIDGE * jnp.eye(m, dtype=measurements.dtype)
 
-        def scan_fn(carry, xs):
+        def scan_fn(
+            carry: tuple[jax.Array, jax.Array], xs: tuple[jax.Array, ...]
+        ) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+            """One backward RTS step.
+
+            Args:
+                carry: Smoothed (mean, covariance) of the following step.
+                xs: Filtered and predicted quantities for this step.
+            Returns:
+                Tuple (new carry, smoothed (mean, covariance)).
+            """
             z_next_s, p_next_s = carry
             z_k, p_k, z_next_pred, p_next_pred, jac_next = xs
             # C_k = P_k A_{k+1}^T (P^-_{k+1})^{-1}, solved rather than inverted.
@@ -205,5 +289,12 @@ def smooth_batch(
     smoother: KinodynamicSmoother,
     measurements: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
-    """`smooth_trajectory` vmapped over a `(B, T, state_dim)` batch of windows."""
+    """`smooth_trajectory` vmapped over a `(B, T, state_dim)` batch of windows.
+
+    Args:
+        smoother: Configured smoother.
+        measurements: Batch of windows, shape (B, T, state_dim).
+    Returns:
+        Tuple (x_smoothed, u_smoothed) with a leading batch dimension.
+    """
     return jax.vmap(smoother.smooth_trajectory)(measurements)

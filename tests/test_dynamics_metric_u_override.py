@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for compute_metrics u_for_dynamics override.
 
 Verifies that:
@@ -17,8 +27,19 @@ from made.models import AugmentedDynamics, ZeroResidual
 from made.physics import KinematicBicycle, build_system_for_model
 
 
-def _make_kinbicycle_trajectory(n_steps: int = 4, dt: float = 0.1):
-    """Build a short kinematic-bicycle trajectory via Heun integration."""
+def _make_kinbicycle_trajectory(
+    n_steps: int = 4,
+    dt: float = 0.1,
+) -> tuple[jax.Array, jax.Array, jax.Array, KinematicBicycle]:
+    """Build a short kinematic-bicycle trajectory via Heun integration.
+
+    Args:
+        n_steps: Number of integration steps.
+        dt: Step size.
+
+    Returns:
+        Tuple of (states, controls, params, physics).
+    """
     physics = KinematicBicycle()
     params = jnp.array([2.7])
     x0 = jnp.array([0.0, 0.0, 0.0, 8.0])
@@ -49,7 +70,7 @@ def _make_kinbicycle_trajectory(n_steps: int = 4, dt: float = 0.1):
     return x_traj, u_traj, params, physics
 
 
-def test_u_for_dynamics_changes_dyn_k_and_dyn_t():
+def test_u_for_dynamics_changes_dyn_k_and_dyn_t() -> None:
     """Passing a different u_for_dynamics must change Dyn.-K and Dyn.-T."""
     x_traj, u_gt, params, physics = _make_kinbicycle_trajectory()
     _, constraints = build_system_for_model("kinematic_bicycle", "kinematic_bicycle")
@@ -111,7 +132,7 @@ def test_u_for_dynamics_changes_dyn_k_and_dyn_t():
     )
 
 
-def test_dynamics_violation_learned_unaffected_by_u_for_dynamics():
+def test_dynamics_violation_learned_unaffected_by_u_for_dynamics() -> None:
     """dynamics_violation_learned must use u_corrected regardless of u_for_dynamics."""
     x_traj, u_gt, params, physics = _make_kinbicycle_trajectory()
     _, constraints = build_system_for_model("kinematic_bicycle", "kinematic_bicycle")
@@ -156,7 +177,7 @@ def test_dynamics_violation_learned_unaffected_by_u_for_dynamics():
     )
 
 
-def test_default_none_is_backward_compatible():
+def test_default_none_is_backward_compatible() -> None:
     """u_for_dynamics=None must produce the same result as omitting the argument."""
     x_traj, u_gt, params, physics = _make_kinbicycle_trajectory()
     _, constraints = build_system_for_model("kinematic_bicycle", "kinematic_bicycle")

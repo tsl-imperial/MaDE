@@ -1,10 +1,20 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Regression tests: NaN/Inf resilience around the tan(δ) gradient singularity.
 
-Layer 1 (vector_field δ clamp): tested by `test_kinematic_vector_field_grad_finite_near_pi_half`.
-Layer 2 (corrector box projection): tested by `test_corrector_compound_grad_finite_near_pi_half`.
-Layer 3 (optax.zero_nans):           tested by `test_optax_zero_nans_recovers_from_nan_gradient`.
+vector_field δ clamp:            tested by `test_kinematic_vector_field_grad_finite_near_pi_half`.
+corrector box projection:        tested by `test_corrector_compound_grad_finite_near_pi_half`.
+optax.zero_nans:                tested by `test_optax_zero_nans_recovers_from_nan_gradient`.
 
-Each test independently fails when its target layer is removed. Direct
+Each test independently fails when its target safeguard is removed. Direct
 unit-style probes; no full trainer machinery.
 """
 
@@ -20,8 +30,8 @@ from made.training.trainer import _make_optimizers, _migrate_opt_state_for_zero_
 from made.utils.config import TrainingConfig
 
 
-def test_kinematic_vector_field_grad_finite_near_pi_half():
-    """Layer 1: gradient through `vector_field` at δ extremely close to π/2 stays finite.
+def test_kinematic_vector_field_grad_finite_near_pi_half() -> None:
+    """Vector_field clamp: gradient through `vector_field` at δ extremely close to π/2 stays finite.
 
     Without the clamp, ∂tan(δ)/∂δ = 1/cos²(δ) at δ = π/2 - 1e-9 evaluates to
     ~1e18, then squared loss derivative is ~1e36 — float64 finite headroom is
@@ -38,7 +48,15 @@ def test_kinematic_vector_field_grad_finite_near_pi_half():
     # δ within 1e-9 of π/2: without clamp, 1/cos²(δ) ≈ 1e18.
     delta_dangerous = jnp.array(jnp.pi / 2 - 1e-9)
 
-    def loss(d):
+    def loss(d: jax.Array) -> jax.Array:
+        """Squared norm of the vector field at steering `d`.
+
+        Args:
+            d: Steering angle.
+
+        Returns:
+            The scalar squared norm.
+        """
         control = jnp.stack([d, accel])
         out = physics.vector_field(state, control, params, 0.0)
         return jnp.sum(out**2)
@@ -58,8 +76,8 @@ def test_kinematic_vector_field_grad_finite_near_pi_half():
     )
 
 
-def test_corrector_compound_grad_finite_near_pi_half():
-    """Layer 2: in-loop box projection prevents compound gradient steps from
+def test_corrector_compound_grad_finite_near_pi_half() -> None:
+    """In-loop box projection prevents compound gradient steps from
     pushing u past the constraint box and into the singularity neighborhood.
 
     Construction: start with `u = [δ_max + 0.05, 0]` (just outside the box).
@@ -68,10 +86,10 @@ def test_corrector_compound_grad_finite_near_pi_half():
     gradient direction, so subsequent integrate calls see finite tan(δ).
 
     This test exercises the integrate path with projected-after-update u,
-    pinning Layer 2's load-bearing role: without the projection, repeated
+    pinning the projection's load-bearing role: without the projection, repeated
     GD steps on a violation that pushes outward would compound δ past π/2.
 
-    Pre-merge verification: this test MUST FAIL when Step 2's box projection
+    Pre-merge verification: this test MUST FAIL when the box projection
     is removed from `corrector.py:_correct_train._body`. Confirmed via the
     parallel `test_correct_train_projects_inside_loop` in
     `test_corrector_box_projection.py` which directly probes the same path.
@@ -86,7 +104,7 @@ def test_corrector_compound_grad_finite_near_pi_half():
     params = jnp.array([3.0])
     dt = 0.1
 
-    # Start outside the box. Without Layer 2, an outward-pushing gradient
+    # Start outside the box. Without the projection, an outward-pushing gradient
     # step would compound δ further away.
     u_outside = jnp.array([delta_max + 0.05, 0.0])
 
@@ -99,7 +117,7 @@ def test_corrector_compound_grad_finite_near_pi_half():
     assert jnp.abs(u_projected[0]) <= delta_max + 1e-12
 
     # The integrate of the projected u must be finite — confirms that with
-    # Layer 2 active, the gradient pathway through tan(δ) sees δ in [-0.5, 0.5]
+    # the projection active, the gradient pathway through tan(δ) sees δ in [-0.5, 0.5]
     # where tan is well-conditioned (max |1/cos²(0.5)| ≈ 1.3).
     x_next = dynamics.integrate(state, u_projected, params, dt)
     assert jnp.isfinite(x_next).all(), (
@@ -108,7 +126,15 @@ def test_corrector_compound_grad_finite_near_pi_half():
 
     # Gradient of integrate result w.r.t. u (the corrector's exact AD path)
     # must also be finite under projection.
-    def loss(u):
+    def loss(u: jax.Array) -> jax.Array:
+        """Squared norm of the next state after clipping `u` to the box.
+
+        Args:
+            u: Control vector.
+
+        Returns:
+            The scalar squared norm.
+        """
         u_clip = jnp.clip(
             u,
             jnp.array([-delta_max, -accel_max]),
@@ -122,10 +148,10 @@ def test_corrector_compound_grad_finite_near_pi_half():
     )
 
 
-def test_optax_zero_nans_recovers_from_nan_gradient():
-    """Layer 3 isolation: `optax.zero_nans()` sanitizes NaN gradient leaves.
+def test_optax_zero_nans_recovers_from_nan_gradient() -> None:
+    """`optax.zero_nans()` isolation: sanitizes NaN gradient leaves.
 
-    Direct optimizer chain — no MaDECell, no corrector. With Layer 3 in place,
+    Direct optimizer chain — no MaDECell, no corrector. With `zero_nans` in place,
     an injected NaN in one gradient leaf must NOT propagate into params.
 
     optax.zero_nans replaces NaN with 0 BEFORE clip_by_global_norm. Without
@@ -133,7 +159,7 @@ def test_optax_zero_nans_recovers_from_nan_gradient():
     pytree, divides every leaf by NaN, and Adam updates all parameters with
     NaN — permanent weight poisoning.
 
-    Pre-merge verification: this test MUST FAIL when Step 3's
+    Pre-merge verification: this test MUST FAIL when the
     `optax.zero_nans()` is removed from `_make_optimizers`. Confirmed.
     """
     cfg = TrainingConfig(
@@ -169,7 +195,7 @@ def test_optax_zero_nans_recovers_from_nan_gradient():
     assert jnp.isfinite(final_params["b"]).all()
 
 
-def test_migrate_opt_state_prepends_zero_nans_for_legacy_checkpoints():
+def test_migrate_opt_state_prepends_zero_nans_for_legacy_checkpoints() -> None:
     """Resume from a pre-zero_nans checkpoint must succeed.
 
     Legacy optimizer is `chain(clip_by_global_norm, adam)` → opt_state is a

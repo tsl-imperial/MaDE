@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Stage 1 upstream training."""
 
 from __future__ import annotations
@@ -79,6 +89,14 @@ def apply_made_trajectory_with_controls(
         jax.Array,
         tuple[jax.Array, jax.Array] | tuple[jax.Array, jax.Array, CorrectorDiagnostics],
     ]:
+        """Correct one consecutive pair.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+        Returns:
+            Tuple (next carry, per-step outputs).
+        """
         if return_diagnostics:
             x_corrected, u_corrected, diagnostics = frozen_cell(
                 x_prev,
@@ -135,7 +153,18 @@ def apply_made_trajectory(
     correction_mode: str = "full_fixed",
     x0: jax.Array | None = None,
 ) -> jax.Array:
-    """Apply a frozen MaDE cell autoregressively to a trajectory (states only)."""
+    """Apply a frozen MaDE cell autoregressively to a trajectory (states only).
+
+    Args:
+        frozen_cell: Frozen MaDE cell or model.
+        x_pred: Predicted trajectory, shape (T, D).
+        params: Physics parameters.
+        dt: Timestep in seconds.
+        correction_mode: Correction mode; see `apply_made_trajectory_with_controls`.
+        x0: Optional trusted initial state.
+    Returns:
+        Corrected states, shape (T, D).
+    """
     states, _ = apply_made_trajectory_with_controls(
         frozen_cell,
         x_pred,
@@ -160,7 +189,23 @@ def stage1_loss(
     config: UpstreamConfig,
     metadata: jax.Array | None = None,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
-    """Stage 1 upstream loss."""
+    """Stage 1 upstream loss.
+
+    Args:
+        upstream: Upstream predictor being trained.
+        frozen_I: Frozen inverse dynamics.
+        frozen_enc: Frozen parameter encoder, or None.
+        physics: Known physics model.
+        constraints: Constraint set.
+        context: Context window.
+        x_gt: Ground-truth future states.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+        config: Upstream training configuration.
+        metadata: Optional per-trajectory metadata.
+    Returns:
+        Tuple (total loss, dict of loss terms).
+    """
     if metadata is not None and frozen_enc is not None:
         params = frozen_enc(metadata)
     x_pred = upstream(context)

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Entry point for data generation."""
 
 from __future__ import annotations
@@ -32,6 +42,20 @@ def build_data_config(
     """Construct a DataConfig, overriding only the fields that are not None.
 
     Arguments left as None fall back to the DataConfig default.
+
+    Args:
+        num_train: Number of training trajectories.
+        num_val: Number of validation trajectories.
+        num_test: Number of test trajectories.
+        trajectory_length: Steps per trajectory.
+        control_profile: Control sampling profile name.
+        control_tau: Control profile time constant.
+        min_speed: Minimum speed.
+        noise_scale: Observation noise scale.
+        add_generation_noise: Add noise to the generated data itself.
+
+    Returns:
+        The data configuration with the given overrides applied.
     """
     overrides = {
         "num_trajectories_train": num_train,
@@ -56,6 +80,14 @@ def apply_generation_config(data_config: DataConfig, system: str, generation_con
     applied as ``control_sample_min``/``control_sample_max`` overrides on ``data_config``.
     Systems not present in the JSON leave ``data_config`` unchanged.
 
+    Args:
+        data_config: The base data configuration.
+        system: System name to look up in the JSON.
+        generation_config_path: Path of the generation-config JSON.
+
+    Returns:
+        The configuration, with control-sampling overrides when ``system`` has an entry.
+
     Raises:
         FileNotFoundError: if ``generation_config_path`` does not exist.
     """
@@ -75,6 +107,7 @@ def apply_generation_config(data_config: DataConfig, system: str, generation_con
 
 
 def main() -> None:
+    """Generate and save the simulated data for one system."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--system", default="double_integrator")
     parser.add_argument("--output-dir", default=str(ROOT / "data/generated"))

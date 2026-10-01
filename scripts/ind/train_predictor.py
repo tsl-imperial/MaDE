@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Entry point for upstream predictor training on inD.
 
 Trains an ``LSTMPredictor`` / ``SSMPredictor`` / ``TransformerPredictor`` from
@@ -37,7 +47,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 import jax
 
@@ -108,6 +121,11 @@ _OVERRIDE_KEYS_BY_KIND: dict[str, frozenset[str]] = {
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for predictor training.
+
+    Returns:
+        The configured argument parser.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", default=str(ROOT / "data" / "inD-preprocessed" / "v1"))
     parser.add_argument("--output-dir", required=True)
@@ -180,6 +198,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _collect_overrides(args: argparse.Namespace, kind: str) -> dict[str, Any]:
+    """Collect the CLI overrides that apply to a predictor kind.
+
+    Args:
+        args: Parsed command-line arguments.
+        kind: Predictor kind (``lstm``, ``ssm`` or ``transformer``).
+
+    Returns:
+        Mapping from override name to the value given on the command line.
+    """
     allowed = _OVERRIDE_KEYS_BY_KIND[kind]
     overrides: dict[str, Any] = {}
     for name in allowed:
@@ -195,6 +222,9 @@ def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
     Renders under the queue's ``script -e -q -f -c`` pty wrapping (a pty reports
     ``isatty() == True``); falls back to ``/dev/tty`` only when stderr itself is
     redirected (e.g. piped to a file with no controlling terminal).
+
+    Returns:
+        The output stream, whether progress output is disabled, and the opened tty (or None).
     """
     if sys.stderr.isatty():
         return sys.stderr, False, None
@@ -205,7 +235,19 @@ def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
     return tty, False, tty
 
 
-def _batches(num_samples: int, batch_size: int, rng: np.random.Generator):
+def _batches(
+    num_samples: int, batch_size: int, rng: np.random.Generator
+) -> Iterator[jax.Array]:
+    """Yield shuffled index batches covering one epoch.
+
+    Args:
+        num_samples: Number of samples.
+        batch_size: Indices per batch.
+        rng: Random generator used to shuffle.
+
+    Yields:
+        Index arrays of at most ``batch_size`` entries.
+    """
     order = rng.permutation(num_samples)
     for start in range(0, num_samples, batch_size):
         idx = order[start : start + batch_size]
@@ -215,11 +257,29 @@ def _batches(num_samples: int, batch_size: int, rng: np.random.Generator):
 
 
 def _assemble_batch_context(context_states: jax.Array, metadata: jax.Array) -> jax.Array:
-    """``[K, H, D] + [K, M] -> [K, H, D + M]`` (vmap of assemble_context)."""
+    """``[K, H, D] + [K, M] -> [K, H, D + M]`` (vmap of assemble_context).
+
+    Args:
+        context_states: Context states, shape ``[K, H, D]``.
+        metadata: Per-window metadata, shape ``[K, M]``.
+
+    Returns:
+        The assembled context batch.
+    """
     return jax.vmap(assemble_context)(context_states, metadata)
 
 
 def _load_windows(args: argparse.Namespace, split: str, stub_seed: int) -> dict[str, jax.Array]:
+    """Load a split of inD and cut it into prediction windows.
+
+    Args:
+        args: Parsed command-line arguments.
+        split: Dataset split name.
+        stub_seed: Seed for the stub data source.
+
+    Returns:
+        The window dict (context, future, metadata, ...).
+    """
     states, metadata, lengths = create_ind_data_source(
         args.data_dir,
         split,
@@ -243,8 +303,8 @@ def _load_windows(args: argparse.Namespace, split: str, stub_seed: int) -> dict[
 
 
 def _chunked_weighted_mean(
-    chunk_stats_fn,
-    model,
+    chunk_stats_fn: Callable[..., tuple[jax.Array, jax.Array]],
+    model: Any,
     arrays: list[jax.Array],
     chunk_size: int,
 ) -> float:
@@ -260,6 +320,15 @@ def _chunked_weighted_mean(
     The last chunk is zero-padded to full size and masked out, so every call sees the same
     shape and only one shape is ever traced. Effective chunk size is capped at ``num_samples``
     so small splits don't pad to a wastefully large ``chunk_size``.
+
+    Args:
+        chunk_stats_fn: Jitted function returning the summed MSE and valid count of a chunk.
+        model: The model passed to ``chunk_stats_fn``.
+        arrays: Arrays sharing an axis-0 length.
+        chunk_size: Maximum windows per call.
+
+    Returns:
+        The exact weighted mean (NaN when there are no samples).
     """
     n = arrays[0].shape[0]
     if n == 0:
@@ -294,6 +363,12 @@ def _make_frozen_inverse_dynamics(key: jax.Array) -> InverseDynamics:
 
     ``use_residual=False`` with ``known_physics`` set builds no MLP (``I = I_known``
     exactly); ``key`` is required by the constructor signature but unused here.
+
+    Args:
+        key: PRNG key required by the constructor.
+
+    Returns:
+        The frozen inverse dynamics.
     """
     return InverseDynamics(
         state_dim=4,
@@ -309,13 +384,26 @@ def _make_frozen_inverse_dynamics(key: jax.Array) -> InverseDynamics:
 
 def _train_stage1(
     args: argparse.Namespace,
-    predictor,
+    predictor: Any,
     windows_train: dict[str, jax.Array],
     windows_val: dict[str, jax.Array],
     l_ref_params: jax.Array,
     *,
     key: jax.Array,
 ) -> tuple[Any, list[dict[str, float]], float]:
+    """Train a predictor with the MSE-only Stage-1 objective.
+
+    Args:
+        args: Parsed command-line arguments.
+        predictor: The predictor to train.
+        windows_train: Training windows.
+        windows_val: Validation windows.
+        l_ref_params: Reference physics parameters.
+        key: PRNG key.
+
+    Returns:
+        The trained predictor, the per-epoch history and the best validation MSE.
+    """
     frozen_I = _make_frozen_inverse_dynamics(key)
     physics = KinematicBicycle()
     constraints = inD_physical_constraints()
@@ -332,15 +420,52 @@ def _train_stage1(
     optim = optax.adam(args.lr)
     opt_state = optim.init(eqx.filter(predictor, eqx.is_array))
 
-    def _loss_batch(model, context, x_gt, params):
-        def _single(c, g, p):
+    def _loss_batch(
+        model: Any, context: jax.Array, x_gt: jax.Array, params: jax.Array
+    ) -> tuple[jax.Array, dict[str, jax.Array]]:
+        """Mean Stage-1 loss over a batch.
+
+        Args:
+            model: The predictor.
+            context: Assembled contexts.
+            x_gt: Ground-truth futures.
+            params: Physics parameters per window.
+
+        Returns:
+            The mean loss and the mean of each metric.
+        """
+        def _single(c: jax.Array, g: jax.Array, p: jax.Array) -> tuple[jax.Array, Any]:
+            """Stage-1 loss and metrics for one window.
+
+            Args:
+                c: Assembled context.
+                g: Ground-truth future.
+                p: Physics parameters.
+
+            Returns:
+                The loss and the metrics dict.
+            """
             return stage1_loss(model, frozen_I, None, physics, constraints, c, g, p, _DT, config)
 
         losses, metrics = jax.vmap(_single)(context, x_gt, params)
         return jnp.mean(losses), {k: jnp.mean(v) for k, v in metrics.items()}
 
     @eqx.filter_jit
-    def _step(model, opt_state, context, x_gt, params):
+    def _step(
+        model: Any, opt_state: Any, context: jax.Array, x_gt: jax.Array, params: jax.Array
+    ) -> tuple[Any, Any, jax.Array, Any]:
+        """One optimiser step on a batch.
+
+        Args:
+            model: The predictor.
+            opt_state: Optimiser state.
+            context: Assembled contexts.
+            x_gt: Ground-truth futures.
+            params: Physics parameters per window.
+
+        Returns:
+            The updated model, the updated optimiser state, the loss and the metrics.
+        """
         (loss, metrics), grads = eqx.filter_value_and_grad(_loss_batch, has_aux=True)(
             model, context, x_gt, params
         )
@@ -349,14 +474,46 @@ def _train_stage1(
         return model, opt_state, loss, metrics
 
     @eqx.filter_jit
-    def _val_chunk_stats(model, context_chunk, x_gt_chunk, mask_chunk):
-        def _single(c, g):
+    def _val_chunk_stats(
+        model: Any, context_chunk: jax.Array, x_gt_chunk: jax.Array, mask_chunk: jax.Array
+    ) -> tuple[jax.Array, jax.Array]:
+        """Summed validation MSE and valid-window count for one chunk.
+
+        Args:
+            model: The predictor.
+            context_chunk: Assembled contexts for the chunk.
+            x_gt_chunk: Ground-truth futures for the chunk.
+            mask_chunk: 1 for valid windows, 0 for padding.
+
+        Returns:
+            The masked sum of per-window MSE and the number of valid windows.
+        """
+        def _single(c: jax.Array, g: jax.Array) -> jax.Array:
+            """Mean squared error for one window.
+
+            Args:
+                c: Assembled context.
+                g: Ground-truth future.
+
+            Returns:
+                The scalar MSE.
+            """
             return jnp.mean((model(c) - g) ** 2)
 
         per_window = jax.vmap(_single)(context_chunk, x_gt_chunk)
         return jnp.sum(per_window * mask_chunk), jnp.sum(mask_chunk)
 
-    def _val_mse(model, context, x_gt):
+    def _val_mse(model: Any, context: jax.Array, x_gt: jax.Array) -> float:
+        """Validation MSE over the whole split, evaluated in chunks.
+
+        Args:
+            model: The predictor.
+            context: Assembled contexts.
+            x_gt: Ground-truth futures.
+
+        Returns:
+            The exact mean MSE.
+        """
         return _chunked_weighted_mean(
             _val_chunk_stats, model, [context, x_gt], args.val_chunk_size
         )
@@ -430,6 +587,7 @@ def _train_stage1(
 
 
 def main() -> None:
+    """Train one inD predictor and save it with its training summary."""
     args = _build_parser().parse_args()
 
     output_dir = Path(args.output_dir).expanduser().resolve()

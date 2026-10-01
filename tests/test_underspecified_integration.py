@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Underspecified dispatch E2E integration tests.
 
 Tests that model.known_system != physics.true_system wires correctly through
@@ -35,16 +45,31 @@ from made.utils.config import (
 import pathlib
 from scripts.sim.evaluate import main_programmatic
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def _write_split(root: pathlib.Path, split: str, n: int, t: int, s: int, c: int) -> None:
+    """Write all-zero `states.npy` and `controls.npy` for one split.
+
+    Args:
+        root: Dataset root directory.
+        split: Split sub-directory name.
+        n: Number of trajectories.
+        t: Number of time steps.
+        s: State dimension.
+        c: Control dimension.
+    """
     split_dir = root / split
     split_dir.mkdir(parents=True, exist_ok=True)
     np.save(str(split_dir / "states.npy"), np.zeros((n, t, s), dtype=np.float64))
     np.save(str(split_dir / "controls.npy"), np.zeros((n, t - 1, c), dtype=np.float64))
 
 
-def test_kinbike_as_known_dynbike_as_true(tmp_path):
-    """All 6 E01 metric keys are finite for true=double_integrator, known=unicycle wiring."""
+def test_kinbike_as_known_dynbike_as_true(tmp_path: "Path") -> None:
+    """All 6 metric keys are finite for true=double_integrator, known=unicycle wiring."""
     state_dim, control_dim = 4, 2
     data_dir = tmp_path / "data"
     _write_split(data_dir, "test", n=4, t=8, s=state_dim, c=control_dim)

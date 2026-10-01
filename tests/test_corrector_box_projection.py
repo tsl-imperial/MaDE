@@ -1,4 +1,14 @@
-"""Regression tests: corrector in-loop box projection (Layer 2).
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Regression tests: corrector in-loop box projection.
 
 Pins that after each GD step in both _correct_train and _correct_eval, the
 updated u is projected back inside constraint box bounds BEFORE the next
@@ -18,7 +28,14 @@ from made.utils import CorrectorConfig, ModelConfig
 
 
 def _build_db_cell_for_projection(key: jax.Array) -> MaDECell:
-    """Small MaDECell for DB-underspecified box-projection tests."""
+    """Small MaDECell for DB-underspecified box-projection tests.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Initialised cell.
+    """
     physics = KinematicBicycleAsDynamicState()
     constraints = dynamic_bicycle_constraints()
     return MaDECell.from_config(
@@ -40,8 +57,8 @@ def _build_db_cell_for_projection(key: jax.Array) -> MaDECell:
     )
 
 
-def test_correct_train_projects_inside_loop():
-    """Layer 2: _correct_train clips u into the constraint box every GD step.
+def test_correct_train_projects_inside_loop() -> None:
+    """_correct_train clips u into the constraint box every GD step.
 
     Starting from u=(0.6, 0.0) with δ_max=0.5 (out of box), after train_steps=2:
     - u_corrected[0] must be in [-0.5, 0.5].
@@ -84,8 +101,8 @@ def test_correct_train_projects_inside_loop():
     )
 
 
-def test_correct_eval_projects_inside_loop():
-    """Layer 2: _correct_eval clips u into the constraint box every GD step.
+def test_correct_eval_projects_inside_loop() -> None:
+    """_correct_eval clips u into the constraint box every GD step.
 
     Uses eval_tol=1e9 to force exactly 2 iterations (never triggers early-exit).
     Same assertions as the train-mode test, exercising the while_loop-based path.

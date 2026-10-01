@@ -1,4 +1,14 @@
-"""§3.3 Unit tests for evaluate_stepwise_feasible_split.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Unit tests for evaluate_stepwise_feasible_split.
 
 Hand-crafted 3-trajectory KB fixture with T_i = [5, 3, 4].
 Total M = (5-1)+(3-1)+(4-1) = 9 valid transitions.
@@ -38,12 +48,28 @@ _CONSTRAINTS = inD_physical_constraints()
 # Helpers
 
 def _tame_state(v: float = 5.0) -> jax.Array:
-    """A kinematic-bicycle state well inside inD_physical_constraints."""
+    """A kinematic-bicycle state well inside inD_physical_constraints.
+
+    Args:
+        v: Speed.
+
+    Returns:
+        State vector of shape (4,).
+    """
     return jnp.array([1.0, 2.0, 0.1, v], dtype=jnp.float64)
 
 
 def _tame_next_state(x_prev: jax.Array, delta: float = 0.05, accel: float = 0.5) -> jax.Array:
-    """One Euler step forward — stays tame."""
+    """One Euler step forward — stays tame.
+
+    Args:
+        x_prev: Previous state.
+        delta: Steering angle.
+        accel: Acceleration.
+
+    Returns:
+        Next state.
+    """
     from made.physics.kinematic_bicycle import KinematicBicycle
     physics = KinematicBicycle()
     params = jnp.array([_WHEELBASE], dtype=jnp.float64)
@@ -53,7 +79,14 @@ def _tame_next_state(x_prev: jax.Array, delta: float = 0.05, accel: float = 0.5)
 
 
 def _build_flat_pairs_tame(n: int = 9) -> tuple[jax.Array, jax.Array]:
-    """Return (x_prev_flat, x_curr_flat) of shape (n, 4) — all tame / feasible."""
+    """Return (x_prev_flat, x_curr_flat) of shape (n, 4) — all tame / feasible.
+
+    Args:
+        n: Number of pairs.
+
+    Returns:
+        Previous and current state arrays.
+    """
     rows_prev = []
     rows_curr = []
     x = _tame_state(v=5.0)
@@ -68,7 +101,7 @@ def _build_flat_pairs_tame(n: int = 9) -> tuple[jax.Array, jax.Array]:
 # Fixture: 3 trajectories T=[5,3,4] → M=9 flat pairs
 
 @pytest.fixture(scope="module")
-def flat_9_pairs():
+def flat_9_pairs() -> tuple[jax.Array, jax.Array]:
     """Build exactly 9 tame flat pairs from 3 trajectories with lengths [5,3,4]."""
     lengths = [5, 3, 4]
     all_prev, all_curr = [], []
@@ -88,7 +121,7 @@ def flat_9_pairs():
 
 # (e) Flat aggregation: M=9 shape check
 
-def test_flat_aggregation_shape(flat_9_pairs):
+def test_flat_aggregation_shape(flat_9_pairs: tuple[jax.Array, jax.Array]) -> None:
     """Function must accept flat (9, 4) inputs without error and return scalar outputs."""
     x_prev, x_curr = flat_9_pairs
     result = evaluate_stepwise_feasible_split(
@@ -108,7 +141,7 @@ def test_flat_aggregation_shape(flat_9_pairs):
 
 # (d) frac_inf(m=0) == 0 with tame states
 
-def test_frac_inf_zero_when_no_perturbation(flat_9_pairs):
+def test_frac_inf_zero_when_no_perturbation(flat_9_pairs: tuple[jax.Array, jax.Array]) -> None:
     """With x_perturbed == x_curr (tame, no perturbation), fraction_infeasible must be 0."""
     x_prev, x_curr = flat_9_pairs
     result = evaluate_stepwise_feasible_split(
@@ -127,7 +160,7 @@ def test_frac_inf_zero_when_no_perturbation(flat_9_pairs):
 
 # (b) fid_feasible == 0 when corrected == gt on feasible step
 
-def test_fidelity_feasible_zero_when_corrected_equals_gt(flat_9_pairs):
+def test_fidelity_feasible_zero_when_corrected_equals_gt(flat_9_pairs: tuple[jax.Array, jax.Array]) -> None:
     """When x_corrected == x_curr_gt on all feasible steps, fidelity_feasible must be 0."""
     x_prev, x_curr = flat_9_pairs
     # No perturbation → all steps feasible; corrected == gt
@@ -147,7 +180,7 @@ def test_fidelity_feasible_zero_when_corrected_equals_gt(flat_9_pairs):
 
 # (c) fid_infeasible > 0 on infeasible step where corrected != gt
 
-def test_fidelity_infeasible_positive_when_corrected_differs():
+def test_fidelity_infeasible_positive_when_corrected_differs() -> None:
     """Build an infeasible step explicitly: push v above 22 m/s (inD v_max).
 
     Confirm fid_infeasible > 0 when x_corrected != x_curr_gt on that step.
@@ -190,7 +223,7 @@ def test_fidelity_infeasible_positive_when_corrected_differs():
 
 # (a) Infeasibility uses _i_known, not method-I (structural + functional)
 
-def test_bucket_assignment_uses_i_known_not_method_I():
+def test_bucket_assignment_uses_i_known_not_method_I() -> None:
     """Structural: evaluate_stepwise_feasible_split takes no model argument.
 
     Functional: bucket assignment is invariant to the corrected output — only
@@ -236,7 +269,7 @@ def test_bucket_assignment_uses_i_known_not_method_I():
 
 # Stationary carry: step with low v is excluded from both feas and inf
 
-def test_stationary_step_excluded_from_both_buckets():
+def test_stationary_step_excluded_from_both_buckets() -> None:
     """A step with |v_avg| < 0.5 must contribute to stationary_carry, not inf/feas."""
     # v_prev = 0.1, v_curr = 0.2 → v_avg = 0.15 < 0.5 → stationary
     x_prev = jnp.array([0.0, 0.0, 0.0, 0.1], dtype=jnp.float64)
@@ -261,7 +294,7 @@ def test_stationary_step_excluded_from_both_buckets():
 
 # Disjointness: fraction_infeasible + fraction_stationary_carry <= 1
 
-def test_frac_inf_and_stationary_are_disjoint(flat_9_pairs):
+def test_frac_inf_and_stationary_are_disjoint(flat_9_pairs: tuple[jax.Array, jax.Array]) -> None:
     """fraction_infeasible and fraction_stationary_carry are disjoint partitions (sum ≤ 1)."""
     x_prev, x_curr = flat_9_pairs
     # Heavily perturb v to force some infeasible

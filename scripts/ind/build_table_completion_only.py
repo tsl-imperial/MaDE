@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Render the completion-only appendix table (`tab_completion_only`).
 
 ## What the table is
@@ -41,6 +51,14 @@ TEXTWIDTH_PT = 458.74
 
 
 def _display(p: Path) -> str:
+    """Format a path relative to the repository root when possible.
+
+    Args:
+        p: Path to format.
+
+    Returns:
+        The root-relative path as a string, or the path unchanged when outside the root.
+    """
     try:
         return str(p.relative_to(ROOT))
     except ValueError:
@@ -48,6 +66,14 @@ def _display(p: Path) -> str:
 
 
 def _pop_sd(v: list[float]) -> float:
+    """Population standard deviation (divides by n).
+
+    Args:
+        v: Non-empty sequence of values.
+
+    Returns:
+        The population standard deviation.
+    """
     m = sum(v) / len(v)
     return math.sqrt(sum((x - m) ** 2 for x in v) / len(v))
 
@@ -61,6 +87,13 @@ def _primary(cell: dict, metric: str) -> float | None:
     * current -- bare key is the EMITTED scoring, recovered sits under `__recovered_controls`.
 
     Taking `__emitted_controls` where it exists and the bare key otherwise is correct for either.
+
+    Args:
+        cell: One evaluation cell from the source artifact.
+        metric: Scalar metric name.
+
+    Returns:
+        The metric value, or None when the cell lacks it.
     """
     sm = cell.get("scalar_metrics", {})
     if cell["row"].startswith("made"):
@@ -72,6 +105,14 @@ def _primary(cell: dict, metric: str) -> float | None:
 
 
 def _grid(cells: list[dict]) -> dict:
+    """Aggregate cells into mean, population sd and count per (family, row, window set).
+
+    Args:
+        cells: Evaluation cells from the source artifact.
+
+    Returns:
+        Mapping from (family, row, window set) to per-metric mean/sd/n.
+    """
     acc: dict = {}
     for c in cells:
         gkey = (c["family"], c["row"], c["window_set"])
@@ -88,6 +129,15 @@ def _grid(cells: list[dict]) -> dict:
 
 
 def _fmt(cell: dict | None, tex: bool) -> str:
+    """Format one table cell as mean plus-minus sd.
+
+    Args:
+        cell: Mean/sd/n record, or None for a missing cell.
+        tex: Emit LaTeX math when True, plain text otherwise.
+
+    Returns:
+        The formatted cell string (``--`` when missing).
+    """
     if cell is None:
         return "--"
     body = f"{cell['mean']:.4f}\\,{{\\scriptscriptstyle\\pm}}\\,{cell['sd']:.4f}"
@@ -95,6 +145,11 @@ def _fmt(cell: dict | None, tex: bool) -> str:
 
 
 def main() -> int:
+    """Render the table from the source artifact and write the outputs.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", default=str(SOURCE),
                     help="x3-attribution artifact on the MSE-only predictors.")

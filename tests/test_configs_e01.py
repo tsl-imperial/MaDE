@@ -1,10 +1,22 @@
-"""E01 config matrix tests."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Config matrix tests for the simulated experiments."""
 
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+
+import pytest
 
 from made.utils import load_config, save_config
 
@@ -35,10 +47,16 @@ MADE_ABLATION_VARIANTS = VARIANTS - {"mlp", "fab", "clamp", "made-prior-only"}
 
 
 def _json_paths() -> list[Path]:
+    """List experiment config files, excluding data_generation.json.
+
+    Returns:
+        Sorted config paths.
+    """
     return sorted(p for p in CONFIG_DIR.glob("*.json") if p.name != "data_generation.json")
 
 
-def test_all_configs_present():
+def test_all_configs_present() -> None:
+    """Checks all configs present."""
     paths = _json_paths()
     # 3 fully-specified systems x 8 standard variants + 1 underspecified DB
     # system x 9 (standard variants + made-prior-only) = 24 + 9 = 33.
@@ -57,7 +75,8 @@ def test_all_configs_present():
     assert names == expected
 
 
-def test_all_configs_roundtrip(tmp_path):
+def test_all_configs_roundtrip(tmp_path: Path) -> None:
+    """Checks all configs roundtrip."""
     for path in _json_paths():
         cfg = load_config(str(path))
         out = tmp_path / path.name
@@ -65,7 +84,8 @@ def test_all_configs_roundtrip(tmp_path):
         assert json.loads(path.read_text()) == json.loads(out.read_text())
 
 
-def test_configs_include_required_known_true_fields():
+def test_configs_include_required_known_true_fields() -> None:
+    """Checks configs include required known true fields."""
     for path in _json_paths():
         payload = json.loads(path.read_text())
         assert "true_system" in payload["physics"], path
@@ -73,7 +93,8 @@ def test_configs_include_required_known_true_fields():
         assert "perturbation_seed" in payload["evaluation"], path
 
 
-def test_made_ablation_configs_restore_phase1_best_before_phase2():
+def test_made_ablation_configs_restore_phase1_best_before_phase2() -> None:
+    """Checks made ablation configs restore phase1 best before phase2."""
     for prefix in GROUP_PREFIXES:
         variants = VARIANTS if prefix == "dynbicycle_underspecified" else VARIANTS - DB_ONLY_VARIANTS
         for variant in variants & MADE_ABLATION_VARIANTS:
@@ -82,7 +103,8 @@ def test_made_ablation_configs_restore_phase1_best_before_phase2():
             assert payload["training"]["restore_phase1_best_before_phase2"] is True, path
 
 
-def test_configs_enable_documented_early_stopping_defaults():
+def test_configs_enable_documented_early_stopping_defaults() -> None:
+    """Checks configs enable documented early stopping defaults."""
     expected = {
         "early_stopping_enabled": True,
         "early_stopping_min_epochs": 5,
@@ -108,7 +130,8 @@ def test_configs_enable_documented_early_stopping_defaults():
         assert training["early_stopping_saturation_window"] == expected_window, path
 
 
-def test_configs_use_tightened_regularization_defaults():
+def test_configs_use_tightened_regularization_defaults() -> None:
+    """Checks configs use tightened regularization defaults."""
     expected = {
         "lambda_min_norm": 0.01,
         "t_side_grad_clip_norm": 1.0,
@@ -122,7 +145,8 @@ def test_configs_use_tightened_regularization_defaults():
             assert training[key] == value, f"{path.name}: {key} = {training.get(key)!r}"
 
 
-def test_dynamic_bicycle_configs_are_all_underspecified_with_kinematic_known_physics():
+def test_dynamic_bicycle_configs_are_all_underspecified_with_kinematic_known_physics() -> None:
+    """Checks dynamic bicycle configs are all underspecified with kinematic known physics."""
     paths = sorted(p for p in CONFIG_DIR.glob("dynbicycle_*.json") if p.name != "data_generation.json")
     assert paths
     assert not any(path.name.startswith("dynbicycle_fully-specified") for path in paths)
@@ -132,7 +156,8 @@ def test_dynamic_bicycle_configs_are_all_underspecified_with_kinematic_known_phy
         assert payload["model"]["known_system"] == "kinematic_bicycle"
 
 
-def test_run_matrix_wandb_run_name_format():
+def test_run_matrix_wandb_run_name_format() -> None:
+    """Checks run matrix wandb run name format."""
     from scripts.sim.run_matrix import _wandb_run_name
 
     assert (
@@ -145,7 +170,8 @@ def test_run_matrix_wandb_run_name_format():
     )
 
 
-def test_e01_entrypoints_register_all_config_variants():
+def test_e01_entrypoints_register_all_config_variants() -> None:
+    """Checks e01 entrypoints register all config variants."""
     from scripts.sim import evaluate, run_matrix, train
 
     made_variants = {variant for variant in VARIANTS if variant.startswith("made")}
@@ -160,7 +186,8 @@ def test_e01_entrypoints_register_all_config_variants():
     assert VARIANTS.issubset(evaluate._ALL_VARIANTS)
 
 
-def test_base_regime_perturbation_contracts():
+def test_base_regime_perturbation_contracts() -> None:
+    """Checks base regime perturbation contracts."""
     for prefix_glob in (
         "di_*.json",
         "unicycle_*.json",
@@ -179,7 +206,8 @@ def test_base_regime_perturbation_contracts():
             )
 
 
-def test_dynbicycle_underspecified_configs_apply_training_noise():
+def test_dynbicycle_underspecified_configs_apply_training_noise() -> None:
+    """Checks dynbicycle underspecified configs apply training noise."""
     paths = sorted(p for p in CONFIG_DIR.glob("dynbicycle_underspecified_*.json") if p.name != "data_generation.json")
     assert paths
     for path in paths:
@@ -189,7 +217,8 @@ def test_dynbicycle_underspecified_configs_apply_training_noise():
         )
 
 
-def test_per_dim_perturbation_scales_match_state_dim():
+def test_per_dim_perturbation_scales_match_state_dim() -> None:
+    """Checks per dim perturbation scales match state dim."""
     expected = {
         "di_": None,
         "unicycle_": (0.10, 0.10, 0.05, 0.10),
@@ -211,7 +240,11 @@ def test_per_dim_perturbation_scales_match_state_dim():
             )
 
 
-def test_run_matrix_steps_per_epoch_dry_run_avoids_trainer_import(monkeypatch, capsys):
+def test_run_matrix_steps_per_epoch_dry_run_avoids_trainer_import(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Checks run matrix steps per epoch dry run avoids trainer import."""
     sys.modules.pop("made.training.trainer", None)
     from scripts.sim import run_matrix
 

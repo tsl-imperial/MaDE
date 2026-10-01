@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Corrector-iteration counts: how many gradient steps the eval-time adaptive corrector takes
 per timestep, on the same windows and models as the latency run (`measure_latency.py`), so the
 two describe one configuration: the filtered inD windows (`WINDOW_SPEC`, `THRESH_M`), the
@@ -27,8 +37,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -50,6 +64,11 @@ MADE_SEEDS = (0, 1, 2)
 
 
 def _git_sha() -> str:
+    """Current git commit hash.
+
+    Returns:
+        The ``HEAD`` sha, or ``unknown`` when git is unavailable.
+    """
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT),
                               capture_output=True, text=True, check=True).stdout.strip()
@@ -57,7 +76,16 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _load_module(name: str, path: Path):
+def _load_module(name: str, path: Path) -> "ModuleType":
+    """Import a Python file as a module registered under ``name``.
+
+    Args:
+        name: Module name to register in ``sys.modules``.
+        path: Path of the source file.
+
+    Returns:
+        The loaded module.
+    """
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -67,6 +95,14 @@ def _load_module(name: str, path: Path):
 
 
 def _display(p: Path) -> str:
+    """Format a path relative to the repository root when possible.
+
+    Args:
+        p: Path to format.
+
+    Returns:
+        The root-relative path, or the path unchanged when outside the root.
+    """
     try:
         return str(p.relative_to(ROOT))
     except ValueError:
@@ -74,6 +110,15 @@ def _display(p: Path) -> str:
 
 
 def _summary(counts: np.ndarray, caps: np.ndarray) -> dict:
+    """Summarise corrector iteration counts.
+
+    Args:
+        counts: Iteration count per call.
+        caps: Boolean flag per call, True when the iteration cap was hit.
+
+    Returns:
+        Dict with call count, median, p95, max, mean and cap-hit statistics.
+    """
     if counts.size == 0:
         return {"calls": 0}
     return {
@@ -88,6 +133,11 @@ def _summary(counts: np.ndarray, caps: np.ndarray) -> dict:
 
 
 def main() -> int:
+    """Measure corrector iteration counts across families and seeds and write the JSON.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--families", default=",".join(FAMILIES))
     ap.add_argument("--pred-seeds", default=",".join(str(s) for s in PRED_SEEDS))
@@ -107,6 +157,14 @@ def main() -> int:
     data_dir = Path(a.data_dir)
     predictor_root = ROOT / a.predictor_root
     def made_checkpoints(seed: int) -> Path:
+        """Checkpoint directory for a MaDE seed.
+
+        Args:
+            seed: MaDE seed.
+
+        Returns:
+            The checkpoint directory under the repository root.
+        """
         return ROOT / a.made_root.format(ms=seed)
 
     families = [f.strip() for f in a.families.split(",") if f.strip()]
@@ -157,7 +215,20 @@ def main() -> int:
                 x_pred_all = E._chunked_predictor_forward(predictor, context_all, 4096)
                 params_all = made_model.params_from_metadata(metadata_all)
 
-                def _one(x_pred, params, x0, _m=made_model):
+                def _one(
+                    x_pred: jax.Array, params: Any, x0: jax.Array, _m: Any = made_model
+                ) -> tuple[jax.Array, jax.Array]:
+                    """Run one trajectory and report its corrector iterations.
+
+                    Args:
+                        x_pred: Predicted future states.
+                        params: Physics parameters for this window.
+                        x0: Seed state.
+                        _m: Bound MaDE model.
+
+                    Returns:
+                        The iteration count and the cap-hit flag.
+                    """
                     _x, _u, diag = apply_made_trajectory_with_controls(
                         _m.cell, x_pred, params, dt,
                         correction_mode="eval_adaptive", x0=x0, return_diagnostics=True)

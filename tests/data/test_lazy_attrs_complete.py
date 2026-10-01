@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Maintenance test: made.data._LAZY_ATTRS must cover all re-exported names.
 
 This test enforces the bidirectional invariant:
@@ -13,7 +23,7 @@ import pytest
 import made.data as _data_mod
 
 
-def test_lazy_attrs_keys_covered_by_all():
+def test_lazy_attrs_keys_covered_by_all() -> None:
     """Every key in _LAZY_ATTRS must appear in made.data.__all__."""
     missing = [k for k in _data_mod._LAZY_ATTRS if k not in _data_mod.__all__]
     assert not missing, (
@@ -22,7 +32,7 @@ def test_lazy_attrs_keys_covered_by_all():
     )
 
 
-def test_all_lazy_entries_have_submodule_all():
+def test_all_lazy_entries_have_submodule_all() -> None:
     """Every lazy-target module must define __all__."""
     unique_modules = set(_data_mod._LAZY_ATTRS.values())
     for mod_name in sorted(unique_modules):
@@ -33,7 +43,7 @@ def test_all_lazy_entries_have_submodule_all():
             )
 
 
-def test_submodule_to_made_data_direction():
+def test_submodule_to_made_data_direction() -> None:
     """(a) Submodule → made.data: every name in module.__all__ that is also in
     made.data.__all__ must appear in _LAZY_ATTRS mapping to that module."""
     unique_modules = set(_data_mod._LAZY_ATTRS.values())
@@ -51,7 +61,7 @@ def test_submodule_to_made_data_direction():
     assert not violations, "\n".join(violations)
 
 
-def test_all_names_in_lazy_or_eager():
+def test_all_names_in_lazy_or_eager() -> None:
     """Every name in made.data.__all__ must be in _LAZY_ATTRS or eagerly in module dict.
 
     Catches: contributor adds to made.data.__all__ but forgets _LAZY_ATTRS entry.
@@ -68,7 +78,7 @@ def test_all_names_in_lazy_or_eager():
     )
 
 
-def test_lazy_attrs_to_submodule_direction():
+def test_lazy_attrs_to_submodule_direction() -> None:
     """(b) _LAZY_ATTRS → submodule: every key must (i) resolve to a real attr
     on its declared module, and (ii) appear in that module's __all__."""
     violations = []

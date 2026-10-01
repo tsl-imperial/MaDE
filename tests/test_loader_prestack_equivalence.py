@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Pre-stacked batching must be a pure marshalling change: identical batches, faster.
 
 The loader previously called jnp.asarray per sample per key per batch and stacked the
@@ -15,7 +25,16 @@ import pytest
 from made.data.grain_pipeline import InMemoryDataLoader
 
 
-def _samples(n=40, seed=0):
+def _samples(n: int = 40, seed: int = 0) -> list[dict]:
+    """Build random synthetic samples.
+
+    Args:
+        n: Number of samples.
+        seed: PRNG seed.
+
+    Returns:
+        List of sample dicts.
+    """
     rng = np.random.default_rng(seed)
     return [
         {
@@ -27,8 +46,30 @@ def _samples(n=40, seed=0):
     ]
 
 
-def _reference(samples, batch_size, *, shuffle, seed, drop_remainder, noise_scale, epochs=1):
-    """The pre-change implementation, inlined, as the oracle."""
+def _reference(
+    samples: list[dict],
+    batch_size: int,
+    *,
+    shuffle: bool,
+    seed: int,
+    drop_remainder: bool,
+    noise_scale: float,
+    epochs: int = 1,
+) -> list[dict]:
+    """The pre-change implementation, inlined, as the oracle.
+
+    Args:
+        samples: Samples to batch.
+        batch_size: Batch size.
+        shuffle: Whether to shuffle.
+        seed: Seed.
+        drop_remainder: Whether to drop the last partial batch.
+        noise_scale: Noise scale.
+        epochs: Number of epochs.
+
+    Returns:
+        List of batches.
+    """
     _NOISE_SALT = __import__("made.data.grain_pipeline", fromlist=["_NOISE_SALT"])._NOISE_SALT
     out = []
     for epoch in range(epochs):
@@ -61,7 +102,8 @@ def _reference(samples, batch_size, *, shuffle, seed, drop_remainder, noise_scal
 @pytest.mark.parametrize("shuffle", [True, False])
 @pytest.mark.parametrize("drop_remainder", [True, False])
 @pytest.mark.parametrize("noise_scale", [0.0, 0.02])
-def test_batches_are_bit_identical(shuffle, drop_remainder, noise_scale):
+def test_batches_are_bit_identical(shuffle: bool, drop_remainder: bool, noise_scale: float) -> None:
+    """Checks batches are bit identical."""
     samples, bs, seed = _samples(), 7, 3
     loader = InMemoryDataLoader(samples, bs, shuffle=shuffle, seed=seed,
                                 drop_remainder=drop_remainder, noise_scale=noise_scale)
@@ -75,7 +117,7 @@ def test_batches_are_bit_identical(shuffle, drop_remainder, noise_scale):
             assert jnp.array_equal(g[k], w[k]), f"batch differs on key {k}"
 
 
-def test_multi_epoch_noise_stream_unchanged():
+def test_multi_epoch_noise_stream_unchanged() -> None:
     """noise_rng is seeded from the epoch counter; pre-stacking must not disturb it."""
     samples, bs, seed = _samples(seed=5), 6, 11
     loader = InMemoryDataLoader(samples, bs, shuffle=True, seed=seed,
@@ -89,5 +131,6 @@ def test_multi_epoch_noise_stream_unchanged():
             assert jnp.array_equal(g[k], w[k])
 
 
-def test_empty_sample_list_does_not_crash():
+def test_empty_sample_list_does_not_crash() -> None:
+    """Checks empty sample list does not crash."""
     assert list(InMemoryDataLoader([], 4, shuffle=False, seed=0)) == []

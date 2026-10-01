@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 import math
 
 import diffrax
@@ -34,7 +44,8 @@ from made.physics import KinematicBicycleAsDynamicState
 from made.utils import DataConfig
 
 
-def test_inequality_metrics_feasible():
+def test_inequality_metrics_feasible() -> None:
+    """Check that inequality metrics feasible."""
     constraints = double_integrator_constraints()
     x = jnp.zeros((10, 4))
     u = jnp.zeros((10, 2))
@@ -42,12 +53,14 @@ def test_inequality_metrics_feasible():
     assert inequality_violation_magnitude(x, u, constraints) == 0.0
 
 
-def test_fidelity_identity():
+def test_fidelity_identity() -> None:
+    """Check that fidelity identity."""
     x = jnp.zeros((10, 4))
     assert fidelity(x, x) == 0.0
 
 
-def test_perturbation_deterministic():
+def test_perturbation_deterministic() -> None:
+    """Check that perturbation deterministic."""
     states = jnp.zeros((2, 4, 4))
     config = DataConfig(perturbation_scale=0.1)
     key = jax.random.key(0)
@@ -58,7 +71,7 @@ def test_perturbation_deterministic():
     assert noisy.shape == states.shape
 
 
-def test_dynamics_violation_known_finite_under_extreme_steering():
+def test_dynamics_violation_known_finite_under_extreme_steering() -> None:
     """Heun+ConstantStep must return a finite value even for delta near pi/2.
 
     Previously Tsit5+PIDController would contract dt indefinitely on this
@@ -93,7 +106,15 @@ def test_dynamics_violation_known_finite_under_extreme_steering():
 
 
 def _integrate_kinbicycle_trajectory(n_steps: int, dt: float) -> tuple[jax.Array, jax.Array]:
-    """Build a short kinematic-bicycle trajectory using Heun+ConstantStep."""
+    """Build a short kinematic-bicycle trajectory using Heun+ConstantStep.
+
+    Args:
+        n_steps: Number of integration steps.
+        dt: Step size in seconds.
+
+    Returns:
+        The `(states, controls)` pair of the trajectory.
+    """
     physics = KinematicBicycle()
     params = jnp.array([2.7])
     # Moderate in-distribution conditions: moderate speed, small steering, small accel
@@ -127,7 +148,7 @@ def _integrate_kinbicycle_trajectory(n_steps: int, dt: float) -> tuple[jax.Array
     return x_traj, u_traj, params
 
 
-def test_dynamics_violation_known_near_zero_on_simulator_trajectory():
+def test_dynamics_violation_known_near_zero_on_simulator_trajectory() -> None:
     """When stencil matches stencil, the known-physics metric must be near machine zero."""
     dt = 0.1
     x_traj, u_traj, params = _integrate_kinbicycle_trajectory(n_steps=5, dt=dt)
@@ -136,7 +157,7 @@ def test_dynamics_violation_known_near_zero_on_simulator_trajectory():
     assert float(result) < 1e-10, f"Expected near-zero dynamics violation, got {result}"
 
 
-def test_dynamics_violation_true_uses_heun_stencil():
+def test_dynamics_violation_true_uses_heun_stencil() -> None:
     """dynamics_violation_true inherits the Heun fix — near zero on Heun-generated DynBicycle traj."""
     physics = DynamicBicycle()
     params = jnp.array([19000.0, 20000.0, 1500.0, 3000.0, 1.2, 1.5])
@@ -174,15 +195,16 @@ def test_dynamics_violation_true_uses_heun_stencil():
 
 
 # ---------------------------------------------------------------------------
-# Real-data (E2 / E3) metric helpers.
+# Real-data (inD) metric helpers.
 # ---------------------------------------------------------------------------
 
 
-def test_metric_version_is_real_data_v3_gaussian():
+def test_metric_version_is_real_data_v3_gaussian() -> None:
+    """Check that metric version is real data v3 gaussian."""
     assert METRIC_VERSION == "real-data-v3-gaussian"
 
 
-def test_estimate_empirical_envelope_quantiles():
+def test_estimate_empirical_envelope_quantiles() -> None:
     """1st/99th percentiles of a uniform [0, 1] distribution lie in [0.005, 0.995]."""
     rng = jax.random.key(0)
     states = jax.random.uniform(rng, shape=(500, 1, 4), dtype=jnp.float64)
@@ -204,7 +226,7 @@ def test_estimate_empirical_envelope_quantiles():
         assert 0.95 <= env.control_max[d] <= 1.0
 
 
-def test_estimate_empirical_envelope_rounding():
+def test_estimate_empirical_envelope_rounding() -> None:
     """Lower bound rounds DOWN; upper bound rounds UP per increment."""
     states = jnp.zeros((10, 3, 4), dtype=jnp.float64)
     states = states.at[:, :, 0].set(jnp.linspace(-0.37, 0.42, 30).reshape(10, 3))
@@ -234,7 +256,7 @@ def test_estimate_empirical_envelope_rounding():
     )
 
 
-def test_estimate_empirical_envelope_respects_lengths():
+def test_estimate_empirical_envelope_respects_lengths() -> None:
     """Padded entries past lengths must be excluded from the envelope."""
     real = jnp.array([
         [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]],
@@ -259,6 +281,11 @@ def test_estimate_empirical_envelope_respects_lengths():
 
 
 def _simple_envelope() -> EmpiricalEnvelope:
+    """Return a symmetric unit-box envelope.
+
+    Returns:
+        An `EmpiricalEnvelope` with state bounds +-1 and control bounds +-0.5.
+    """
     return EmpiricalEnvelope(
         state_min=jnp.array([-1.0, -1.0, -1.0, -1.0]),
         state_max=jnp.array([1.0, 1.0, 1.0, 1.0]),
@@ -267,21 +294,23 @@ def _simple_envelope() -> EmpiricalEnvelope:
     )
 
 
-def test_envelope_violation_rate_zero_inside():
+def test_envelope_violation_rate_zero_inside() -> None:
+    """Check that envelope violation rate zero inside."""
     env = _simple_envelope()
     x = jnp.zeros((5, 4))
     u = jnp.zeros((5, 2))
     assert float(empirical_envelope_violation_rate(x, u, env)) == 0.0
 
 
-def test_envelope_violation_rate_one_outside():
+def test_envelope_violation_rate_one_outside() -> None:
+    """Check that envelope violation rate one outside."""
     env = _simple_envelope()
     x = jnp.full((5, 4), 5.0)  # every step violates state_max in dim 0
     u = jnp.zeros((5, 2))
     assert float(empirical_envelope_violation_rate(x, u, env)) == 1.0
 
 
-def test_envelope_violation_rate_u_none_skips_control_box():
+def test_envelope_violation_rate_u_none_skips_control_box() -> None:
     """When u is None, only state-side bounds are evaluated."""
     env = _simple_envelope()
     x = jnp.zeros((5, 4))  # state-feasible
@@ -292,7 +321,8 @@ def test_envelope_violation_rate_u_none_skips_control_box():
     # finite/feasible rates without raising.
 
 
-def test_envelope_violation_magnitude_l2():
+def test_envelope_violation_magnitude_l2() -> None:
+    """Check that envelope violation magnitude l2."""
     env = _simple_envelope()
     # Single-trajectory: x[t] = [0, 0, 2.0, 0]. state_max[2]=1.0 → violation 1.0
     # in dim 2 (non-positional) at every step. x,y (dims 0,1) are stripped to ±inf
@@ -303,13 +333,15 @@ def test_envelope_violation_magnitude_l2():
     assert math.isclose(mag, 1.0, abs_tol=1e-6)
 
 
-def test_ade_alias_matches_fidelity():
+def test_ade_alias_matches_fidelity() -> None:
+    """Check that ade alias matches fidelity."""
     x = jnp.array([[0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]])
     y = jnp.array([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
     assert float(ade(x, y)) == float(fidelity(x, y))
 
 
-def test_fde_final_step_only():
+def test_fde_final_step_only() -> None:
+    """Check that fde final step only."""
     x = jnp.array([[0.0, 0.0], [3.0, 4.0]])  # final L2 distance = 5
     y = jnp.array([[0.0, 0.0], [0.0, 0.0]])
     assert math.isclose(float(fde(x, y)), 5.0, abs_tol=1e-9)
@@ -322,6 +354,13 @@ def _non_heun_circular_trajectory(dt: float, n: int = 8) -> jax.Array:
     so headings/speeds are analytically consistent. KB+L=2.7 Heun stencil
     does NOT reproduce this trajectory (the curvature implies a different
     wheelbase), so ``dynamics_violation_known`` reports a positive residual.
+
+    Args:
+        dt: Step size in seconds.
+        n: Number of trajectory points.
+
+    Returns:
+        The states along the circle.
     """
     t = jnp.arange(n, dtype=jnp.float64)
     radius = 5.0
@@ -333,7 +372,7 @@ def _non_heun_circular_trajectory(dt: float, n: int = 8) -> jax.Array:
     return jnp.stack([x, y, heading, speed], axis=-1)
 
 
-def test_gt_normalised_residual_zero_when_equal():
+def test_gt_normalised_residual_zero_when_equal() -> None:
     """When method residual == GT reference residual, output is 0."""
     physics = KinematicBicycle()
     params = jnp.array([2.7])
@@ -351,7 +390,7 @@ def test_gt_normalised_residual_zero_when_equal():
     assert abs(out) < 1e-9, f"expected 0, got {out}"
 
 
-def test_gt_normalised_residual_eps_floor():
+def test_gt_normalised_residual_eps_floor() -> None:
     """GT reference residual = 0 must NOT produce inf/nan."""
     physics = KinematicBicycle()
     params = jnp.array([2.7])
@@ -366,7 +405,7 @@ def test_gt_normalised_residual_eps_floor():
     assert math.isfinite(out), f"expected finite, got {out}"
 
 
-def test_gt_normalised_residual_negative_overprojection():
+def test_gt_normalised_residual_negative_overprojection() -> None:
     """method = 0.5 × gt → output = 0.5 / 1 - 1 = -0.5."""
     physics = KinematicBicycle()
     params = jnp.array([2.7])
@@ -384,7 +423,7 @@ def test_gt_normalised_residual_negative_overprojection():
     assert math.isclose(out, -0.5, abs_tol=1e-3), out
 
 
-def test_gt_normalised_residual_nontrivial_on_non_heun_trajectory():
+def test_gt_normalised_residual_nontrivial_on_non_heun_trajectory() -> None:
     """Non-Heun-stencil trajectory must yield a non-trivial ratio."""
     # Construct a trajectory that does NOT obey the KB Heun stencil exactly:
     # constant acceleration with non-zero δ but states picked from a circular
@@ -420,7 +459,7 @@ def test_gt_normalised_residual_nontrivial_on_non_heun_trajectory():
     assert abs(out) > 1e-3, f"expected non-trivial residual ratio, got {out}"
 
 
-def test_estimate_gt_reference_residual_heun_perfect_near_zero():
+def test_estimate_gt_reference_residual_heun_perfect_near_zero() -> None:
     """Heun-generated trajectories give a near-zero reference residual."""
     dt = 0.1
     x_traj, u_traj, params = _integrate_kinbicycle_trajectory(n_steps=5, dt=dt)
@@ -436,7 +475,7 @@ def test_estimate_gt_reference_residual_heun_perfect_near_zero():
     assert ref < 1e-10, f"expected near-zero reference residual, got {ref}"
 
 
-def test_jerk_zero_for_constant_velocity():
+def test_jerk_zero_for_constant_velocity() -> None:
     """Constant-velocity straight line has third-difference zero."""
     dt = 0.1
     n = 6
@@ -449,14 +488,14 @@ def test_jerk_zero_for_constant_velocity():
     assert math.isclose(j, 0.0, abs_tol=1e-10), j
 
 
-def test_jerk_short_trajectory():
+def test_jerk_short_trajectory() -> None:
     """Length-3 trajectory returns 0.0 (third diff requires 4 states)."""
     dt = 0.1
     states = jnp.zeros((3, 4))
     assert float(jerk(states, dt)) == 0.0
 
 
-def test_heading_jerk_unwraps():
+def test_heading_jerk_unwraps() -> None:
     """A heading sequence with a 2π wrap returns a small jerk after unwrap."""
     dt = 0.1
     # Smooth ramp through ±π that wraps in the principal-value representation.
@@ -476,13 +515,14 @@ def test_heading_jerk_unwraps():
     assert hj < 1.0, f"unwrap appears broken: heading_jerk={hj}"
 
 
-def test_heading_jerk_short_trajectory():
+def test_heading_jerk_short_trajectory() -> None:
+    """Check that heading jerk short trajectory."""
     dt = 0.1
     states = jnp.zeros((3, 4))
     assert float(heading_jerk(states, dt)) == 0.0
 
 
-def test_kb_inverse_controls_round_trip():
+def test_kb_inverse_controls_round_trip() -> None:
     """Inverse controls recover the ground-truth (δ, a) under Heun."""
     dt = 0.1
     x_traj, u_traj, params = _integrate_kinbicycle_trajectory(n_steps=5, dt=dt)
@@ -494,7 +534,7 @@ def test_kb_inverse_controls_round_trip():
     assert aux["stationary_frame_count"] == 0
 
 
-def test_ind_physical_and_envelope_strip_xy():
+def test_ind_physical_and_envelope_strip_xy() -> None:
     """x,y must be ±inf on inD inequality path."""
     from made.evaluation.metrics import envelope_constraint, EmpiricalEnvelope
     from made.physics import inD_physical_constraints
@@ -517,7 +557,7 @@ def test_ind_physical_and_envelope_strip_xy():
     assert bool(jnp.all(jnp.isinf(env_box.state_max[xy])))
 
 
-def test_kb_inverse_controls_stationary_no_pi_over_two_spike():
+def test_kb_inverse_controls_stationary_no_pi_over_two_spike() -> None:
     """A stationary segment must NOT produce ±π/2 deltas."""
     dt = 0.1
     # Build a trajectory that is stationary (v=0) for several frames with
@@ -534,7 +574,8 @@ def test_kb_inverse_controls_stationary_no_pi_over_two_spike():
     )
     assert aux["stationary_frame_count"] == n - 1
 
-def test_position_ade_equals_norm_over_xy():
+def test_position_ade_equals_norm_over_xy() -> None:
+    """Check that position ade equals norm over xy."""
     key = jax.random.key(0)
     kx, ky = jax.random.split(key)
     x = jax.random.normal(kx, (3, 7, 4))
@@ -546,14 +587,16 @@ def test_position_ade_equals_norm_over_xy():
     assert math.isclose(float(position_ade(x[0], y[0])), float(expected_single), rel_tol=1e-12)
 
 
-def test_position_fde_final_step_xy_only():
+def test_position_fde_final_step_xy_only() -> None:
+    """Check that position fde final step xy only."""
     x = jnp.array([[0.0, 0.0, 0.0, 0.0], [3.0, 4.0, 100.0, -50.0]])
     y = jnp.zeros((2, 4))
     assert math.isclose(float(position_fde(x, y)), 5.0, abs_tol=1e-9)
     assert float(fde(x, y)) > 100.0
 
 
-def test_position_metrics_ignore_heading_and_speed():
+def test_position_metrics_ignore_heading_and_speed() -> None:
+    """Check that position metrics ignore heading and speed."""
     key = jax.random.key(1)
     kx, ky = jax.random.split(key)
     x = jax.random.normal(kx, (3, 7, 4))
@@ -563,7 +606,8 @@ def test_position_metrics_ignore_heading_and_speed():
     assert position_fde(x, y) == position_fde(x_offset, y)
 
 
-def test_full_state_ade_position_ade_distinction():
+def test_full_state_ade_position_ade_distinction() -> None:
+    """Check that full state ade position ade distinction."""
     key = jax.random.key(2)
     kx, ky = jax.random.split(key)
     x = jax.random.normal(kx, (3, 7, 4))

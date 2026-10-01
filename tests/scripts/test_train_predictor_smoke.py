@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """CPU smoke tests for scripts/ind/train_predictor.py (--use-stub, tiny dims).
 
 Exercised via subprocess (all three predictor kinds) to validate the full CLI path.
@@ -48,10 +58,25 @@ _TINY_WINDOW_ARGS = [
 
 
 def _env() -> dict:
+    """Return the process environment pinned to the CPU JAX backend.
+
+    Returns:
+        Environment mapping for subprocess calls.
+    """
     return {**os.environ, "JAX_PLATFORMS": "cpu"}
 
 
 def _run(out_dir: Path, predictor: str, seed: int = 0) -> subprocess.CompletedProcess:
+    """Run the predictor training script in a subprocess with tiny settings.
+
+    Args:
+        out_dir: Output directory.
+        predictor: Predictor kind.
+        seed: Random seed.
+
+    Returns:
+        Completed process with captured output.
+    """
     tiny = _TINY_ARGS_BY_PREDICTOR[predictor]
     return subprocess.run(
         [
@@ -75,21 +100,24 @@ def _run(out_dir: Path, predictor: str, seed: int = 0) -> subprocess.CompletedPr
     )
 
 
-def test_smoke_writes_expected_files_lstm(tmp_path) -> None:
+def test_smoke_writes_expected_files_lstm(tmp_path: Path) -> None:
+    """Verify smoke writes expected files lstm."""
     out_dir = tmp_path / "lstm"
     proc = _run(out_dir, "lstm")
     assert proc.returncode == 0, proc.stderr[-4000:]
     _assert_outputs(out_dir, "lstm")
 
 
-def test_smoke_writes_expected_files_ssm(tmp_path) -> None:
+def test_smoke_writes_expected_files_ssm(tmp_path: Path) -> None:
+    """Verify smoke writes expected files ssm."""
     out_dir = tmp_path / "ssm"
     proc = _run(out_dir, "ssm")
     assert proc.returncode == 0, proc.stderr[-4000:]
     _assert_outputs(out_dir, "ssm")
 
 
-def test_smoke_writes_expected_files_transformer(tmp_path) -> None:
+def test_smoke_writes_expected_files_transformer(tmp_path: Path) -> None:
+    """Verify smoke writes expected files transformer."""
     out_dir = tmp_path / "transformer"
     proc = _run(out_dir, "transformer")
     assert proc.returncode == 0, proc.stderr[-4000:]
@@ -97,6 +125,12 @@ def test_smoke_writes_expected_files_transformer(tmp_path) -> None:
 
 
 def _assert_outputs(out_dir: Path, predictor: str) -> None:
+    """Assert the expected training outputs exist and the summary is consistent.
+
+    Args:
+        out_dir: Output directory of the run.
+        predictor: Predictor kind that was trained.
+    """
     assert (out_dir / "predictor.eqx").exists()
     assert (out_dir / "predictor_config.json").exists()
     assert (out_dir / "training_summary.json").exists()

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for location-aware MetadataEncoder.
 
 Verifies:
@@ -22,7 +32,14 @@ from made.models.encoder import MetadataEncoder
 
 
 def _make_location_encoder(key: jax.Array) -> MetadataEncoder:
-    """Small location-aware encoder matching the inD metadata schema."""
+    """Small location-aware encoder matching the inD metadata schema.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Location-aware encoder.
+    """
     param_scales = jnp.ones(1, dtype=jnp.float64)  # 1 physics param for test
     return MetadataEncoder(
         metadata_dim=5,       # [length, width, car_oh, truck_bus_oh, location_id]
@@ -37,7 +54,14 @@ def _make_location_encoder(key: jax.Array) -> MetadataEncoder:
 
 
 def _make_scalar_encoder(key: jax.Array) -> MetadataEncoder:
-    """Scalar-only encoder (backward-compat mode, num_locations=0)."""
+    """Scalar-only encoder (backward-compat mode, num_locations=0).
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Scalar-only encoder.
+    """
     param_scales = jnp.ones(1, dtype=jnp.float64)
     return MetadataEncoder(
         metadata_dim=4,  # no location column
@@ -48,7 +72,7 @@ def _make_scalar_encoder(key: jax.Array) -> MetadataEncoder:
     )
 
 
-def test_location_encoder_forward_no_nan():
+def test_location_encoder_forward_no_nan() -> None:
     """Location-aware encoder forward pass produces finite output."""
     enc = _make_location_encoder(jax.random.key(0))
     # metadata: [length, width, car=1, truck=0, location_id=2]
@@ -58,7 +82,7 @@ def test_location_encoder_forward_no_nan():
     assert jnp.all(jnp.isfinite(out))
 
 
-def test_location_encoder_output_in_range():
+def test_location_encoder_output_in_range() -> None:
     """Output is bounded by param_scales (sigmoid * scales ∈ [0, scales])."""
     enc = _make_location_encoder(jax.random.key(1))
     meta = jnp.array([4.5, 1.8, 1.0, 0.0, 3.0], dtype=jnp.float64)
@@ -67,12 +91,20 @@ def test_location_encoder_output_in_range():
     assert jnp.all(out <= 1.0)  # param_scales = 1.0
 
 
-def test_location_encoder_gradient_flows():
+def test_location_encoder_gradient_flows() -> None:
     """Gradient flows through the location embedding and MLP."""
     enc = _make_location_encoder(jax.random.key(2))
     meta = jnp.array([4.5, 1.8, 1.0, 0.0, 1.0], dtype=jnp.float64)
 
     def _loss(encoder: MetadataEncoder) -> jax.Array:
+        """Return the squared norm of the encoder output.
+
+        Args:
+            encoder: Encoder under test.
+
+        Returns:
+            Scalar loss.
+        """
         return jnp.sum(encoder(meta) ** 2)
 
     grads = eqx.filter_grad(_loss)(enc)
@@ -90,7 +122,7 @@ def test_location_encoder_gradient_flows():
     )
 
 
-def test_location_encoder_different_locations_different_output():
+def test_location_encoder_different_locations_different_output() -> None:
     """Different location IDs produce different encoder outputs."""
     enc = _make_location_encoder(jax.random.key(3))
     base = jnp.array([4.5, 1.8, 1.0, 0.0], dtype=jnp.float64)
@@ -106,7 +138,7 @@ def test_location_encoder_different_locations_different_output():
     assert not all_same, "Different location IDs should produce different outputs"
 
 
-def test_scalar_encoder_still_callable():
+def test_scalar_encoder_still_callable() -> None:
     """Backward-compat scalar encoder (num_locations=0) still works."""
     enc = _make_scalar_encoder(jax.random.key(4))
     meta = jnp.array([4.5, 1.8, 1.0, 0.0], dtype=jnp.float64)
@@ -115,13 +147,13 @@ def test_scalar_encoder_still_callable():
     assert jnp.all(jnp.isfinite(out))
 
 
-def test_scalar_encoder_no_embedding():
+def test_scalar_encoder_no_embedding() -> None:
     """Scalar encoder has no embedding (embedding is None)."""
     enc = _make_scalar_encoder(jax.random.key(5))
     assert enc.embedding is None
 
 
-def test_location_encoder_vmap():
+def test_location_encoder_vmap() -> None:
     """Location-aware encoder is vmap-compatible."""
     enc = _make_location_encoder(jax.random.key(6))
     batch_meta = jnp.array(
@@ -137,7 +169,7 @@ def test_location_encoder_vmap():
     assert jnp.all(jnp.isfinite(out))
 
 
-def test_location_encoder_all_four_locations_finite():
+def test_location_encoder_all_four_locations_finite() -> None:
     """All four vendor location IDs (1–4) produce finite outputs."""
     enc = _make_location_encoder(jax.random.key(7))
     for loc_id in [1.0, 2.0, 3.0, 4.0]:

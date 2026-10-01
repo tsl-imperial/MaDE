@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for from_json migration shim: old-schema JSON loads correctly."""
 
 import json
@@ -67,37 +77,37 @@ _OLD_SCHEMA_MINIMAL = {
 }
 
 
-def test_old_schema_loads():
+def test_old_schema_loads() -> None:
     """Old-schema JSON with 'physics.system' key loads without error."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.physics.true_system == "double_integrator"
 
 
-def test_old_schema_known_system_defaults_none():
+def test_old_schema_known_system_defaults_none() -> None:
     """Missing model.known_system in old schema defaults to None."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.model.known_system is None
 
 
-def test_old_schema_known_params_defaults_empty():
+def test_old_schema_known_params_defaults_empty() -> None:
     """Missing model.known_params in old schema defaults to {}."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.model.known_params == {}
 
 
-def test_old_schema_use_inverse_residual_defaults_true():
+def test_old_schema_use_inverse_residual_defaults_true() -> None:
     """Missing model.use_inverse_residual in old schema defaults to True."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.model.use_inverse_residual is True
 
 
-def test_old_schema_perturbation_seed_defaults():
+def test_old_schema_perturbation_seed_defaults() -> None:
     """Missing evaluation section in old schema defaults perturbation_seed to 42."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.evaluation.perturbation_seed == 42
 
 
-def test_old_schema_no_evaluation_section():
+def test_old_schema_no_evaluation_section() -> None:
     """Old schema without 'evaluation' key entirely still loads."""
     payload = dict(_OLD_SCHEMA_MINIMAL)
     payload.pop("evaluation", None)
@@ -105,7 +115,7 @@ def test_old_schema_no_evaluation_section():
     assert cfg.evaluation == EvaluationConfig()
 
 
-def test_new_schema_unaffected():
+def test_new_schema_unaffected() -> None:
     """New-schema JSON with 'true_system' roundtrips cleanly (migration is no-op)."""
     original = ExperimentConfig(
         physics=__import__("made.utils.config", fromlist=["PhysicsConfig"]).PhysicsConfig(
@@ -116,7 +126,7 @@ def test_new_schema_unaffected():
     assert restored.physics.true_system == "kinematic_bicycle"
 
 
-def test_old_schema_training_step_budget_defaults_none():
+def test_old_schema_training_step_budget_defaults_none() -> None:
     """Old-schema JSON without capped epoch fields loads with uncapped defaults."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.steps_per_epoch is None
@@ -125,20 +135,22 @@ def test_old_schema_training_step_budget_defaults_none():
     assert cfg.training.early_stopping_patience is None
 
 
-def test_old_schema_adds_new_regularization_defaults():
+def test_old_schema_adds_new_regularization_defaults() -> None:
+    """Checks old schema adds new regularization defaults."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.i_side_grad_clip_norm == 1.0
     assert cfg.training.lambda_delta_i_norm == 0.01
     assert cfg.training.t_side_grad_clip_norm == 1.0
 
 
-def test_lambda_min_norm_in_old_schema_is_preserved():
+def test_lambda_min_norm_in_old_schema_is_preserved() -> None:
     """Old schema explicitly sets lambda_min_norm=1e-4; that wins over the new default."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.lambda_min_norm == 1e-4
 
 
-def test_default_training_config_uses_new_regularization():
+def test_default_training_config_uses_new_regularization() -> None:
+    """Checks default training config uses new regularization."""
     cfg = TrainingConfig()
     assert cfg.lambda_min_norm == 0.01
     assert cfg.t_side_grad_clip_norm == 1.0
@@ -146,12 +158,14 @@ def test_default_training_config_uses_new_regularization():
     assert cfg.lambda_delta_i_norm == 0.01
 
 
-def test_lambda_delta_i_norm_negative_rejected():
+def test_lambda_delta_i_norm_negative_rejected() -> None:
+    """Checks lambda delta i norm negative rejected."""
     with pytest.raises(ValueError, match="lambda_delta_i_norm"):
         TrainingConfig(lambda_delta_i_norm=-0.1)
 
 
-def test_training_step_budget_validation():
+def test_training_step_budget_validation() -> None:
+    """Checks training step budget validation."""
     with pytest.raises(ValueError, match="steps_per_epoch must be positive"):
         TrainingConfig(steps_per_epoch=0)
     with pytest.raises(ValueError, match="steps_per_epoch must be positive"):
@@ -160,7 +174,8 @@ def test_training_step_budget_validation():
         TrainingConfig(val_steps_per_epoch=0)
 
 
-def test_training_early_stopping_validation():
+def test_training_early_stopping_validation() -> None:
+    """Checks training early stopping validation."""
     with pytest.raises(ValueError, match="early_stopping_patience must be positive"):
         TrainingConfig(early_stopping_patience=0)
     with pytest.raises(ValueError, match="early_stopping_saturation_window must be greater than 1"):
@@ -169,13 +184,15 @@ def test_training_early_stopping_validation():
         TrainingConfig(early_stopping_forward_tol=-1.0)
 
 
-def test_non_finite_json_rejected():
+def test_non_finite_json_rejected() -> None:
+    """Checks non finite json rejected."""
     raw = to_json(ExperimentConfig())
     with pytest.raises(ValueError, match="Non-finite JSON value"):
         from_json(raw.replace('"early_stopping_min_delta": 0.0', '"early_stopping_min_delta": NaN'))
 
 
-def test_training_step_budget_json_roundtrip():
+def test_training_step_budget_json_roundtrip() -> None:
+    """Checks training step budget json roundtrip."""
     original = replace(
         ExperimentConfig(),
         training=replace(ExperimentConfig().training, steps_per_epoch=4, val_steps_per_epoch=2),
@@ -185,17 +202,19 @@ def test_training_step_budget_json_roundtrip():
     assert restored.training.val_steps_per_epoch == 2
 
 
-def test_old_schema_metric_log_interval_default():
+def test_old_schema_metric_log_interval_default() -> None:
+    """Checks old schema metric log interval default."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.metric_log_interval_steps == 1
 
 
-def test_metric_log_interval_validation():
+def test_metric_log_interval_validation() -> None:
+    """Checks metric log interval validation."""
     with pytest.raises(ValueError, match="metric_log_interval_steps must be >= 1"):
         TrainingConfig(metric_log_interval_steps=0)
 
 
-def test_old_schema_baseline_configs_default():
+def test_old_schema_baseline_configs_default() -> None:
     """Old-schema JSON without baseline sections gets default config objects."""
     from made.utils.config import MLPBaselineConfig, FABBaselineConfig
 
@@ -204,7 +223,7 @@ def test_old_schema_baseline_configs_default():
     assert cfg.fab_baseline == FABBaselineConfig()
 
 
-def test_baseline_config_roundtrip():
+def test_baseline_config_roundtrip() -> None:
     """Custom baseline config roundtrips through JSON without loss."""
     from dataclasses import replace as dc_replace
     from made.utils.config import MLPBaselineConfig
@@ -220,7 +239,7 @@ def test_baseline_config_roundtrip():
     assert restored.mlp_baseline.es_min_delta == pytest.approx(1e-5)
 
 
-def test_baseline_config_validation():
+def test_baseline_config_validation() -> None:
     """Invalid baseline config fields raise ValueError."""
     from made.utils.config import MLPBaselineConfig, FABBaselineConfig
 
@@ -230,19 +249,19 @@ def test_baseline_config_validation():
         FABBaselineConfig(num_epochs=0)
 
 
-def test_default_training_config_has_warmup_steps():
+def test_default_training_config_has_warmup_steps() -> None:
     """Default TrainingConfig has warmup_steps=100."""
     cfg = TrainingConfig()
     assert cfg.warmup_steps == 100  # TrainingConfig is accessed directly here, not via ExperimentConfig
 
 
-def test_old_schema_warmup_steps_defaults():
+def test_old_schema_warmup_steps_defaults() -> None:
     """Old-schema JSON without warmup_steps defaults to 100 after migration."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.warmup_steps == 100
 
 
-def test_warmup_steps_roundtrip():
+def test_warmup_steps_roundtrip() -> None:
     """warmup_steps survives a to_json/from_json roundtrip."""
     from dataclasses import replace as dc_replace
     original = dc_replace(ExperimentConfig(), training=TrainingConfig(warmup_steps=50))
@@ -250,7 +269,7 @@ def test_warmup_steps_roundtrip():
     assert restored.training.warmup_steps == 50
 
 
-def test_make_lr_schedule_attenuates_first_step():
+def test_make_lr_schedule_attenuates_first_step() -> None:
     """_make_lr_schedule(lr, N) returns a schedule that yields 0.0 at step 0 and lr at step N."""
     from made.training.trainer import _make_lr_schedule
 
@@ -263,7 +282,7 @@ def test_make_lr_schedule_attenuates_first_step():
     assert float(sched(500)) == pytest.approx(1e-3)
 
 
-def test_make_lr_schedule_disabled_returns_scalar():
+def test_make_lr_schedule_disabled_returns_scalar() -> None:
     """warmup_steps=0 returns the scalar lr directly (bare optax.adam path)."""
     from made.training.trainer import _make_lr_schedule
 
@@ -272,7 +291,7 @@ def test_make_lr_schedule_disabled_returns_scalar():
     assert out == pytest.approx(1e-3)
 
 
-def test_phase2_proposal_perturbation_defaults():
+def test_phase2_proposal_perturbation_defaults() -> None:
     """Old-format JSON (no phase2_* keys) migrates to default perturbation fields."""
     cfg = from_json(json.dumps(_OLD_SCHEMA_MINIMAL))
     assert cfg.training.phase2_proposal_perturbation_type == "none"
@@ -284,7 +303,7 @@ def test_phase2_proposal_perturbation_defaults():
     assert cfg.training.pretrained_phase1_path is None
 
 
-def test_phase2_proposal_perturbation_validation():
+def test_phase2_proposal_perturbation_validation() -> None:
     """Invalid phase2 perturbation fields raise ValueError with the field name."""
     with pytest.raises(ValueError, match="phase2_proposal_perturbation_type"):
         TrainingConfig(phase2_proposal_perturbation_type="foo")
@@ -294,7 +313,7 @@ def test_phase2_proposal_perturbation_validation():
         TrainingConfig(pretrained_phase1_path="")
 
 
-def test_phase2_proposal_perturbation_gaussian_is_accepted():
+def test_phase2_proposal_perturbation_gaussian_is_accepted() -> None:
     """'gaussian' is a first-class perturbation type; unknown types still reject."""
     cfg = TrainingConfig(
         phase2_proposal_perturbation_type="gaussian",
@@ -305,7 +324,7 @@ def test_phase2_proposal_perturbation_gaussian_is_accepted():
         TrainingConfig(phase2_proposal_perturbation_type="gausian")
 
 
-def test_phase2_proposal_perturbation_per_dim_validation():
+def test_phase2_proposal_perturbation_per_dim_validation() -> None:
     """Negative and non-finite per-dimension entries are rejected."""
     with pytest.raises(ValueError, match="phase2_proposal_perturbation_scale_per_dim"):
         TrainingConfig(phase2_proposal_perturbation_scale_per_dim=(0.1, -0.2))
@@ -317,7 +336,7 @@ def test_phase2_proposal_perturbation_per_dim_validation():
     assert ok.phase2_proposal_perturbation_scale_per_dim == (0.0, 0.3, 0.0, 0.0)
 
 
-def test_phase2_proposal_perturbation_round_trip():
+def test_phase2_proposal_perturbation_round_trip() -> None:
     """phase2 perturbation fields survive a to_json/from_json round-trip."""
     from dataclasses import replace as dc_replace
 
@@ -335,7 +354,7 @@ def test_phase2_proposal_perturbation_round_trip():
     assert restored.training.pretrained_phase1_path == "/tmp/foo"
 
 
-def test_phase2_proposal_perturbation_per_dim_round_trip():
+def test_phase2_proposal_perturbation_per_dim_round_trip() -> None:
     """The per-dimension tuple survives to_json/from_json as a tuple of floats."""
     from dataclasses import replace as dc_replace
 
@@ -353,7 +372,7 @@ def test_phase2_proposal_perturbation_per_dim_round_trip():
     assert restored.training.phase2_proposal_perturbation_scale_per_dim == (0.3, 0.0, 0.05, 0.0)
 
 
-def test_phase2_proposal_scale_sampling_validation():
+def test_phase2_proposal_scale_sampling_validation() -> None:
     """Sampling mode, min_ratio and zero_fraction are validated up front."""
     with pytest.raises(ValueError, match="phase2_proposal_perturbation_scale_sampling"):
         TrainingConfig(phase2_proposal_perturbation_scale_sampling="log-uniform")
@@ -378,7 +397,7 @@ def test_phase2_proposal_scale_sampling_validation():
         TrainingConfig(phase2_proposal_perturbation_zero_fraction=1.1)
 
 
-def test_phase2_proposal_scale_sampling_accepts_valid_combinations():
+def test_phase2_proposal_scale_sampling_accepts_valid_combinations() -> None:
     """The default and both randomised modes round-trip through the config."""
     assert TrainingConfig().phase2_proposal_perturbation_scale_sampling == "fixed"
     for mode in ("loguniform", "uniform"):

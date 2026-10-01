@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """End-to-end CPU smoke test for scripts/ind/eval_lib.py (--use-stub, tiny dims).
 
 Trains a tiny Stage-1 LSTM predictor via a subprocess CLI call to
@@ -14,6 +24,7 @@ is no reason to expect it improves feasibility.
 
 from __future__ import annotations
 
+from types import ModuleType
 import importlib.util
 import json
 import math
@@ -69,10 +80,20 @@ _MADE_METRIC_KEYS = _BASE_METRIC_KEYS | {
 
 
 def _env() -> dict:
+    """Return the process environment pinned to the CPU JAX backend.
+
+    Returns:
+        Environment mapping for subprocess calls.
+    """
     return {**os.environ, "JAX_PLATFORMS": "cpu"}
 
 
-def _load_eval_module():
+def _load_eval_module() -> ModuleType:
+    """Import the evaluation script as a module by file path.
+
+    Returns:
+        The loaded module.
+    """
     spec = importlib.util.spec_from_file_location("eval_lib", str(_EVAL_SCRIPT))
     module = importlib.util.module_from_spec(spec)
     sys.modules["eval_lib"] = module
@@ -93,7 +114,15 @@ def test_chunked_predictor_forward_matches_unchunked_on_nonmultiple_chunk_size()
     jax = module.jax
     jnp = module.jnp
 
-    def _toy_predictor(context):
+    def _toy_predictor(context: jax.Array) -> jax.Array:
+        """Map a context window to a fixed-shape toy prediction.
+
+        Args:
+            context: Context window array.
+
+        Returns:
+            Prediction array.
+        """
         return jnp.tanh(context * 2.0 + 1.0)[..., :3]
 
     context_all = jax.random.normal(jax.random.key(0), (7, 4, 5), dtype=jnp.float64)
@@ -106,6 +135,14 @@ def test_chunked_predictor_forward_matches_unchunked_on_nonmultiple_chunk_size()
 
 
 def _run_train(args: list[str]) -> subprocess.CompletedProcess:
+    """Run the predictor training script in a subprocess.
+
+    Args:
+        args: Command-line arguments passed to the script.
+
+    Returns:
+        Completed process with captured output.
+    """
     return subprocess.run(
         [sys.executable, str(_TRAIN_SCRIPT), *args],
         cwd=_REPO_ROOT,
@@ -117,7 +154,8 @@ def _run_train(args: list[str]) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module")
-def predictor_dir(tmp_path_factory) -> Path:
+def predictor_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Provide a directory holding a tiny trained LSTM predictor."""
     out_dir = tmp_path_factory.mktemp("eval_lib_predictor")
     proc = _run_train(
         [
@@ -131,8 +169,9 @@ def predictor_dir(tmp_path_factory) -> Path:
 
 
 def test_eval_lib_all_rows_finite_and_schema_consistent(
-    tmp_path, monkeypatch, predictor_dir: Path
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, predictor_dir: Path
 ) -> None:
+    """Verify eval lib all rows finite and schema consistent."""
     module = _load_eval_module()
     output_path = tmp_path / "results.json"
 
@@ -187,7 +226,7 @@ def test_eval_lib_all_rows_finite_and_schema_consistent(
 
 
 def test_eval_lib_raw_clamp_only_needs_no_made_checkpoint(
-    tmp_path, monkeypatch, predictor_dir: Path
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, predictor_dir: Path
 ) -> None:
     """Rows that don't need MaDE must run without --made-checkpoint or --smoke-random-made."""
     module = _load_eval_module()
@@ -214,6 +253,7 @@ def test_eval_lib_raw_clamp_only_needs_no_made_checkpoint(
 
 
 def test_validate_args_rejects_made_pnp_without_checkpoint_or_smoke_flag() -> None:
+    """Verify validate args rejects made pnp without checkpoint or smoke flag."""
     module = _load_eval_module()
     args = module._build_parser().parse_args(
         ["--predictor-dir", "x", "--output", "y", "--rows", "made_pnp"]
@@ -223,6 +263,7 @@ def test_validate_args_rejects_made_pnp_without_checkpoint_or_smoke_flag() -> No
 
 
 def test_validate_args_rejects_unknown_row() -> None:
+    """Verify validate args rejects unknown row."""
     module = _load_eval_module()
     args = module._build_parser().parse_args(
         ["--predictor-dir", "x", "--output", "y", "--rows", "bogus"]

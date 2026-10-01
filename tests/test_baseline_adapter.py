@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Baseline trajectory adapter tests."""
 
 # ruff: noqa: E402
@@ -14,14 +24,16 @@ jax.config.update("jax_enable_x64", True)
 
 from made.baselines import ClampBaseline, apply_baseline_over_trajectory
 from made.physics import double_integrator_constraints
+from made.physics import ConstraintSet
 
 
 @pytest.fixture
-def di_constraints():
+def di_constraints() -> ConstraintSet:
+    """Default double-integrator constraint set."""
     return double_integrator_constraints()
 
 
-def test_clamp_smoke(di_constraints):
+def test_clamp_smoke(di_constraints: ConstraintSet) -> None:
     """apply_baseline_over_trajectory with ClampBaseline returns correct shapes."""
     state_dim, control_dim = 4, 2
     T = 5
@@ -37,7 +49,7 @@ def test_clamp_smoke(di_constraints):
     assert jnp.all(jnp.isfinite(u_corr))
 
 
-def test_clamp_clips_out_of_bound_states(di_constraints):
+def test_clamp_clips_out_of_bound_states(di_constraints: ConstraintSet) -> None:
     """ClampBaseline correction should keep all corrected states within bounds."""
     state_dim, control_dim = 4, 2
     T = 5
@@ -53,7 +65,7 @@ def test_clamp_clips_out_of_bound_states(di_constraints):
 
 
 
-def test_output_is_zero_filled_controls(di_constraints):
+def test_output_is_zero_filled_controls(di_constraints: ConstraintSet) -> None:
     """u_corr from baselines is zero-filled (baselines don't infer controls)."""
     state_dim, control_dim = 4, 2
     T = 6

@@ -1,4 +1,14 @@
-"""History→future windowing for upstream predictor training on inD-style data (E05).
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""History→future windowing for upstream predictor training on inD-style data.
 
 Windows never cross trajectory boundaries: for trajectory ``i`` with valid length
 ``L_i``, window starts ``s`` satisfy ``s + history + horizon <= L_i``. Trajectories
@@ -103,6 +113,11 @@ def compute_state_norm_stats(context: jax.Array) -> tuple[jax.Array, jax.Array]:
     """Per-dimension mean/std over all context states. Train-split windows only.
 
     Std is floored at 1e-6 so degenerate dimensions cannot produce division blowups.
+
+    Args:
+        context: Context states, shape (..., D).
+    Returns:
+        Tuple (mean, std), each of shape (D,).
     """
     flat = jnp.reshape(context, (-1, context.shape[-1]))
     mean = jnp.mean(flat, axis=0)
@@ -113,7 +128,13 @@ def compute_state_norm_stats(context: jax.Array) -> tuple[jax.Array, jax.Array]:
 def assemble_context(context: jax.Array, metadata: jax.Array) -> jax.Array:
     """Tile static metadata onto every context row: ``[H, D] + [M] → [H, D + M]``.
 
-    Single-sample layout consumed by the E05 predictors; batch with ``jax.vmap``.
+    Single-sample layout consumed by the inD predictors; batch with ``jax.vmap``.
+
+    Args:
+        context: Context states, shape (H, D).
+        metadata: Static metadata, shape (M,).
+    Returns:
+        Context with metadata appended to every row, shape (H, D + M).
     """
     tiled = jnp.broadcast_to(metadata[None, :], (context.shape[0], metadata.shape[0]))
     return jnp.concatenate([context, tiled], axis=1)

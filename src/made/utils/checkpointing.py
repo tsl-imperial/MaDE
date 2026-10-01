@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Checkpoint helpers with Orbax-first persistence and pickle fallbacks."""
 
 from __future__ import annotations
@@ -36,9 +46,16 @@ class TrainState(eqx.Module):
 class CheckpointManager:
     """Wrapper around Orbax checkpoint directories used by the project."""
 
-    def __init__(self, directory: str, max_to_keep: int = 3, save_interval: int = 1000):
+    def __init__(self, directory: str, max_to_keep: int = 3, save_interval: int = 1000) -> None:
         # Orbax tensorstore raises in a daemon thread when given a relative path, so the
         # main process can exit 0 on a silent partial save. Absolutise to avoid that.
+        """Create the checkpoint directory and, if available, an Orbax manager.
+
+        Args:
+            directory: Checkpoint root directory (resolved to an absolute path).
+            max_to_keep: Number of checkpoints Orbax keeps.
+            save_interval: Save interval in steps, stored for callers.
+        """
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.save_interval = save_interval
@@ -53,10 +70,23 @@ class CheckpointManager:
                 self._manager = None
 
     def _step_dir(self, step: int) -> Path:
+        """Directory holding the files of one checkpoint step.
+
+        Args:
+            step: Checkpoint step.
+
+        Returns:
+            Path of the step directory.
+        """
         return self.directory / str(step)
 
     def save(self, state: TrainState, step: int) -> None:
-        """Persist a train state at a given step."""
+        """Persist a train state at a given step.
+
+        Args:
+            state: Train state to save.
+            step: Checkpoint step.
+        """
         payload = {
             "opt_state_I": state.opt_state_I,
             "opt_state_T": state.opt_state_T,
@@ -87,7 +117,17 @@ class CheckpointManager:
             pickle.dump(payload, handle)
 
     def restore(self, step: int | None = None) -> TrainState | None:
-        """Restore the latest or requested train state."""
+        """Restore the latest or requested train state.
+
+        Args:
+            step: Step to restore; None for the latest.
+
+        Returns:
+            Restored state, or None if no checkpoint exists.
+
+        Raises:
+            ValueError: If the checkpoint holds no serialised model and no pickled state.
+        """
         target_step = self.latest_step() if step is None else step
         if target_step is None:
             return None
@@ -128,7 +168,11 @@ class CheckpointManager:
         )
 
     def latest_step(self) -> int | None:
-        """Return the latest checkpoint step if present."""
+        """Return the latest checkpoint step if present.
+
+        Returns:
+            Highest step, or None.
+        """
         candidates: list[int] = []
         if self._manager is not None:
             try:

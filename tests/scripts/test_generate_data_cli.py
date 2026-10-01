@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """CPU smoke tests for scripts/generate_data.py's dataset-size CLI knobs.
 
 The override case runs the script as a subprocess against the cheapest
@@ -10,6 +20,7 @@ defaults byte-for-byte.
 
 from __future__ import annotations
 
+from types import ModuleType
 import importlib.util
 import json
 import os
@@ -24,10 +35,20 @@ _SCRIPT = _REPO_ROOT / "scripts" / "sim" / "generate_data.py"
 
 
 def _env() -> dict:
+    """Return the process environment pinned to the CPU JAX backend.
+
+    Returns:
+        Environment mapping for subprocess calls.
+    """
     return {**os.environ, "JAX_PLATFORMS": "cpu"}
 
 
-def _load_generate_data_module():
+def _load_generate_data_module() -> ModuleType:
+    """Import the data-generation script as a module by file path.
+
+    Returns:
+        The loaded module.
+    """
     spec = importlib.util.spec_from_file_location("generate_data", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -45,6 +66,7 @@ def test_build_data_config_defaults_when_all_none() -> None:
 
 
 def test_build_data_config_overrides_only_set_fields() -> None:
+    """Verify build data config overrides only set fields."""
     module = _load_generate_data_module()
     from made.utils.config import DataConfig
 
@@ -73,6 +95,7 @@ def test_build_data_config_control_profile_defaults_when_none() -> None:
 
 
 def test_build_data_config_control_profile_override() -> None:
+    """Verify build data config control profile override."""
     module = _load_generate_data_module()
 
     config = module.build_data_config(None, None, None, None, "smooth_ou", 2.0)
@@ -81,6 +104,7 @@ def test_build_data_config_control_profile_override() -> None:
 
 
 def test_build_data_config_control_tau_override_only() -> None:
+    """Verify build data config control tau override only."""
     module = _load_generate_data_module()
     from made.utils.config import DataConfig
 
@@ -101,6 +125,7 @@ def test_build_data_config_min_speed_defaults_when_none() -> None:
 
 
 def test_build_data_config_min_speed_override() -> None:
+    """Verify build data config min speed override."""
     module = _load_generate_data_module()
     from made.utils.config import DataConfig
 
@@ -113,6 +138,7 @@ def test_build_data_config_min_speed_override() -> None:
 
 
 def test_cli_override_generates_requested_sizes(tmp_path: Path) -> None:
+    """Verify cli override generates requested sizes."""
     output_dir = tmp_path / "generated"
     result = subprocess.run(
         [

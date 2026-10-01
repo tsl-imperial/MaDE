@@ -1,11 +1,21 @@
-"""Real-data (E2 / E3) evaluation helpers.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Real-data (inD experiments) evaluation helpers.
 
 Loads training-split inD ground-truth states, runs the deterministic
 kinematic-bicycle inverse-control estimator, derives the empirical envelope
 and the GT reference dynamics residual, and packages a metadata block for
 the result-JSON.
 
-The helper is shared across the E2 and E3 evaluators so envelope and
+The helper is shared across the inD evaluators so envelope and
 GT-residual provenance is identical between them.
 """
 
@@ -57,6 +67,12 @@ def _cache_fingerprint(data_dir: str, dt: float) -> str:
 
     Includes the data dir's manifest/stats file size+mtime so any
     preprocessing change invalidates the cache automatically.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        dt: Timestep in seconds.
+    Returns:
+        Hex digest.
     """
     h = hashlib.sha256()
     h.update(
@@ -73,6 +89,14 @@ def _cache_fingerprint(data_dir: str, dt: float) -> str:
 
 
 def _cache_path(data_dir: str, dt: float) -> Path:
+    """Path of the cache file for the given inputs.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        dt: Timestep in seconds.
+    Returns:
+        Cache file path.
+    """
     return (
         Path(data_dir)
         / "_eval_cache"
@@ -81,6 +105,13 @@ def _cache_path(data_dir: str, dt: float) -> Path:
 
 
 def _envelope_from_metadata(meta: dict) -> EmpiricalEnvelope:
+    """Rebuild an envelope from its JSON metadata.
+
+    Args:
+        meta: Metadata dict with an "envelope" entry.
+    Returns:
+        The envelope.
+    """
     env = meta["envelope"]
     return EmpiricalEnvelope(
         state_min=jnp.asarray(env["state_min"]),
@@ -109,6 +140,20 @@ def load_train_envelope_and_residual(
     Train-only invariant: ``split`` MUST equal ``"train"``. The argument
     is exposed so the call site is explicit; mismatches raise ``ValueError``
     so test-split contamination cannot slip in silently.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        use_stub: Use synthetic data instead of the real split.
+        dt: Timestep in seconds.
+        smoke_seed: Seed for the synthetic data.
+        split: Must be "train".
+        stub_num_trajectories: Trajectory count for the stub.
+        stub_trajectory_length: Trajectory length for the stub.
+    Raises:
+        ValueError: If `split` is not "train".
+
+    Returns:
+        Tuple (envelope, gt_reference_residual, metadata).
     """
     if split != "train":
         raise ValueError(
@@ -186,7 +231,7 @@ def load_train_envelope_and_residual(
             "wheelbase": L_REF,
             "stationary_speed_threshold": STATIONARY_SPEED_THRESHOLD,
             "stationary_frame_count": int(inv_aux["stationary_frame_count"]),
-            # Train-side speed > threshold by construction; the E3 evaluator
+            # Train-side speed > threshold by construction; the inD evaluator
             # overrides this when stationary headings appear in upstream predictions.
             "heading_undefined_frames": 0,
         },

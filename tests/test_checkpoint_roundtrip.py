@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Checkpoint save/restore round-trip tests."""
 
 # ruff: noqa: E402
@@ -9,10 +19,13 @@ os.environ["JAX_PLATFORMS"] = "cpu"
 import builtins
 import importlib
 import math
+from pathlib import Path
+from typing import Any
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import pytest
 
 jax.config.update("jax_enable_x64", True)
 
@@ -24,6 +37,14 @@ from made.utils.config import CorrectorConfig, ModelConfig
 
 
 def _make_small_cell(key: jax.Array) -> MaDECell:
+    """Build a small double-integrator MaDECell.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Freshly initialised cell.
+    """
     physics, constraints = build_system("double_integrator")
     model_cfg = ModelConfig(inverse_hidden=(16, 16), residual_hidden=(16, 16))
     corrector_cfg = CorrectorConfig(mode="enabled")
@@ -31,22 +52,63 @@ def _make_small_cell(key: jax.Array) -> MaDECell:
 
 
 def _leaves(module: eqx.Module) -> list[jax.Array]:
+    """Collect the array leaves of a module.
+
+    Args:
+        module: Module to flatten.
+
+    Returns:
+        Array leaves in tree order.
+    """
     return jax.tree_util.tree_leaves(eqx.filter(module, eqx.is_array))
 
 
 def _all_close(a: list[jax.Array], b: list[jax.Array]) -> bool:
+    """Compare two lists of arrays elementwise.
+
+    Args:
+        a: First list of arrays.
+        b: Second list of arrays.
+
+    Returns:
+        True when the lists have equal length and all pairs are close.
+    """
     if len(a) != len(b):
         return False
     return all(jnp.allclose(x, y) for x, y in zip(a, b))
 
 
-def test_checkpointing_imports_when_orbax_import_fails(monkeypatch, tmp_path):
+def test_checkpointing_imports_when_orbax_import_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """Checkpointing falls back to pickle when Orbax cannot import."""
     import made.utils.checkpointing as checkpointing
 
     original_import = builtins.__import__
 
-    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+    def blocked_import(
+        name: str,
+        globals: Any = None,
+        locals: Any = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
+        """Import hook that raises for ``orbax.checkpoint`` and defers otherwise.
+
+        Args:
+            name: Module name being imported.
+            globals: Importer globals.
+            locals: Importer locals.
+            fromlist: Names requested from the module.
+            level: Relative import level.
+
+        Returns:
+            The imported module from the original ``__import__``.
+
+        Raises:
+            AttributeError: For ``orbax.checkpoint`` imports, simulating a JAX/Orbax mismatch.
+        """
         if name == "orbax.checkpoint" or name.startswith("orbax.checkpoint."):
             raise AttributeError("simulated JAX/Orbax mismatch")
         return original_import(name, globals, locals, fromlist, level)
@@ -62,7 +124,7 @@ def test_checkpointing_imports_when_orbax_import_fails(monkeypatch, tmp_path):
         importlib.reload(checkpointing)
 
 
-def test_made_cell_roundtrip(tmp_path):
+def test_made_cell_roundtrip(tmp_path: Path) -> None:
     """MaDECell leaves survive save → restore unchanged."""
     cell = _make_small_cell(jax.random.key(0))
     state = TrainState(model=cell, opt_state_I=None, opt_state_T=None,
@@ -77,7 +139,7 @@ def test_made_cell_roundtrip(tmp_path):
     assert _all_close(_leaves(cell), _leaves(restored.model))
 
 
-def test_made_cell_step_metadata(tmp_path):
+def test_made_cell_step_metadata(tmp_path: Path) -> None:
     """Step and phase survive round-trip."""
     cell = _make_small_cell(jax.random.key(2))
     state = TrainState(model=cell, opt_state_I=None, opt_state_T=None,
@@ -91,7 +153,7 @@ def test_made_cell_step_metadata(tmp_path):
     assert restored.phase == 2
 
 
-def test_made_model_without_encoder_roundtrip(tmp_path):
+def test_made_model_without_encoder_roundtrip(tmp_path: Path) -> None:
     """MaDEModel (encoder=None) round-trips leaf-by-leaf."""
     cell = _make_small_cell(jax.random.key(4))
     model = MaDEModel(cell=cell, encoder=None)
@@ -107,7 +169,7 @@ def test_made_model_without_encoder_roundtrip(tmp_path):
     assert _all_close(_leaves(model), _leaves(restored.model))
 
 
-def test_latest_step_after_multiple_saves(tmp_path):
+def test_latest_step_after_multiple_saves(tmp_path: Path) -> None:
     """latest_step returns the highest step saved."""
     cell = _make_small_cell(jax.random.key(6))
     ckpt = CheckpointManager(str(tmp_path / "ckpt"), save_interval=1)
@@ -118,7 +180,7 @@ def test_latest_step_after_multiple_saves(tmp_path):
     assert ckpt.latest_step() == 10
 
 
-def test_made_model_with_encoder_roundtrip(tmp_path):
+def test_made_model_with_encoder_roundtrip(tmp_path: Path) -> None:
     """MaDEModel with MetadataEncoder round-trips leaf-by-leaf."""
     from made.models import MaDEModel
     from made.utils.config import ModelConfig, CorrectorConfig
@@ -148,16 +210,13 @@ def test_made_model_with_encoder_roundtrip(tmp_path):
     assert _all_close(_leaves(model), _leaves(restored.model))
 
 
-def test_restore_none_on_empty(tmp_path):
+def test_restore_none_on_empty(tmp_path: Path) -> None:
     """restore returns None when no checkpoint exists."""
     ckpt = CheckpointManager(str(tmp_path / "empty"))
     assert ckpt.restore() is None
 
 
 import json
-from pathlib import Path
-
-import pytest
 
 from made.training.trainer import _check_train_meta, _early_stopping_config_meta
 from made.utils.config import DataConfig, TrainingConfig
@@ -166,7 +225,14 @@ _DEFAULT_TRAINING_CFG = TrainingConfig()
 
 
 def _write_sig(ckpt_dir: Path, step: int, sig: dict, cfg: TrainingConfig | None = None) -> None:
-    """Write a minimal train_meta.json with a matching early_stopping_config and given sig."""
+    """Write a minimal train_meta.json with a matching early_stopping_config and given sig.
+
+    Args:
+        ckpt_dir: Checkpoint root directory.
+        step: Step directory to write.
+        sig: Comparability signature to store.
+        cfg: Training config for the stored meta; default if None.
+    """
     _cfg = cfg or _DEFAULT_TRAINING_CFG
     step_dir = ckpt_dir / str(step)
     step_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +247,7 @@ def _write_sig(ckpt_dir: Path, step: int, sig: dict, cfg: TrainingConfig | None 
     (step_dir / "train_meta.json").write_text(json.dumps(meta))
 
 
-def test_comparability_signature_mismatch_raises(tmp_path):
+def test_comparability_signature_mismatch_raises(tmp_path: Path) -> None:
     """_check_train_meta raises when cadence fields differ from stored signature."""
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     _write_sig(
@@ -195,7 +261,7 @@ def test_comparability_signature_mismatch_raises(tmp_path):
         _check_train_meta(ckpt, 0, cfg)
 
 
-def test_comparability_signature_match_passes(tmp_path):
+def test_comparability_signature_match_passes(tmp_path: Path) -> None:
     """_check_train_meta does not raise when signature matches stored values."""
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     _write_sig(
@@ -208,7 +274,7 @@ def test_comparability_signature_match_passes(tmp_path):
     _check_train_meta(ckpt, 0, cfg)  # should not raise
 
 
-def test_comparability_signature_absent_skips_check(tmp_path):
+def test_comparability_signature_absent_skips_check(tmp_path: Path) -> None:
     """_check_train_meta does not raise when stored meta has no signature (old checkpoints)."""
     cfg = TrainingConfig(validation_interval_epochs=5)
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -226,7 +292,7 @@ def test_comparability_signature_absent_skips_check(tmp_path):
     _check_train_meta(ckpt, 0, cfg)  # old checkpoint without sig — should not raise
 
 
-def test_resume_old_meta_without_t_side_grad_clip_loads_cleanly(tmp_path):
+def test_resume_old_meta_without_t_side_grad_clip_loads_cleanly(tmp_path: Path) -> None:
     """Old train_meta without t_side_grad_clip_norm must not fail under new defaults."""
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -246,7 +312,7 @@ def test_resume_old_meta_without_t_side_grad_clip_loads_cleanly(tmp_path):
     _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_old_meta_without_i_side_grad_clip_loads_cleanly(tmp_path):
+def test_resume_old_meta_without_i_side_grad_clip_loads_cleanly(tmp_path: Path) -> None:
     """Old train_meta without i_side_grad_clip_norm must not fail under new defaults."""
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -267,7 +333,8 @@ def test_resume_old_meta_without_i_side_grad_clip_loads_cleanly(tmp_path):
     _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_mismatch_i_side_grad_clip_raises(tmp_path):
+def test_resume_mismatch_i_side_grad_clip_raises(tmp_path: Path) -> None:
+    """Checks resume mismatch i side grad clip raises."""
     cfg = TrainingConfig(i_side_grad_clip_norm=1.0)
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     step_dir = tmp_path / "ckpt" / "0"
@@ -289,7 +356,8 @@ def test_resume_mismatch_i_side_grad_clip_raises(tmp_path):
         _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_mismatch_t_side_grad_clip_raises(tmp_path):
+def test_resume_mismatch_t_side_grad_clip_raises(tmp_path: Path) -> None:
+    """Checks resume mismatch t side grad clip raises."""
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     step_dir = tmp_path / "ckpt" / "0"
@@ -311,7 +379,7 @@ def test_resume_mismatch_t_side_grad_clip_raises(tmp_path):
         _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_old_meta_without_warmup_steps_loads_cleanly(tmp_path):
+def test_resume_old_meta_without_warmup_steps_loads_cleanly(tmp_path: Path) -> None:
     """Old train_meta without warmup_steps must not fail under new defaults (sentinel guard)."""
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -333,7 +401,7 @@ def test_resume_old_meta_without_warmup_steps_loads_cleanly(tmp_path):
     _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_mismatch_warmup_steps_raises(tmp_path):
+def test_resume_mismatch_warmup_steps_raises(tmp_path: Path) -> None:
     """Resuming with a different warmup_steps raises ValueError containing 'warmup_steps'."""
     cfg = TrainingConfig(warmup_steps=100)
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -357,7 +425,7 @@ def test_resume_mismatch_warmup_steps_raises(tmp_path):
         _check_train_meta(ckpt, 0, cfg)
 
 
-def test_resume_mismatch_noise_scale_raises(tmp_path):
+def test_resume_mismatch_noise_scale_raises(tmp_path: Path) -> None:
     """Resuming with a different noise_scale raises ValueError containing 'noise_scale'."""
     cfg = TrainingConfig()
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
@@ -378,7 +446,7 @@ def test_resume_mismatch_noise_scale_raises(tmp_path):
         _check_train_meta(ckpt, 0, cfg, data_cfg=data_cfg_new)
 
 
-def test_resume_old_meta_without_noise_scale_loads_cleanly(tmp_path):
+def test_resume_old_meta_without_noise_scale_loads_cleanly(tmp_path: Path) -> None:
     """Old checkpoints without noise_scale in comparability_signature load under any noise_scale.
 
     The overlap-key comparison only checks keys present in BOTH stored and current signatures,
@@ -410,12 +478,16 @@ from made.training.trainer import (
 
 
 def _phase1_meta() -> str:
-    """Minimal valid train_meta.json for a Phase-1-end checkpoint."""
+    """Minimal valid train_meta.json for a Phase-1-end checkpoint.
+
+    Returns:
+        JSON text of the metadata.
+    """
     return json.dumps({"resume": {"phase": 1, "epoch_in_phase": 0, "batch_offset": 0,
                                   "validation_completed": True}})
 
 
-def test_pretrained_phase1_path_seeds_local_dir(tmp_path):
+def test_pretrained_phase1_path_seeds_local_dir(tmp_path: Path) -> None:
     """Helper copies src checkpoint into an empty local dir."""
     src_dir = tmp_path / "src"
     step_dir = src_dir / "100"
@@ -432,7 +504,7 @@ def test_pretrained_phase1_path_seeds_local_dir(tmp_path):
     assert (local_dir / "100" / "train_meta.json").exists()
 
 
-def test_pretrained_phase1_path_preserves_local_when_present(tmp_path):
+def test_pretrained_phase1_path_preserves_local_when_present(tmp_path: Path) -> None:
     """Helper short-circuits when local already has a checkpoint subdir."""
     src_dir = tmp_path / "src"
     src_step = src_dir / "100"
@@ -454,7 +526,7 @@ def test_pretrained_phase1_path_preserves_local_when_present(tmp_path):
     assert not (local_dir / "100").exists()
 
 
-def test_pretrained_phase1_path_none_is_noop(tmp_path):
+def test_pretrained_phase1_path_none_is_noop(tmp_path: Path) -> None:
     """Passing None raises no exception and makes no filesystem changes."""
     local_dir = tmp_path / "local"
     local_dir.mkdir()
@@ -464,7 +536,7 @@ def test_pretrained_phase1_path_none_is_noop(tmp_path):
     assert list(local_dir.iterdir()) == []
 
 
-def test_pretrained_phase1_path_missing_raises(tmp_path):
+def test_pretrained_phase1_path_missing_raises(tmp_path: Path) -> None:
     """A nonexistent pretrained_path raises FileNotFoundError mentioning the path."""
     missing = str(tmp_path / "does_not_exist")
     local_dir = tmp_path / "local"
@@ -473,7 +545,7 @@ def test_pretrained_phase1_path_missing_raises(tmp_path):
         _maybe_copy_pretrained_checkpoint(missing, str(local_dir))
 
 
-def test_pretrained_phase1_path_rejects_phase2_only_source(tmp_path):
+def test_pretrained_phase1_path_rejects_phase2_only_source(tmp_path: Path) -> None:
     """Source whose only step subdirs are Phase 2 must raise.
 
     The curriculum needs a Phase-1 checkpoint; if the source has no
@@ -493,7 +565,7 @@ def test_pretrained_phase1_path_rejects_phase2_only_source(tmp_path):
         _maybe_copy_pretrained_checkpoint(str(src_dir), str(local_dir))
 
 
-def test_pretrained_phase1_path_picks_phase1_under_phase2_steps(tmp_path):
+def test_pretrained_phase1_path_picks_phase1_under_phase2_steps(tmp_path: Path) -> None:
     """When the source has both Phase-1 and Phase-2 step dirs interleaved,
     the highest Phase-1 step is selected and copied; Phase-2 dirs are not.
 
@@ -534,7 +606,7 @@ def test_pretrained_phase1_path_picks_phase1_under_phase2_steps(tmp_path):
     assert not (local_dir / "310").exists()
 
 
-def test_pretrained_phase1_path_accepts_phase1_source(tmp_path):
+def test_pretrained_phase1_path_accepts_phase1_source(tmp_path: Path) -> None:
     """Source checkpoint at Phase 1 must succeed and copy contents."""
     src_dir = tmp_path / "src"
     step_dir = src_dir / "100"
@@ -550,7 +622,7 @@ def test_pretrained_phase1_path_accepts_phase1_source(tmp_path):
     assert (local_dir / "100" / "state.pkl").exists()
 
 
-def test_pretrained_phase1_path_rejects_empty_source(tmp_path):
+def test_pretrained_phase1_path_rejects_empty_source(tmp_path: Path) -> None:
     """Source directory with no numeric step subdirectories raises ValueError."""
     src_dir = tmp_path / "src"
     src_dir.mkdir()
@@ -561,7 +633,7 @@ def test_pretrained_phase1_path_rejects_empty_source(tmp_path):
         _maybe_copy_pretrained_checkpoint(str(src_dir), str(local_dir))
 
 
-def test_pretrained_phase1_path_rejects_missing_meta(tmp_path):
+def test_pretrained_phase1_path_rejects_missing_meta(tmp_path: Path) -> None:
     """Source step dir without train_meta.json raises ValueError mentioning 'train_meta.json'."""
     src_dir = tmp_path / "src"
     step_dir = src_dir / "100"
@@ -574,7 +646,7 @@ def test_pretrained_phase1_path_rejects_missing_meta(tmp_path):
         _maybe_copy_pretrained_checkpoint(str(src_dir), str(local_dir))
 
 
-def test_pretrained_phase1_path_in_comparability_signature(tmp_path):
+def test_pretrained_phase1_path_in_comparability_signature(tmp_path: Path) -> None:
     """train_meta.json written by _write_train_meta includes pretrained_phase1_path in sig."""
     from made.training.trainer import _write_train_meta
 
@@ -592,7 +664,7 @@ def test_pretrained_phase1_path_in_comparability_signature(tmp_path):
     assert sig["pretrained_phase1_path"] == "/some/phase1/checkpoints"
 
 
-def test_pretrained_phase1_path_mismatch_rejected(tmp_path):
+def test_pretrained_phase1_path_mismatch_rejected(tmp_path: Path) -> None:
     """Resuming with a different pretrained_phase1_path raises ValueError."""
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     _write_sig(
@@ -613,7 +685,7 @@ def test_pretrained_phase1_path_mismatch_rejected(tmp_path):
         _check_train_meta(ckpt, 0, cfg)
 
 
-def test_pretrained_phase1_path_old_checkpoint_without_field_loads_cleanly(tmp_path):
+def test_pretrained_phase1_path_old_checkpoint_without_field_loads_cleanly(tmp_path: Path) -> None:
     """Old checkpoints without pretrained_phase1_path in signature load under any value."""
     ckpt = CheckpointManager(str(tmp_path / "ckpt"))
     _write_sig(
@@ -633,7 +705,7 @@ def test_pretrained_phase1_path_old_checkpoint_without_field_loads_cleanly(tmp_p
     _check_train_meta(ckpt, 0, cfg)  # must not raise
 
 
-def test_maybe_copy_rewrites_train_meta_for_curriculum(tmp_path):
+def test_maybe_copy_rewrites_train_meta_for_curriculum(tmp_path: Path) -> None:
     """_maybe_copy_pretrained_checkpoint rewrites the copied train_meta.json so that
     the curriculum trainer sees the correct comparability_signature, starts at Phase 2,
     and has a clean Phase-2 early-stopping history.
@@ -727,7 +799,7 @@ def test_maybe_copy_rewrites_train_meta_for_curriculum(tmp_path):
     _check_train_meta(cm, 1000, cfg)  # must not raise
 
 
-def test_rewrite_phase1_seed_meta_is_idempotent(tmp_path):
+def test_rewrite_phase1_seed_meta_is_idempotent(tmp_path: Path) -> None:
     """Calling _rewrite_phase1_seed_meta twice must not clobber Phase-2 progress.
 
     The second call sees a meta already in the curriculum-seed state
@@ -800,7 +872,7 @@ def test_rewrite_phase1_seed_meta_is_idempotent(tmp_path):
     assert after["early_stop_best_step"] == 850
 
 
-def test_rewrite_phase1_seed_meta_self_heals_stale_partial_seed(tmp_path):
+def test_rewrite_phase1_seed_meta_self_heals_stale_partial_seed(tmp_path: Path) -> None:
     """Stale Phase-1 source seed is migrated on demand.
 
     Covers a curriculum cell that crashed before its first Phase-2 checkpoint,
@@ -866,7 +938,7 @@ def test_rewrite_phase1_seed_meta_self_heals_stale_partial_seed(tmp_path):
     _check_train_meta(cm, 1000, cfg)  # must not raise
 
 
-def test_self_heal_curriculum_seed_meta_picks_highest_step(tmp_path):
+def test_self_heal_curriculum_seed_meta_picks_highest_step(tmp_path: Path) -> None:
     """When multiple step subdirs exist, self-heal rewrites only the highest one.
 
     Locks the max(...) selection at trainer.py — a regression to lexicographic
@@ -922,7 +994,7 @@ def test_self_heal_curriculum_seed_meta_picks_highest_step(tmp_path):
     assert low["comparability_signature"]["pretrained_phase1_path"] is None
 
 
-def test_rewrite_phase1_seed_meta_handles_missing_signature(tmp_path):
+def test_rewrite_phase1_seed_meta_handles_missing_signature(tmp_path: Path) -> None:
     """Source meta lacking comparability_signature is migrated cleanly:
     resume/early_stopping fields are rewritten, signature is left absent,
     and _check_train_meta does not raise (legacy old-checkpoint path).

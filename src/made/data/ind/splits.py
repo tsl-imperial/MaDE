@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Recording-level stratified train/val/test split assignment.
 
 Within each location, one recording is held out for val and one for test; the rest go
@@ -56,6 +66,12 @@ def assign_splits(
 
     Returns:
         Mapping ``recording_id`` -> split name.
+
+    Args:
+        location_table: Location table; defaults to the canonical one.
+        seed: Provenance tag, or the shuffle seed for an overridden table.
+    Raises:
+        ValueError: If a location has fewer than 3 recordings.
     """
     if location_table is None:
         location_table = LOCATION_TABLE
@@ -89,12 +105,23 @@ def assign_splits(
 
 
 def get_default_splits() -> dict[int, str]:
-    """Return the canonical P10 split assignment (seed=20260505)."""
+    """Return the canonical split assignment (seed=20260505).
+
+    Returns:
+        Mapping recording_id -> split name.
+    """
     return dict(_DEFAULT_ASSIGNMENT)
 
 
 def recording_ids_for_split(split: str, assignment: dict[int, str] | None = None) -> list[int]:
-    """Return sorted list of recording IDs assigned to *split*."""
+    """Return sorted list of recording IDs assigned to *split*.
+
+    Args:
+        split: Split name.
+        assignment: Recording-to-split mapping; defaults to the canonical one.
+    Returns:
+        Sorted recording ids.
+    """
     if assignment is None:
         assignment = get_default_splits()
     return sorted(rec for rec, s in assignment.items() if s == split)

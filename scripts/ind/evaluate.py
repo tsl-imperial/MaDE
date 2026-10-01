@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Filtered inD evaluation on existing frozen checkpoints — a deliverable, not a diagnostic.
 
 PROTOCOL, which must travel with every number this produces:
@@ -17,6 +27,10 @@ from __future__ import annotations
 
 import argparse, importlib.util, json, sys, time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 import jax, jax.numpy as jnp, numpy as np
 
@@ -29,7 +43,16 @@ THRESH_M = 0.5
 PCTS = [25, 50, 75, 95, 99]
 
 
-def _load(name, path):
+def _load(name: str, path: Path) -> "ModuleType":
+    """Import a Python file as a module registered under ``name``.
+
+    Args:
+        name: Module name to register in ``sys.modules``.
+        path: Path of the source file.
+
+    Returns:
+        The loaded module.
+    """
     s = importlib.util.spec_from_file_location(name, path)
     m = importlib.util.module_from_spec(s); sys.modules[name] = m; s.loader.exec_module(m)
     return m
@@ -39,7 +62,15 @@ E = _load("_e05ind", Path(__file__).resolve().parent / "eval_lib.py")
 from made.evaluation import metrics as M  # noqa: E402
 
 
-def stats(a):
+def stats(a: np.ndarray) -> dict:
+    """Summarise the finite entries: count, mean, percentiles and 5% trimmed mean.
+
+    Args:
+        a: Array of values; non-finite entries are ignored.
+
+    Returns:
+        Dict with ``n``, ``mean``, ``p<q>`` percentiles and ``trimmed_mean_5pct``.
+    """
     a = np.asarray(a).reshape(-1)
     f = a[np.isfinite(a)]
     n = f.size
@@ -51,6 +82,7 @@ def stats(a):
 
 
 def main() -> None:
+    """Evaluate every predictor family and seed on the inD test windows and write the results."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(HERE / "data" / "inD-preprocessed" / "v1"))
     ap.add_argument("--families", default="lstm,ssm,transformer")

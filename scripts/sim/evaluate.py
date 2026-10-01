@@ -1,9 +1,23 @@
-"""E01 evaluator: apply MaDE or a baseline over perturbed test trajectories and report metrics."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Simulated-experiment evaluator: apply MaDE or a baseline to perturbed test trajectories.
+
+Reports the metrics for each row.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+from typing import Any
 from pathlib import Path
 
 import jax
@@ -37,7 +51,19 @@ _BASELINE_VARIANTS = {"mlp", "fab", "clamp"}
 _ALL_VARIANTS = _MADE_VARIANTS | _BASELINE_VARIANTS
 
 
-def _restore_model(checkpoint: str | None, variant: str):
+def _restore_model(checkpoint: str | None, variant: str) -> Any:
+    """Restore a trained baseline model from a checkpoint.
+
+    Args:
+        checkpoint: Checkpoint directory, or None.
+        variant: Variant name, used in error messages.
+
+    Returns:
+        The restored model.
+
+    Raises:
+        ValueError: If the checkpoint is missing or cannot be loaded.
+    """
     if checkpoint is None:
         raise ValueError(f"--checkpoint required for {variant} baseline")
     train_state = CheckpointManager(checkpoint).restore()
@@ -55,20 +81,30 @@ def main_programmatic(
     eval_regime: str | None = None,
     dyn_learned_from: str | None = None,
 ) -> dict:
-    """Run the E01 evaluation and write results to *output*.
+    """Run the simulated-experiment evaluation and write results to *output*.
 
-    eval_regime: optional label describing the perturbation regime used at evaluation time
-    (e.g. "fully-specified", "underspecified"). Written into the output JSON for provenance
-    when provided.
+    Args:
+        cfg: Experiment configuration.
+        checkpoint: Checkpoint directory of the model, or None.
+        variant: Variant name.
+        test_data: Path of the test data.
+        output: Path of the result JSON to write.
+        eval_regime: Optional label describing the perturbation regime used at evaluation time
+            (e.g. "fully-specified", "underspecified"). Written into the output JSON for
+            provenance when provided.
+        dyn_learned_from: Path to the MaDE checkpoint for this system, condition and seed, used
+            only for rows with no learned model of their own (clamp, per-step MLP, FAB). If
+            given, Dyn.-L is scored for those rows by recovering controls through MaDE's learned
+            inverse and taking the residual under MaDE's learned augmented dynamics, falling back to the
+            known model's inverse when needed. Omitted (default): those rows have no Dyn.-L, and
+            the metric is left out rather than filled.
 
-    dyn_learned_from: path to the MaDE checkpoint for this system, condition and seed, used
-    only for rows with no learned model of their own (clamp, per-step MLP, FAB). If given,
-    Dyn.-L is scored for those rows by recovering controls through MaDE's learned inverse and
-    taking the residual under MaDE's learned augmented dynamics, falling back to the known
-    model's inverse when needed. Omitted (default): those rows have no Dyn.-L, and the metric
-    is left out rather than filled.
+    Returns:
+        The result dict.
 
-    Returns the result dict.
+    Raises:
+        ValueError: If a required checkpoint is missing or cannot be loaded, or the variant is
+            unknown.
     """
     # ------------------------------------------------------------------
     # 1. Resolve physics
@@ -100,7 +136,7 @@ def main_programmatic(
         key, noise_key = jax.random.split(key)
         perturbed_states = add_observation_noise(perturbed_states, cfg.data.noise_scale, noise_key)
 
-    # Rollout convention (ref/notes/E01-experiment-design.md, "Rollout convention"): the scan
+    # Rollout convention (see "Rollout convention" in the paper): the scan
     # seed must be a feasible observed state, never a perturbed one. C acts only through u
     # with x re-completed by T(x_prev, u); from an infeasible x_prev the reachable one-step
     # set may not intersect the feasible region. Restoring unperturbed ground-truth x_0 here
@@ -126,7 +162,24 @@ def main_programmatic(
                 cell = train_state.model
 
         def _apply_trajectory(trajectory: jax.Array) -> tuple[jax.Array, jax.Array]:
+            """Apply the MaDE cell along one trajectory.
+
+            Args:
+                trajectory: States of one trajectory.
+
+            Returns:
+                The corrected states and the emitted controls.
+            """
             def _step(x_prev: jax.Array, x_target: jax.Array) -> tuple[jax.Array, tuple[jax.Array, jax.Array]]:
+                """Correct one transition.
+
+                Args:
+                    x_prev: Previous (corrected) state.
+                    x_target: Observed current state.
+
+                Returns:
+                    The carry and the (state, control) outputs of the step.
+                """
                 x_corr, u_corr = cell(x_prev, x_target, known_params, cfg.physics.dt, training=False)
                 return x_corr, (x_corr, u_corr)
 
@@ -191,9 +244,26 @@ def main_programmatic(
     #                  pending) for rows with no learned model.
     #
     # No row uses u_gt for any dynamics metric.
-    def _recover(physics, phys_params, x_seq):
-        """Controls implied by consecutive states through `physics`'s analytic inverse."""
-        def one(traj):
+    def _recover(physics: Any, phys_params: jax.Array, x_seq: jax.Array) -> jax.Array:
+        """Controls implied by consecutive states through `physics`'s analytic inverse.
+
+        Args:
+            physics: The physics model.
+            phys_params: Physics parameters.
+            x_seq: Trajectories, shape ``[N, T, D]``.
+
+        Returns:
+            The recovered controls.
+        """
+        def one(traj: jax.Array) -> jax.Array:
+            """Recover the controls of one trajectory.
+
+            Args:
+                traj: States of one trajectory.
+
+            Returns:
+                The recovered controls.
+            """
             return jax.vmap(
                 lambda a, b: physics.known_control_prior(a, b, phys_params, cfg.physics.dt)
             )(traj[:-1], traj[1:])
@@ -232,8 +302,24 @@ def main_programmatic(
     if not is_made and dyn_learned_from is not None:
         dyn_learned_available = True
 
-        def _learned_recover(x_seq):
-            def one(traj):
+        def _learned_recover(x_seq: jax.Array) -> jax.Array:
+            """Recover controls through the borrowed MaDE's learned inverse.
+
+            Args:
+                x_seq: Trajectories, shape ``[N, T, D]``.
+
+            Returns:
+                The recovered controls.
+            """
+            def one(traj: jax.Array) -> jax.Array:
+                """Recover the controls of one trajectory.
+
+                Args:
+                    traj: States of one trajectory.
+
+                Returns:
+                    The recovered controls.
+                """
                 return jax.vmap(
                     lambda a, b: borrowed_cell.inverse_dynamics(a, b, known_params)
                 )(traj[:-1], traj[1:])
@@ -308,7 +394,8 @@ def main_programmatic(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="E01 MaDE evaluator")
+    """Evaluate one run from the command line and write its metrics."""
+    parser = argparse.ArgumentParser(description="MaDE evaluator for the simulated experiments")
     parser.add_argument("--config", required=True, help="Path to ExperimentConfig JSON")
     parser.add_argument("--checkpoint", default=None, help="Path to checkpoint directory")
     parser.add_argument(
@@ -335,7 +422,7 @@ def main() -> None:
             "dynamics_violation_true",
             "fidelity",
         ]
-        print("E01 metric keys:", metric_keys)
+        print("Metric keys:", metric_keys)
         return
 
     cfg = load_config(args.config)

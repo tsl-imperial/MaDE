@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Exclusive-lock guard against two processes writing the same output path.
 
 `claim_output(path)` takes a lock beside the target and refuses if another live process holds
@@ -18,6 +28,7 @@ import json
 import os
 import socket
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -27,6 +38,14 @@ class OutputBusy(RuntimeError):
 
 
 def _holder(lock: Path) -> dict:
+    """Read the lock file's holder record.
+
+    Args:
+        lock: Path of the lock file.
+
+    Returns:
+        The parsed JSON record, or an empty dict when it is missing or unreadable.
+    """
     try:
         return json.loads(lock.read_text())
     except Exception:
@@ -34,6 +53,14 @@ def _holder(lock: Path) -> dict:
 
 
 def _alive(pid: int) -> bool:
+    """Report whether a process with this pid exists.
+
+    Args:
+        pid: Process id to probe.
+
+    Returns:
+        True when the process is alive (including one we lack permission to signal).
+    """
     try:
         os.kill(pid, 0)
     except OSError as exc:
@@ -42,8 +69,19 @@ def _alive(pid: int) -> bool:
 
 
 @contextmanager
-def claim_output(path: str | Path, *, force: bool = False):
-    """Exclusively claim *path* for the duration of the block."""
+def claim_output(path: str | Path, *, force: bool = False) -> Iterator[Path]:
+    """Exclusively claim *path* for the duration of the block.
+
+    Args:
+        path: Output path to claim.
+        force: Take over the lock even when its holder appears alive.
+
+    Yields:
+        The claimed output path.
+
+    Raises:
+        OutputBusy: If another live process holds the claim and ``force`` is False.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     lock = target.with_suffix(target.suffix + ".lock")
@@ -89,7 +127,11 @@ def claim_output(path: str | Path, *, force: bool = False):
 
 
 def _visible_device_indices() -> tuple[int, ...] | None:
-    """Physical indices this process can see, or None when it can see all of them."""
+    """Physical indices this process can see, or None when it can see all of them.
+
+    Returns:
+        Indices parsed from ``CUDA_VISIBLE_DEVICES``, or None when unset or empty.
+    """
     raw = os.environ.get("CUDA_VISIBLE_DEVICES")
     if raw is None or raw.strip() == "":
         return None
@@ -102,6 +144,11 @@ def _visible_device_indices() -> tuple[int, ...] | None:
 
 
 def _bus_id_to_index() -> dict[str, int]:
+    """Map GPU PCI bus ids to physical device indices via ``nvidia-smi``.
+
+    Returns:
+        Mapping from bus id string to device index.
+    """
     import subprocess
 
     out = subprocess.run(
@@ -132,6 +179,13 @@ def require_idle_devices(
     genuinely runs on a subset — a run pinned to one device by `CUDA_VISIBLE_DEVICES` is not
     slowed by a job on a different card. A latency measurement must leave it None (default,
     every device), since the blanket check is what catches contention.
+
+    Args:
+        allow_pids: Process ids permitted to hold a device.
+        devices: Physical device indices to check, or None for every device.
+
+    Raises:
+        RuntimeError: If device state cannot be established or another process holds a device.
     """
     import subprocess
 

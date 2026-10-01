@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Regression test: made.data.ind submodules must be importable without JAX.
 
 Contract: every public symbol on made.data.ind must be importable in an env
@@ -39,7 +49,8 @@ import {module}
 
 
 @pytest.mark.parametrize("module_name", _SUBMODULES)
-def test_submodule_importable_without_jax(module_name: str):
+def test_submodule_importable_without_jax(module_name: str) -> None:
+    """Verify submodule importable without jax."""
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     src_dir = os.path.join(repo_root, "src")
 

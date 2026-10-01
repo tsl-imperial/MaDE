@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """MADE_FAST_HEUN must be a pure speed optimisation: same maths, machine-epsilon agreement.
 
 The default configuration integrates with Heun() + ConstantStepSize() from t0=0 to
@@ -21,13 +31,16 @@ import pytest
 
 from made.models import augmented_dynamics as AD
 from made.physics import build_system_for_model
+from collections.abc import Callable
+from typing import Any
 
 TOL = 1e-14  # machine-epsilon band; observed 1.1e-16 forward, 5.6e-17 gradient
 DT = 0.2
 
 
 @pytest.fixture
-def dynamics():
+def dynamics() -> AD.AugmentedDynamics:
+    """Kinematic-bicycle AugmentedDynamics with a small residual network."""
     physics, _ = build_system_for_model("kinematic_bicycle", "kinematic_bicycle")
     residual = AD.ResidualNetwork(
         state_dim=4, control_dim=2, param_dim=physics.param_dim,
@@ -37,7 +50,8 @@ def dynamics():
 
 
 @pytest.fixture
-def batch():
+def batch() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Batch (x, u, params) of eight kinematic-bicycle samples."""
     k = jax.random.split(jax.random.key(1), 2)
     x = jax.random.normal(k[0], (8, 4), dtype=jnp.float64)
     u = 0.05 * jax.random.normal(k[1], (8, 2), dtype=jnp.float64)
@@ -45,7 +59,16 @@ def batch():
     return x, u, p
 
 
-def _with_flag(value, fn):
+def _with_flag(value: str, fn: Callable[[], Any]) -> Any:
+    """Run a callable with MADE_FAST_HEUN set, restoring the environment afterwards.
+
+    Args:
+        value: Value for the environment variable.
+        fn: Zero-argument callable to run.
+
+    Returns:
+        Result of ``fn()``.
+    """
     prev = os.environ.get("MADE_FAST_HEUN")
     os.environ["MADE_FAST_HEUN"] = value
     try:
@@ -57,7 +80,7 @@ def _with_flag(value, fn):
             os.environ["MADE_FAST_HEUN"] = prev
 
 
-def test_flag_is_on_by_default():
+def test_flag_is_on_by_default() -> None:
     """Default ON for training and evaluation alike; MADE_FAST_HEUN=0 is the documented
     fallback and what the jaxpr structural guards pin."""
     os.environ.pop("MADE_FAST_HEUN", None)
@@ -65,7 +88,11 @@ def test_flag_is_on_by_default():
     assert _with_flag("0", AD._fast_heun_enabled) is False
 
 
-def test_forward_agrees_to_machine_epsilon(dynamics, batch):
+def test_forward_agrees_to_machine_epsilon(
+    dynamics: AD.AugmentedDynamics,
+    batch: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks forward agrees to machine epsilon."""
     x, u, p = batch
     run = lambda: jax.vmap(lambda a, b, c: dynamics.integrate(a, b, c, DT))(x, u, p)
     slow = _with_flag("0", run)
@@ -73,7 +100,10 @@ def test_forward_agrees_to_machine_epsilon(dynamics, batch):
     assert float(jnp.max(jnp.abs(slow - fast))) < TOL
 
 
-def test_gradient_agrees_to_machine_epsilon(dynamics, batch):
+def test_gradient_agrees_to_machine_epsilon(
+    dynamics: AD.AugmentedDynamics,
+    batch: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
     """The differentiated path is the one training actually uses."""
     x, u, p = batch
     grad = lambda: jax.grad(
@@ -84,7 +114,10 @@ def test_gradient_agrees_to_machine_epsilon(dynamics, batch):
     assert float(jnp.max(jnp.abs(slow - fast))) < TOL
 
 
-def test_direct_adjoint_takes_the_fast_path(dynamics, batch):
+def test_direct_adjoint_takes_the_fast_path(
+    dynamics: AD.AugmentedDynamics,
+    batch: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
     """The corrector passes DirectAdjoint explicitly; that must still be accelerated."""
     import diffrax
     x, u, p = batch
@@ -96,7 +129,10 @@ def test_direct_adjoint_takes_the_fast_path(dynamics, batch):
     assert float(jnp.max(jnp.abs(slow - fast))) < TOL
 
 
-def test_explicit_non_default_solver_still_uses_diffrax(dynamics, batch):
+def test_explicit_non_default_solver_still_uses_diffrax(
+    dynamics: AD.AugmentedDynamics,
+    batch: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
     """A caller asking for a different solver must NOT be silently given Heun."""
     import diffrax
     x, u, p = batch

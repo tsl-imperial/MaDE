@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Variant/baseline dispatch tests."""
 
 # ruff: noqa: E402
@@ -28,15 +38,26 @@ _DI_CFG = ExperimentConfig(
 
 
 @pytest.fixture
-def key():
+def key() -> jax.Array:
+    """PRNG key with seed 0."""
     return jax.random.key(0)
 
 
 @pytest.mark.parametrize(
     "variant",
-    ["made", "made-no-residual", "made-no-corrector", "made-supervised-i", "made-fixed-i", "mlp", "fab", "clamp"],
+    [
+        "made",
+        "made-no-residual",
+        "made-no-corrector",
+        "made-supervised-i",
+        "made-fixed-i",
+        "mlp",
+        "fab",
+        "clamp",
+    ],
 )
-def test_build_trainable_type(variant, key):
+def test_build_trainable_type(variant: str, key: jax.Array) -> None:
+    """Check that build trainable type."""
     model = build_trainable(_DI_CFG, variant, key)
 
     if variant == "clamp":
@@ -50,7 +71,7 @@ def test_build_trainable_type(variant, key):
     "variant",
     ["made", "made-no-residual", "made-no-corrector", "made-supervised-i", "made-fixed-i", "mlp", "fab"],
 )
-def test_build_trainable_finite_params(variant, key):
+def test_build_trainable_finite_params(variant: str, key: jax.Array) -> None:
     """All trainable parameters should be finite after initialisation."""
     model = build_trainable(_DI_CFG, variant, key)
     assert model is not None
@@ -60,7 +81,7 @@ def test_build_trainable_finite_params(variant, key):
         assert jnp.all(jnp.isfinite(leaf)), f"{variant} has non-finite parameter"
 
 
-def test_made_no_residual_is_zero_residual(key):
+def test_made_no_residual_is_zero_residual(key: jax.Array) -> None:
     """made-no-residual should have residual='zero' in the config, expressed as ZeroResidual."""
     from made.models.augmented_dynamics import ZeroResidual
     model = build_trainable(_DI_CFG, "made-no-residual", key)
@@ -68,13 +89,14 @@ def test_made_no_residual_is_zero_residual(key):
     assert isinstance(model.augmented_dynamics.residual, ZeroResidual)
 
 
-def test_made_no_corrector_is_disabled(key):
+def test_made_no_corrector_is_disabled(key: jax.Array) -> None:
     """made-no-corrector should have corrector_mode='disabled'."""
     model = build_trainable(_DI_CFG, "made-no-corrector", key)
     assert isinstance(model, MaDECell)
     assert model.corrector_mode == "disabled"
 
 
-def test_unknown_variant_raises(key):
+def test_unknown_variant_raises(key: jax.Array) -> None:
+    """Check that unknown variant raises."""
     with pytest.raises(ValueError, match="Unknown variant"):
         build_trainable(_DI_CFG, "not-a-variant", key)

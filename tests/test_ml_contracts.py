@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Contract tests for the ML formulation.
 
 Contracts not implemented yet are reported as ``xfail`` instead of weakening
@@ -26,13 +36,34 @@ from made.training.losses import (
 from made.upstream.stage_training import apply_made_trajectory
 from made.utils import TrainingConfig
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from made.models import MaDECell
+
 
 def _training_config_field_names() -> set[str]:
+    """Return the field names of `TrainingConfig`.
+
+    Returns:
+        The set of field names.
+    """
     return {field.name for field in fields(TrainingConfig)}
 
 
-def _sampled_controls(result):
-    """Return the controls array from legacy/new _sample_batch_controls tuples."""
+def _sampled_controls(result: Any) -> Any:
+    """Return the controls array from legacy/new _sample_batch_controls tuples.
+
+    Args:
+        result: Return value of `_sample_batch_controls` (array or 2/3-tuple).
+
+    Returns:
+        The controls array.
+
+    Raises:
+        AssertionError: If a tuple result has an unexpected arity.
+    """
     if not isinstance(result, tuple):
         return result
     if len(result) not in {2, 3}:
@@ -42,13 +73,22 @@ def _sampled_controls(result):
 
 def test_default_control_sampling_ignores_ground_truth_labels(
     monkeypatch: pytest.MonkeyPatch,
-    small_cell,
-    sample_batch,
-):
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """Default MaDE training is controls-unknown even when simulated u_gt exists."""
     sentinel_control = jnp.array([0.25, -0.25], dtype=sample_batch["u_gt"].dtype)
 
-    def fake_sample_controls(*_args, **_kwargs):
+    def fake_sample_controls(*_args: Any, **_kwargs: Any) -> jax.Array:
+        """Return the sentinel control regardless of arguments.
+
+        Args:
+            *_args: Ignored positional arguments.
+            **_kwargs: Ignored keyword arguments.
+
+        Returns:
+            The sentinel control array.
+        """
         return sentinel_control
 
     monkeypatch.setattr(trainer, "sample_controls", fake_sample_controls)
@@ -73,7 +113,10 @@ def test_default_control_sampling_ignores_ground_truth_labels(
     assert jnp.allclose(controls, expected)
 
 
-def test_supervised_inverse_training_requires_explicit_mode(small_cell, sample_batch):
+def test_supervised_inverse_training_requires_explicit_mode(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """u_gt labels are only valid in an explicit supervised-I/pretrain ablation."""
     field_names = _training_config_field_names()
     if "inverse_training" in field_names:
@@ -118,7 +161,7 @@ def test_supervised_inverse_training_requires_explicit_mode(small_cell, sample_b
         )
 
 
-def test_residual_initializes_near_zero_for_aphynity_bootstrap(small_cell):
+def test_residual_initializes_near_zero_for_aphynity_bootstrap(small_cell: "MaDECell") -> None:
     """Fresh learned residuals should start at T ~= T_phys, not a random offset."""
     residual = small_cell.augmented_dynamics.residual(
         jnp.zeros((4,)),
@@ -133,7 +176,7 @@ def test_residual_initializes_near_zero_for_aphynity_bootstrap(small_cell):
     assert max_abs < 1e-6
 
 
-def test_variant_config_surface_covers_required_ml_ablations():
+def test_variant_config_surface_covers_required_ml_ablations() -> None:
     """Required ML variants should be selectable from config, not hidden code paths."""
     from made.utils import CorrectorConfig, ModelConfig
 
@@ -165,7 +208,7 @@ def test_variant_config_surface_covers_required_ml_ablations():
     assert not missing
 
 
-def test_made_model_wrapper_exports_metadata_param_resolution_contract():
+def test_made_model_wrapper_exports_metadata_param_resolution_contract() -> None:
     """Metadata-to-params belongs behind a model wrapper with known-param fallback."""
     import made.models as models
 
@@ -179,7 +222,10 @@ def test_made_model_wrapper_exports_metadata_param_resolution_contract():
     assert public_methods & {"resolve_params", "params_from_metadata"}
 
 
-def test_t_side_loss_receives_no_inverse_consistency_gradient(small_cell, sample_batch):
+def test_t_side_loss_receives_no_inverse_consistency_gradient(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """T-side Phase 1 loss must not propagate gradients into inverse-dynamics leaves."""
     config = TrainingConfig()
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])
@@ -202,7 +248,10 @@ def test_t_side_loss_receives_no_inverse_consistency_gradient(small_cell, sample
         )
 
 
-def test_i_side_loss_receives_no_residual_gradient(small_cell, sample_batch):
+def test_i_side_loss_receives_no_residual_gradient(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """I-side Phase 1 loss must not propagate gradients into residual leaves."""
     config = TrainingConfig()
     residual = small_cell.augmented_dynamics.residual
@@ -228,7 +277,15 @@ def test_i_side_loss_receives_no_residual_gradient(small_cell, sample_batch):
         )
 
 
-def _max_abs_leaf(tree) -> float:
+def _max_abs_leaf(tree: Any) -> float:
+    """Return the largest absolute value over all leaves of a pytree.
+
+    Args:
+        tree: Any pytree of arrays.
+
+    Returns:
+        The maximum absolute leaf value, or 0.0 for an empty tree.
+    """
     leaves = jax.tree_util.tree_leaves(tree)
     if not leaves:
         return 0.0
@@ -241,8 +298,8 @@ def _max_abs_leaf(tree) -> float:
     ids=["phase1_t_loss", "phase2_t_loss"],
 )
 def test_t_side_loss_zeros_inverse_dynamics_gradient_with_delta_i_in_total(
-    small_cell, sample_batch, loss_fn
-):
+    small_cell: "MaDECell", sample_batch: dict[str, jax.Array], loss_fn: Callable[..., Any]
+) -> None:
     """T-side losses must not leak ΔI gradient into inverse-dynamics leaves.
 
     Regression guard for moving `lambda_delta_i_norm * delta_i_norm` into the
@@ -281,6 +338,13 @@ def _perturb_inverse_dynamics_residual(cell: "MaDECell", key: jax.Array) -> "MaD
     masks whether the penalty is wired into the loss path.  This helper adds a
     small Gaussian perturbation to every leaf of the ΔI MLP so the residual is
     non-trivial and the regularizer's gradient is observable.
+
+    Args:
+        cell: The cell to perturb.
+        key: PRNG key for the perturbation.
+
+    Returns:
+        The perturbed copy of `cell`.
     """
     mlp = cell.inverse_dynamics.mlp
     leaves, treedef = jax.tree_util.tree_flatten(eqx.filter(mlp, eqx.is_array))
@@ -298,8 +362,8 @@ def _perturb_inverse_dynamics_residual(cell: "MaDECell", key: jax.Array) -> "MaD
     ids=["phase1_i_loss", "phase2_i_loss"],
 )
 def test_i_side_loss_propagates_delta_i_gradient_to_inverse_dynamics(
-    small_cell, sample_batch, small_key, loss_fn
-):
+    small_cell: "MaDECell", sample_batch: dict[str, jax.Array], small_key: jax.Array, loss_fn: Callable[..., Any]
+) -> None:
     """I-side losses must carry ΔI gradient through to inverse-dynamics leaves.
 
     Confirms that moving `lambda_delta_i_norm * delta_i_norm` into the headline
@@ -317,7 +381,15 @@ def test_i_side_loss_propagates_delta_i_gradient_to_inverse_dynamics(
     config_on = TrainingConfig(lambda_delta_i_norm=10.0)
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])
 
-    def grads_for(config):
+    def grads_for(config: TrainingConfig) -> Any:
+        """Return the cell gradients of `loss_fn` under `config`.
+
+        Args:
+            config: Training config selecting the loss weights.
+
+        Returns:
+            The gradient pytree with respect to the cell.
+        """
         (_, _), grads = eqx.filter_value_and_grad(
             lambda c: loss_fn(
                 c,
@@ -346,7 +418,7 @@ def test_i_side_loss_propagates_delta_i_gradient_to_inverse_dynamics(
     )
 
 
-def test_baselines_export_common_correction_protocol():
+def test_baselines_export_common_correction_protocol() -> None:
     """ML baselines should share a per-step correction protocol for evaluation."""
     import made.baselines as baselines
 
@@ -369,7 +441,10 @@ def test_baselines_export_common_correction_protocol():
 from made.training.losses import phase1_loss, phase2_loss  # noqa: E402
 
 
-def test_x_proposal_default_matches_x_curr(small_cell, sample_batch):
+def test_x_proposal_default_matches_x_curr(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """phase1_loss and phase2_loss with x_proposal=None are byte-identical to no kwarg."""
     config = TrainingConfig()
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])
@@ -406,7 +481,10 @@ def test_x_proposal_default_matches_x_curr(small_cell, sample_batch):
         )
 
 
-def test_x_proposal_changes_forward_consistency_target(small_cell, sample_batch):
+def test_x_proposal_changes_forward_consistency_target(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """Different x_proposal values produce different forward_consistency metrics."""
     config = TrainingConfig()
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])
@@ -430,7 +508,10 @@ def test_x_proposal_changes_forward_consistency_target(small_cell, sample_batch)
     )
 
 
-def test_x_proposal_does_not_affect_inverse_consistency(small_cell, sample_batch):
+def test_x_proposal_does_not_affect_inverse_consistency(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """inverse_consistency metric is byte-identical regardless of x_proposal."""
     config = TrainingConfig()
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])
@@ -453,7 +534,11 @@ def test_x_proposal_does_not_affect_inverse_consistency(small_cell, sample_batch
     )
 
 
-def test_x_proposal_changes_delta_i_norm(small_cell, sample_batch, small_key):
+def test_x_proposal_changes_delta_i_norm(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+    small_key: jax.Array,
+) -> None:
     """Different x_proposal values produce different delta_i_norm metrics.
 
     Requires perturbing the ΔI MLP off zero since the default init_scale=0.0
@@ -483,7 +568,10 @@ def test_x_proposal_changes_delta_i_norm(small_cell, sample_batch, small_key):
     )
 
 
-def test_x_proposal_does_not_affect_minimum_norm(small_cell, sample_batch):
+def test_x_proposal_does_not_affect_minimum_norm(
+    small_cell: "MaDECell",
+    sample_batch: dict[str, jax.Array],
+) -> None:
     """minimum_norm metric is byte-identical regardless of x_proposal."""
     config = TrainingConfig()
     u_sampled = jnp.zeros_like(sample_batch["u_gt"])

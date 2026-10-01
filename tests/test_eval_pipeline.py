@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Perturb → correct → metrics E2E integration test.
 
 Exercises the full evaluate.main_programmatic pipeline on DoubleIntegrator
@@ -33,6 +43,7 @@ from made.utils.config import (
 )
 
 from scripts.sim.evaluate import main_programmatic
+from pathlib import Path
 
 _METRIC_KEYS = frozenset({
     "inequality_violation_rate",
@@ -45,7 +56,13 @@ _METRIC_KEYS = frozenset({
 
 
 def _write_di_data(root: pathlib.Path, n: int = 4, t: int = 8) -> None:
-    """Write minimal zero-state DoubleIntegrator test data directly."""
+    """Write minimal zero-state DoubleIntegrator test data directly.
+
+    Args:
+        root: Dataset root directory.
+        n: Number of trajectories.
+        t: Trajectory length.
+    """
     s, c = 4, 2
     test_dir = root / "test"
     test_dir.mkdir(parents=True)
@@ -54,7 +71,14 @@ def _write_di_data(root: pathlib.Path, n: int = 4, t: int = 8) -> None:
 
 
 def _build_cell_checkpoint(tmp_path: pathlib.Path) -> tuple[str, ExperimentConfig]:
-    """Build a small MaDECell, save a checkpoint, and return (checkpoint_dir, cfg)."""
+    """Build a small MaDECell, save a checkpoint, and return (checkpoint_dir, cfg).
+
+    Args:
+        tmp_path: Directory for the checkpoint.
+
+    Returns:
+        Tuple of (checkpoint_dir, cfg).
+    """
     physics, constraints = build_system("double_integrator")
     model_cfg = ModelConfig(inverse_hidden=(16, 16), residual_hidden=(16, 16))
     corrector_cfg = CorrectorConfig(mode="enabled", train_steps=3, step_size=0.01)
@@ -77,7 +101,7 @@ def _build_cell_checkpoint(tmp_path: pathlib.Path) -> tuple[str, ExperimentConfi
     return checkpoint_dir, cfg
 
 
-def test_correction_improves_feasibility(tmp_path):
+def test_correction_improves_feasibility(tmp_path: Path) -> None:
     """Full evaluate pipeline: perturb DI states, correct with MaDE, check metrics.
 
     Assertions:
@@ -121,7 +145,7 @@ def test_correction_improves_feasibility(tmp_path):
     )
 
 
-def test_metric_shapes_are_scalar(tmp_path):
+def test_metric_shapes_are_scalar(tmp_path: Path) -> None:
     """compute_metrics with batched input returns scalar aggregated values."""
     data_dir = tmp_path / "data"
     _write_di_data(data_dir)
@@ -138,7 +162,7 @@ def test_metric_shapes_are_scalar(tmp_path):
         assert isinstance(v, float), f"Metric '{k}' should be a float, got {type(v)}"
 
 
-def test_clamp_variant_requires_no_checkpoint(tmp_path):
+def test_clamp_variant_requires_no_checkpoint(tmp_path: Path) -> None:
     """Clamp baseline runs without --checkpoint."""
     data_dir = tmp_path / "data"
     _write_di_data(data_dir)
@@ -161,7 +185,7 @@ def test_clamp_variant_requires_no_checkpoint(tmp_path):
     assert result["variant"] == "clamp"
 
 
-def test_evaluate_creates_output_parent_for_clamp(tmp_path):
+def test_evaluate_creates_output_parent_for_clamp(tmp_path: Path) -> None:
     """Clamp evaluation creates nested metrics output directories."""
     data_dir = tmp_path / "data"
     _write_di_data(data_dir)

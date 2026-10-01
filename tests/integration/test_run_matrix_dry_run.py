@@ -1,6 +1,16 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Dry-run smoke for ``scripts/sim/run_matrix.py``.
 
-Asserts that the in-process E01 driver enumerates the expected
+Asserts that the in-process simulated-experiment driver enumerates the expected
 TRAIN / EVALUATE / SKIP TRAIN lines for a small (system x variant x seed)
 matrix.
 
@@ -28,7 +38,16 @@ def _dry_run(
     variants: str,
     seeds: str,
 ) -> str:
-    """Invoke ``run_matrix.py --dry-run`` and return combined stdout."""
+    """Invoke ``run_matrix.py --dry-run`` and return combined stdout.
+
+    Args:
+        systems: Comma-separated systems.
+        variants: Comma-separated variants.
+        seeds: Comma-separated seeds.
+
+    Returns:
+        Combined stdout of the dry run.
+    """
     proc = subprocess.run(
         [
             sys.executable,

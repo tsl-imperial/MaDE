@@ -1,4 +1,14 @@
-"""Unit tests for compute_inequality_dual (§3.5).
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Unit tests for compute_inequality_dual.
 
 Covers:
 - Degenerate case: when the EmpiricalEnvelope matches inD_physical_constraints()
@@ -22,7 +32,14 @@ from made.physics import inD_physical_constraints
 # Helpers
 
 def _make_feasible_xu(M: int = 10) -> tuple[jax.Array, jax.Array]:
-    """Return (x, u) that satisfy inD_physical_constraints with zero violations."""
+    """Return (x, u) that satisfy inD_physical_constraints with zero violations.
+
+    Args:
+        M: Number of samples.
+
+    Returns:
+        State and control arrays.
+    """
     # x: [x, y, theta, v] — all within physical limits; x,y are unbounded so any value ok
     x = jnp.column_stack([
         jnp.zeros(M),          # x position (unbounded)
@@ -39,7 +56,14 @@ def _make_feasible_xu(M: int = 10) -> tuple[jax.Array, jax.Array]:
 
 
 def _make_violating_xu(M: int = 10) -> tuple[jax.Array, jax.Array]:
-    """Return (x, u) that violate some physical bounds."""
+    """Return (x, u) that violate some physical bounds.
+
+    Args:
+        M: Number of samples.
+
+    Returns:
+        State and control arrays.
+    """
     x, u = _make_feasible_xu(M)
     # Push first row's speed above v_max=22
     x = x.at[0, 3].set(25.0)
@@ -54,6 +78,9 @@ def _make_envelope_matching_physical() -> EmpiricalEnvelope:
       control: delta ∈ [-0.5, 0.5], a ∈ [-8, 4]
 
     We set x,y envelope to ±inf so envelope_constraint strips them identically.
+
+    Returns:
+        Envelope matching the physical bounds.
     """
     return EmpiricalEnvelope(
         state_min=jnp.array([-jnp.inf, -jnp.inf, -jnp.pi, 0.0]),
@@ -65,7 +92,7 @@ def _make_envelope_matching_physical() -> EmpiricalEnvelope:
 
 # Tests
 
-def test_compute_inequality_dual_returns_expected_keys():
+def test_compute_inequality_dual_returns_expected_keys() -> None:
     """compute_inequality_dual must return all 4 expected keys."""
     x, u = _make_feasible_xu(10)
     env = _make_envelope_matching_physical()
@@ -87,7 +114,7 @@ def test_compute_inequality_dual_returns_expected_keys():
     )
 
 
-def test_compute_inequality_dual_values_are_python_floats():
+def test_compute_inequality_dual_values_are_python_floats() -> None:
     """Values must be plain Python floats (not jax arrays)."""
     x, u = _make_feasible_xu(10)
     env = _make_envelope_matching_physical()
@@ -97,7 +124,7 @@ def test_compute_inequality_dual_values_are_python_floats():
         assert isinstance(v, float), f"key {k!r}: expected float, got {type(v)}"
 
 
-def test_degenerate_envelope_equals_physical():
+def test_degenerate_envelope_equals_physical() -> None:
     """When envelope bounds match physical bounds, physical == envelope metrics to 1e-12."""
     x, u = _make_violating_xu(10)
     env = _make_envelope_matching_physical()
@@ -117,7 +144,7 @@ def test_degenerate_envelope_equals_physical():
     )
 
 
-def test_feasible_xu_gives_zero_violations():
+def test_feasible_xu_gives_zero_violations() -> None:
     """Feasible (x, u) should give zero violation rate and magnitude."""
     x, u = _make_feasible_xu(10)
     env = _make_envelope_matching_physical()
@@ -129,7 +156,7 @@ def test_feasible_xu_gives_zero_violations():
     assert result["inequality_violation_magnitude_envelope"] == pytest.approx(0.0, abs=1e-12)
 
 
-def test_violation_detected_on_violating_xu():
+def test_violation_detected_on_violating_xu() -> None:
     """Violating (x, u) should give nonzero rate for both physical and envelope."""
     x, u = _make_violating_xu(10)
     env = _make_envelope_matching_physical()
@@ -143,7 +170,7 @@ def test_violation_detected_on_violating_xu():
     )
 
 
-def test_tighter_envelope_can_give_higher_rate():
+def test_tighter_envelope_can_give_higher_rate() -> None:
     """A tighter envelope detects more violations than physical bounds."""
     M = 10
     x, u = _make_feasible_xu(M)

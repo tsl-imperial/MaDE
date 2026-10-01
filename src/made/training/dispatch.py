@@ -1,9 +1,20 @@
-"""Variant dispatch helper for E01 experiments."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Variant dispatch helper for the simulated experiments."""
 
 from __future__ import annotations
 
 from dataclasses import replace
 
+import equinox as eqx
 import jax
 
 from made.baselines import FABBaseline, MLPBaseline
@@ -23,13 +34,13 @@ _ALL_VARIANTS: frozenset[str] = frozenset({
 })
 
 
-def build_trainable(cfg: ExperimentConfig, variant: str, key: jax.Array):
+def build_trainable(cfg: ExperimentConfig, variant: str, key: jax.Array) -> eqx.Module | None:
     """Return an initialised but untrained model for *variant*, or None for clamp.
 
     Args:
-        cfg: Experiment configuration.  ``cfg.physics.true_system`` and
-             ``cfg.model.known_system`` drive physics selection.
-        variant: One of the E01 variants.
+        cfg: Experiment configuration.  ``cfg.physics.true_system`` and ``cfg.model.known_system``
+            drive physics selection.
+        variant: One of the simulated-experiment variants.
         key: PRNG key for model initialisation.
 
     Returns:

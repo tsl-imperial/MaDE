@@ -1,9 +1,20 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for baseline training loops: logging, early stopping, epoch budgets."""
 
 from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from made.baselines.mlp_baseline import (
     MLPBaseline,
@@ -23,6 +34,11 @@ BATCH_SIZE = 8
 
 
 def _pair_batch() -> dict[str, jnp.ndarray]:
+    """Build a small (x_prev, x_curr) batch.
+
+    Returns:
+        Dict with keys ``x_prev`` and ``x_curr``.
+    """
     x_prev = jnp.zeros((BATCH_SIZE, STATE_DIM))
     x_curr = jnp.ones((BATCH_SIZE, STATE_DIM)) * 0.1
     return {"x_prev": x_prev, "x_curr": x_curr}
@@ -31,7 +47,7 @@ def _pair_batch() -> dict[str, jnp.ndarray]:
 # ------------------------------------------------------------------ MLP tests --
 
 
-def test_mlp_baseline_logs_train_loss(monkeypatch):
+def test_mlp_baseline_logs_train_loss(monkeypatch: pytest.MonkeyPatch) -> None:
     """Per-step 'loss' key is logged to wandb during MLP training."""
     logged: list[dict] = []
     monkeypatch.setattr("made.baselines.mlp_baseline.log_metrics", lambda m, **kw: logged.append(m))
@@ -45,11 +61,17 @@ def test_mlp_baseline_logs_train_loss(monkeypatch):
     assert any("val/loss" in m for m in logged), "expected at least one 'val/loss' log"
 
 
-def test_mlp_baseline_early_stopping(monkeypatch):
+def test_mlp_baseline_early_stopping(monkeypatch: pytest.MonkeyPatch) -> None:
     """Early stopping halts MLP training before num_epochs when val/loss stagnates."""
     val_logs: list[float] = []
 
     def fake_log(metrics: dict, **kw: object) -> None:
+        """Record validation losses from logged metrics.
+
+        Args:
+            metrics: Logged metrics dict.
+            **kw: Ignored extra logging arguments.
+        """
         if "val/loss" in metrics:
             val_logs.append(metrics["val/loss"])
 
@@ -64,11 +86,17 @@ def test_mlp_baseline_early_stopping(monkeypatch):
     assert len(val_logs) < 10, "early stopping should have fired before 10 epochs"
 
 
-def test_mlp_baseline_full_budget(monkeypatch):
+def test_mlp_baseline_full_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     """With es_patience=0 (disabled) MLP trains for the full epoch budget."""
     val_logs: list[float] = []
 
     def fake_log(metrics: dict, **kw: object) -> None:
+        """Record validation losses from logged metrics.
+
+        Args:
+            metrics: Logged metrics dict.
+            **kw: Ignored extra logging arguments.
+        """
         if "val/loss" in metrics:
             val_logs.append(metrics["val/loss"])
 
@@ -83,7 +111,8 @@ def test_mlp_baseline_full_budget(monkeypatch):
     assert len(val_logs) == num_epochs
 
 
-def test_baseline_validation_losses_are_sample_weighted():
+def test_baseline_validation_losses_are_sample_weighted() -> None:
+    """Checks baseline validation losses are sample weighted."""
     losses = [(512, 1.0), (384, 10.0)]
     expected = (512 * 1.0 + 384 * 10.0) / 896
 
@@ -94,7 +123,7 @@ def test_baseline_validation_losses_are_sample_weighted():
 # ------------------------------------------------------------------ FAB tests --
 
 
-def test_fab_baseline_logs_loss(monkeypatch):
+def test_fab_baseline_logs_loss(monkeypatch: pytest.MonkeyPatch) -> None:
     """Per-step 'loss' and per-epoch 'val/loss' keys are logged during FAB training."""
     logged: list[dict] = []
     monkeypatch.setattr("made.baselines.fab_baseline.log_metrics", lambda m, **kw: logged.append(m))
@@ -108,11 +137,17 @@ def test_fab_baseline_logs_loss(monkeypatch):
     assert any("val/loss" in m for m in logged)
 
 
-def test_fab_baseline_early_stopping(monkeypatch):
+def test_fab_baseline_early_stopping(monkeypatch: pytest.MonkeyPatch) -> None:
     """Early stopping halts FAB training before num_epochs."""
     val_logs: list[float] = []
 
     def fake_log(metrics: dict, **kw: object) -> None:
+        """Record validation losses from logged metrics.
+
+        Args:
+            metrics: Logged metrics dict.
+            **kw: Ignored extra logging arguments.
+        """
         if "val/loss" in metrics:
             val_logs.append(metrics["val/loss"])
 

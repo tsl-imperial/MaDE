@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Probe Phase-2 gradient norms through the recursive corrector.
 
 This probe answers empirically whether backpropagation through the recursive
@@ -32,12 +42,16 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import jax
 
 from made.utils.jax_setup import configure
 
 configure()
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 import equinox as eqx  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
@@ -59,7 +73,12 @@ from made.training.trainer import (  # noqa: E402
 METRIC_VERSION = "grad-norm-probe-v1"
 
 
-def _load_train_made_module():
+def _load_train_made_module() -> "ModuleType":
+    """Import ``train_made.py`` by file path.
+
+    Returns:
+        The loaded ``train_made`` module.
+    """
     spec = importlib.util.spec_from_file_location(
         "train_made", ROOT / "scripts" / "ind" / "train_made.py"
     )
@@ -69,14 +88,31 @@ def _load_train_made_module():
     return module
 
 
-def _tree_norm(tree) -> float:
+def _tree_norm(tree: Any) -> float:
+    """Global L2 norm over the array leaves of a pytree.
+
+    Args:
+        tree: Pytree of arrays and other leaves.
+
+    Returns:
+        The norm (0.0 when there are no array leaves).
+    """
     leaves = [leaf for leaf in jax.tree.leaves(tree) if eqx.is_array(leaf)]
     if not leaves:
         return 0.0
     return float(jnp.sqrt(sum(jnp.sum(leaf**2) for leaf in leaves)))
 
 
-def _build_model(args, config):
+def _build_model(args: argparse.Namespace, config: Any) -> Any:
+    """Build the MaDE model to probe, random for smoke runs or restored from a checkpoint.
+
+    Args:
+        args: Parsed command-line arguments.
+        config: The experiment configuration.
+
+    Returns:
+        The ``MaDECell`` (smoke) or ``MaDEModel`` (checkpoint) with inD constraints.
+    """
     if args.smoke_random_made:
         print(
             "[gradient_depth_probe] --smoke-random-made: UNTRAINED random MaDECell. "
@@ -106,6 +142,18 @@ def _build_model(args, config):
 
 
 def main(argv: list[str] | None = None) -> dict:
+    """Probe gradient norms through the corrector at several unroll depths and write the report.
+
+    Args:
+        argv: Command-line arguments; ``sys.argv`` when None.
+
+    Returns:
+        The report dict that was written.
+
+    Raises:
+        ValueError: If neither a checkpoint nor the smoke flag is given, or a checkpoint is probed
+        without a config.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
@@ -195,7 +243,15 @@ def main(argv: list[str] | None = None) -> dict:
         depth_report: dict = {}
         for target in ("I", "T"):
 
-            def _loss_fn(m):
+            def _loss_fn(m: Any) -> Any:
+                """Phase-2 loss for one target, with its auxiliary output.
+
+                Args:
+                    m: The model to differentiate.
+
+                Returns:
+                    The ``targeted_phase_loss`` result (loss and auxiliaries).
+                """
                 return losses.targeted_phase_loss(
                     m,
                     x_prev,

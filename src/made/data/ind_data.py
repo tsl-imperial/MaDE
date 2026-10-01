@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """inD data adapter for the MaDE trainer.
 
 Thin adapter over ``made.data.ind.load_ind_split`` / ``made.data.ind.iter_recordings``.
@@ -60,6 +70,9 @@ def load_ind_split(
 
     Raises:
         NotImplementedError: If the preprocessor has not been run yet.
+
+    Returns:
+        Tuple (states, metadata, lengths) as float64, float64 and int32 arrays.
     """
     from made.data.ind import load_ind_split as _plan0_load
 
@@ -82,6 +95,10 @@ def iter_ind_recordings(
     Yields:
         Dicts with keys: ``states``, ``metadata``, ``lengths``, ``location_id``,
         ``recording_id``, ``track_ids``, ``start_frame_native``.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        split: Split name.
     """
     from made.data.ind import iter_recordings as _plan0_iter
 
@@ -111,6 +128,13 @@ def load_ind_split_stub(
       - lengths: ``[num_trajectories]`` int32 equal to trajectory_length
 
     Location IDs are sampled uniformly from {1, 2, 3, 4}.
+
+    Args:
+        num_trajectories: Number of trajectories.
+        trajectory_length: Length of each trajectory.
+        seed: Seed for the random generator.
+    Returns:
+        Tuple (states, metadata, lengths).
     """
     rng = np.random.default_rng(seed)
     states = rng.standard_normal((num_trajectories, trajectory_length, IND_STATE_DIM))
@@ -152,6 +176,17 @@ def create_ind_data_source(
     When ``use_stub=True``, returns synthetic data via :func:`load_ind_split_stub`
     (for smoke tests / CI where the real preprocessed data is unavailable).
     Otherwise delegates to :func:`load_ind_split`.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        split: Split name.
+        location_filter: Optional location ids to keep.
+        use_stub: Return synthetic data instead of the real split.
+        stub_num_trajectories: Trajectory count for the stub.
+        stub_trajectory_length: Trajectory length for the stub.
+        stub_seed: Seed for the stub.
+    Returns:
+        Tuple (states, metadata, lengths).
     """
     if use_stub:
         return load_ind_split_stub(

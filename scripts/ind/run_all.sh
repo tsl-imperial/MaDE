@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 # Reproduces every inD (real-data) table in the paper, end to end.
 # Run from the repository root:
-#   cd MaDE-release && bash scripts/ind/run_all.sh
+#   uv run bash scripts/ind/run_all.sh
 #
 # Requires a GPU for training in reasonable time and the raw inD recordings unpacked to
 # data/inD-raw/ (the inD dataset is not redistributed here -- see README.md). Step 0 is left

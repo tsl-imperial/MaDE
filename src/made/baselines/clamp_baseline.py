@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Clamp-only baseline."""
 
 import jax
@@ -22,7 +32,15 @@ class ClampBaseline(eqx.Module):
         x_curr: jax.Array,
         metadata: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Return (clamped_x_prev, clamped_x_curr) clipped to state box bounds."""
+        """Return (clamped_x_prev, clamped_x_curr) clipped to state box bounds.
+
+        Args:
+            x_prev: Previous state, shape (state_dim,).
+            x_curr: Current state, shape (state_dim,).
+            metadata: Ignored; present for protocol compatibility.
+        Returns:
+            Tuple (clamped_x_prev, clamped_x_curr).
+        """
         del metadata
         return (
             jnp.clip(x_prev, self.constraints.state_min, self.constraints.state_max),
@@ -35,7 +53,15 @@ def clamp_baseline(
     control: jax.Array,
     constraints: BoxConstraints,
 ) -> tuple[jax.Array, jax.Array]:
-    """Clamp state and control to the box bounds."""
+    """Clamp state and control to the box bounds.
+
+    Args:
+        state: State array to clip.
+        control: Control array to clip.
+        constraints: Box bounds for state and control.
+    Returns:
+        Tuple (state_clipped, control_clipped).
+    """
     state_clipped = jnp.clip(state, constraints.state_min, constraints.state_max)
     control_clipped = jnp.clip(control, constraints.control_min, constraints.control_max)
     return state_clipped, control_clipped

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Per-step MLP baseline.
 
 Optional location-aware mode: when ``num_locations > 0`` and ``metadata_dim > 0``, the integer
@@ -43,7 +53,18 @@ class MLPBaseline(eqx.Module):
         embedding_dim: int = 8,
         location_id_index: int = 4,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the MLP and, when requested, the location embedding.
+
+        Args:
+            state_dim: State dimension.
+            hidden: Hidden layer widths.
+            metadata_dim: Metadata width; 0 disables metadata.
+            num_locations: Number of location ids; 0 disables the embedding.
+            embedding_dim: Location embedding size.
+            location_id_index: Metadata column holding the location id.
+            key: PRNG key.
+        """
         self.state_dim = state_dim
         self.metadata_dim = metadata_dim
         self.num_locations = num_locations
@@ -75,7 +96,13 @@ class MLPBaseline(eqx.Module):
         )
 
     def _embed_metadata(self, metadata: jax.Array) -> jax.Array:
-        """Replace the integer ``location_id`` column with its embedding lookup."""
+        """Replace the integer ``location_id`` column with its embedding lookup.
+
+        Args:
+            metadata: Metadata vector, shape (metadata_dim,).
+        Returns:
+            Metadata with the location id column replaced by its embedding.
+        """
         if self.location_embedding is None:
             return metadata
         idx = self.location_id_index
@@ -90,6 +117,15 @@ class MLPBaseline(eqx.Module):
         x_curr: jax.Array,
         metadata: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
+        """Predict a corrected state pair.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            metadata: Optional metadata vector.
+        Returns:
+            Tuple of corrected (x_prev, x_curr).
+        """
         inputs = [x_prev, x_curr]
         if metadata is not None:
             inputs.append(self._embed_metadata(metadata))
@@ -102,11 +138,27 @@ class MLPBaseline(eqx.Module):
         x_curr: jax.Array,
         metadata: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Apply the shared baseline correction protocol."""
+        """Apply the shared baseline correction protocol.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            metadata: Optional metadata vector.
+        Returns:
+            Tuple of corrected (x_prev, x_curr).
+        """
         return self(x_prev, x_curr, metadata)
 
 
 def _mlp_batch_loss(model: MLPBaseline, batch: Any) -> jax.Array:
+    """Mean squared error to the target pair, over a batch.
+
+    Args:
+        model: Model to evaluate.
+        batch: Batch dict; perturbed and target keys are optional.
+    Returns:
+        Scalar loss.
+    """
     x_prev = batch.get("x_prev_perturbed", batch["x_prev"])
     x_curr = batch.get("x_curr_perturbed", batch["x_curr"])
     metadata = batch.get("metadata")
@@ -121,10 +173,24 @@ def _mlp_batch_loss(model: MLPBaseline, batch: Any) -> jax.Array:
 
 
 def _batch_size(batch: dict[str, jax.Array]) -> int:
+    """Number of samples in a batch.
+
+    Args:
+        batch: Batch with key x_prev.
+    Returns:
+        Batch size.
+    """
     return int(batch["x_prev"].shape[0])
 
 
 def _weighted_mean_loss(losses: list[tuple[int, float]]) -> float:
+    """Sample-weighted mean of per-batch losses.
+
+    Args:
+        losses: List of (batch size, loss) pairs.
+    Returns:
+        Weighted mean, or infinity when there are no samples.
+    """
     total_weight = sum(weight for weight, _ in losses)
     if total_weight <= 0:
         return float("inf")
@@ -139,7 +205,17 @@ def train_mlp_baseline(
     *,
     key: jax.Array,
 ) -> MLPBaseline:
-    """Train the MLP baseline with a simple MSE objective, logging per-step loss to wandb."""
+    """Train the MLP baseline with a simple MSE objective, logging per-step loss to wandb.
+
+    Args:
+        model: Model to train.
+        train_loader: Iterable of training batches.
+        val_loader: Iterable of validation batches; may be empty.
+        config: Training hyperparameters.
+        key: PRNG key for batch subsampling.
+    Returns:
+        The trained model.
+    """
     rng = np.random.default_rng(int(jax.random.randint(key, (), 0, 2**31)))
     optimizer = optax.adam(config.lr)
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
@@ -150,6 +226,15 @@ def train_mlp_baseline(
         current_opt_state: optax.OptState,
         batch: dict[str, jax.Array],
     ) -> tuple[MLPBaseline, optax.OptState, jax.Array]:
+        """One optimiser step on a batch.
+
+        Args:
+            current_model: Current model.
+            current_opt_state: Current optimiser state.
+            batch: Training batch.
+        Returns:
+            Tuple (updated model, updated optimiser state, loss).
+        """
         loss, grads = eqx.filter_value_and_grad(_mlp_batch_loss)(current_model, batch)
         updates, next_opt_state = optimizer.update(grads, current_opt_state)
         next_model = eqx.apply_updates(current_model, updates)
@@ -157,6 +242,14 @@ def train_mlp_baseline(
 
     @eqx.filter_jit
     def _val_step(current_model: MLPBaseline, batch: dict[str, jax.Array]) -> jax.Array:
+        """Validation loss on a batch.
+
+        Args:
+            current_model: Current model.
+            batch: Validation batch.
+        Returns:
+            Scalar loss.
+        """
         return _mlp_batch_loss(current_model, batch)
 
     train_batches = list(train_loader)

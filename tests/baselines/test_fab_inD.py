@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """FAB baseline smoke tests for the inD pipeline.
 
 Tests:
@@ -7,6 +17,7 @@ Tests:
 """
 
 # ruff: noqa: E402
+from pathlib import Path
 import os
 
 os.environ["JAX_PLATFORMS"] = "cpu"
@@ -23,6 +34,15 @@ from made.utils.config import FABBaselineConfig
 
 
 def _make_fab(key: jax.Array, state_dim: int = 4) -> FABBaseline:
+    """Build a tiny FABBaseline for tests.
+
+    Args:
+        key: PRNG key for initialisation.
+        state_dim: State dimension.
+
+    Returns:
+        Small FABBaseline.
+    """
     return FABBaseline(
         state_dim=state_dim,
         latent_dim=8,
@@ -33,7 +53,7 @@ def _make_fab(key: jax.Array, state_dim: int = 4) -> FABBaseline:
     )
 
 
-def test_fab_forward_no_nan():
+def test_fab_forward_no_nan() -> None:
     """FAB forward pass produces finite output."""
     model = _make_fab(jax.random.key(0))
     x_prev = jnp.zeros(4, dtype=jnp.float64)
@@ -45,7 +65,7 @@ def test_fab_forward_no_nan():
     assert jnp.all(jnp.isfinite(pred_curr))
 
 
-def test_fab_checkpoint_roundtrip(tmp_path):
+def test_fab_checkpoint_roundtrip(tmp_path: Path) -> None:
     """save_fab_checkpoint / FABBaseline.from_checkpoint round-trips all leaves."""
     model = _make_fab(jax.random.key(1))
     save_fab_checkpoint(model, str(tmp_path / "fab_ckpt"))
@@ -58,13 +78,13 @@ def test_fab_checkpoint_roundtrip(tmp_path):
         assert jnp.allclose(a, b), "FAB checkpoint leaves differ after round-trip"
 
 
-def test_fab_from_checkpoint_raises_on_missing(tmp_path):
+def test_fab_from_checkpoint_raises_on_missing(tmp_path: Path) -> None:
     """from_checkpoint raises FileNotFoundError when checkpoint is absent."""
     with pytest.raises(FileNotFoundError):
         FABBaseline.from_checkpoint(str(tmp_path / "no_such_dir"))
 
 
-def test_fab_train_smoke():
+def test_fab_train_smoke() -> None:
     """train_fab_baseline runs 2 steps without NaN."""
     model = _make_fab(jax.random.key(2))
     batch_size = 8

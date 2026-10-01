@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Augmented dynamics model."""
 
 from __future__ import annotations
@@ -26,7 +36,17 @@ class ResidualNetwork(eqx.Module):
         *,
         init_scale: float = 0.0,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the residual MLP.
+
+        Args:
+            state_dim: State dimension.
+            control_dim: Control dimension.
+            param_dim: Physical-parameter dimension.
+            hidden: Hidden layer widths.
+            init_scale: Multiplier applied to the final layer at initialisation.
+            key: PRNG key for weight initialisation.
+        """
         width = hidden[0] if hidden else max(state_dim, 1)
         depth = len(hidden)
         self.mlp = eqx.nn.MLP(
@@ -54,6 +74,17 @@ class ResidualNetwork(eqx.Module):
         params: jax.Array,
         t: float,
     ) -> jax.Array:
+        """Evaluate the residual vector field.
+
+        Args:
+            state: State vector.
+            control: Control vector.
+            params: Normalised physical parameters.
+            t: Time (unused).
+
+        Returns:
+            Residual state derivative.
+        """
         del t
         inputs = jnp.concatenate([state, control, params])
         return self.mlp(inputs)
@@ -71,6 +102,17 @@ class ZeroResidual(eqx.Module):
         params: jax.Array,
         t: float,
     ) -> jax.Array:
+        """Return a zero residual.
+
+        Args:
+            state: State vector (provides dtype).
+            control: Control vector (unused).
+            params: Physical parameters (unused).
+            t: Time (unused).
+
+        Returns:
+            Zero vector of shape ``(state_dim,)``.
+        """
         del control, params, t
         return jnp.zeros((self.state_dim,), dtype=state.dtype)
 
@@ -84,6 +126,9 @@ def _fast_heun_enabled() -> bool:
 
     Agreement with the ``diffeqsolve`` path is at machine epsilon (forward 1.1e-16, gradient
     5.6e-17 abs / 6.9e-16 rel), mathematically identical but not bit-identical.
+
+    Returns:
+        True when the fast path is enabled.
     """
     return os.environ.get("MADE_FAST_HEUN", "1") != "0"
 
@@ -101,6 +146,17 @@ class AugmentedDynamics(eqx.Module):
         params: jax.Array,
         t: float,
     ) -> jax.Array:
+        """Known-physics vector field plus the learned residual.
+
+        Args:
+            state: State vector.
+            control: Control vector.
+            params: Physical parameters.
+            t: Time.
+
+        Returns:
+            State derivative.
+        """
         params_norm = (
             params / self.physics.param_scales
             if self.physics.param_dim > 0
@@ -124,6 +180,21 @@ class AugmentedDynamics(eqx.Module):
         adjoint: diffrax.AbstractAdjoint | None = None,
         fast: bool | None = None,
     ) -> jax.Array:
+        """Integrate the augmented dynamics over one step of length ``dt``.
+
+        Args:
+            x_prev: State at the start of the step.
+            control: Control vector.
+            params: Physical parameters.
+            dt: Step length.
+            solver: Optional diffrax solver; defaults to Heun.
+            adjoint: Optional diffrax adjoint; defaults to recursive checkpointing.
+            fast: Force (True) or disable (False) the single-step Heun fast path; None reads
+                ``MADE_FAST_HEUN``.
+
+        Returns:
+            State at ``t0 + dt``.
+        """
         # Fast path: the default config is Heun() + ConstantStepSize() over t0=0 -> t1=dt with
         # dt0=dt, i.e. exactly one Heun step -- the explicit trapezoid k1=f(y,u,0),
         # k2=f(y+dt*k1,u,dt), y' = y + dt/2*(k1+k2). Running diffeqsolve's stepping/controller/
@@ -173,5 +244,15 @@ class AugmentedDynamics(eqx.Module):
         control: jax.Array,
         params: jax.Array,
     ) -> jax.Array:
+        """Squared norm of the learned residual at ``t = 0``.
+
+        Args:
+            state: State vector.
+            control: Control vector.
+            params: Physical parameters.
+
+        Returns:
+            Scalar squared residual norm.
+        """
         residual = self.residual(state, control, params, 0.0)
         return jnp.sum(residual ** 2)

@@ -1,8 +1,19 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Autoencoder-style FAB baseline."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -27,7 +38,15 @@ class GatingNetwork(eqx.Module):
         hidden: tuple[int, ...],
         *,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the gating MLP.
+
+        Args:
+            latent_dim: Latent input size.
+            num_experts: Number of decoder experts.
+            hidden: Hidden layer widths.
+            key: PRNG key.
+        """
         width = hidden[0] if hidden else max(num_experts, 1)
         depth = len(hidden)
         self.mlp = eqx.nn.MLP(
@@ -40,6 +59,13 @@ class GatingNetwork(eqx.Module):
         )
 
     def __call__(self, z: jax.Array) -> jax.Array:
+        """Return softmax weights over the experts.
+
+        Args:
+            z: Latent vector, shape (latent_dim,).
+        Returns:
+            Expert weights, shape (num_experts,).
+        """
         return jax.nn.softmax(self.mlp(z))
 
 
@@ -76,7 +102,17 @@ class FABBaseline(eqx.Module):
         latent_radius: float = 1.0,
         *,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the encoder, decoder experts and gating network.
+
+        Args:
+            state_dim: State dimension.
+            latent_dim: Latent dimension.
+            num_experts: Number of decoder experts.
+            hidden: Hidden layer widths.
+            latent_radius: Radius of the latent ball.
+            key: PRNG key.
+        """
         enc_key, gate_key, *decoder_keys = jax.random.split(key, num_experts + 2)
         width = hidden[0] if hidden else max(latent_dim, 1)
         depth = len(hidden)
@@ -112,6 +148,9 @@ class FABBaseline(eqx.Module):
         Uses `getattr`, not a direct read: `from_checkpoint` unpickles, so an object written
         before these fields existed comes back without them and a direct read raises
         AttributeError. A pre-field checkpoint reads as identity, the behaviour it trained with.
+
+        Returns:
+            Tuple (mean, scale), each of shape (2 * state_dim,).
         """
         mean = getattr(self, "input_mean", None)
         scale = getattr(self, "input_scale", None)
@@ -120,7 +159,13 @@ class FABBaseline(eqx.Module):
         return jnp.asarray(mean), jnp.asarray(scale)
 
     def normalise(self, raw: jax.Array) -> jax.Array:
-        """Raw `[x_prev, x_curr]` -> normalised. The inference half of input normalisation."""
+        """Raw `[x_prev, x_curr]` -> normalised. The inference half of input normalisation.
+
+        Args:
+            raw: Raw concatenated pair, shape (2 * state_dim,).
+        Returns:
+            Normalised pair.
+        """
         mean, scale = self._stats()
         return (raw - mean) / scale
 
@@ -130,14 +175,34 @@ class FABBaseline(eqx.Module):
         The decoder reconstructs the encoder's input, so once inputs are normalised its output
         lives in normalised space. Returning that directly would hand the caller a corrected
         pair in the wrong units.
+
+        Args:
+            normalised: Pair in normalised space.
+        Returns:
+            Pair in raw units.
         """
         mean, scale = self._stats()
         return normalised * scale + mean
 
     def encode(self, x_prev: jax.Array, x_curr: jax.Array) -> jax.Array:
+        """Encode a consecutive state pair to a latent vector.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+        Returns:
+            Latent vector, shape (latent_dim,).
+        """
         return self.encoder(self.normalise(jnp.concatenate([x_prev, x_curr])))
 
     def decode(self, z: jax.Array) -> tuple[jax.Array, jax.Array]:
+        """Decode a latent vector to a state pair, mixing the experts by gating weights.
+
+        Args:
+            z: Latent vector, shape (latent_dim,).
+        Returns:
+            Tuple (x_prev, x_curr) in raw units.
+        """
         weights = self.gating(z)
         stacked = jax.tree_util.tree_map(
             lambda *xs: jnp.stack(xs) if eqx.is_array(xs[0]) else xs[0],
@@ -148,6 +213,13 @@ class FABBaseline(eqx.Module):
         return merged[: self.state_dim], merged[self.state_dim :]
 
     def project(self, z: jax.Array) -> jax.Array:
+        """Project a latent vector onto the latent ball.
+
+        Args:
+            z: Latent vector.
+        Returns:
+            Latent vector, rescaled if its norm exceeds the radius.
+        """
         z_norm = jnp.linalg.norm(z)
         safe_norm = jnp.maximum(z_norm, 1e-12)
         scale = jnp.where(z_norm > self.latent_radius, self.latent_radius / safe_norm, 1.0)
@@ -158,6 +230,14 @@ class FABBaseline(eqx.Module):
         x_prev: jax.Array,
         x_curr: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
+        """Encode, project and decode a state pair.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+        Returns:
+            Tuple of corrected (x_prev, x_curr).
+        """
         z = self.encode(x_prev, x_curr)
         return self.decode(self.project(z))
 
@@ -167,7 +247,15 @@ class FABBaseline(eqx.Module):
         x_curr: jax.Array,
         metadata: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Apply FAB projection through the shared baseline protocol."""
+        """Apply FAB projection through the shared baseline protocol.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            metadata: Ignored; present for protocol compatibility.
+        Returns:
+            Tuple of corrected (x_prev, x_curr).
+        """
         del metadata
         return self(x_prev, x_curr)
 
@@ -177,6 +265,14 @@ class FABBaseline(eqx.Module):
 
         Expects the checkpoint layout written by ``save_fab_checkpoint``:
         a ``fab_model.pkl`` file inside ``path``.
+
+        Args:
+            path: Checkpoint directory.
+        Returns:
+            The loaded model.
+        Raises:
+            FileNotFoundError: If no checkpoint file exists under `path`.
+            TypeError: If the file does not contain a FABBaseline.
         """
         import pickle
         from pathlib import Path
@@ -205,6 +301,10 @@ def save_fab_checkpoint(model: "FABBaseline", path: str) -> None:
     """Persist a trained FABBaseline to ``path/fab_model.pkl``.
 
     The checkpoint is loadable by ``FABBaseline.from_checkpoint(path)``.
+
+    Args:
+        model: Trained model to save.
+        path: Output checkpoint directory.
     """
     import pickle
     from pathlib import Path
@@ -223,6 +323,14 @@ def _fab_reconstruction_loss(
     model: FABBaseline,
     batch: dict[str, jax.Array],
 ) -> jax.Array:
+    """Mean squared reconstruction error over both states of each pair.
+
+    Args:
+        model: Model to evaluate.
+        batch: Batch with keys x_prev and x_curr.
+    Returns:
+        Scalar loss.
+    """
     x_prev = batch["x_prev"]
     x_curr = batch["x_curr"]
     pred_prev, pred_curr = jax.vmap(model)(x_prev, x_curr)
@@ -230,10 +338,24 @@ def _fab_reconstruction_loss(
 
 
 def _batch_size(batch: dict[str, jax.Array]) -> int:
+    """Number of samples in a batch.
+
+    Args:
+        batch: Batch with key x_prev.
+    Returns:
+        Batch size.
+    """
     return int(batch["x_prev"].shape[0])
 
 
 def _weighted_mean_loss(losses: list[tuple[int, float]]) -> float:
+    """Sample-weighted mean of per-batch losses.
+
+    Args:
+        losses: List of (batch size, loss) pairs.
+    Returns:
+        Weighted mean, or infinity when there are no samples.
+    """
     total_weight = sum(weight for weight, _ in losses)
     if total_weight <= 0:
         return float("inf")
@@ -247,11 +369,21 @@ def _weighted_mean_loss(losses: list[tuple[int, float]]) -> float:
 _SCALE_FLOOR = 1e-8
 
 
-def fab_input_statistics(batches, state_dim: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
+def fab_input_statistics(
+    batches: Iterable[dict[str, Any]], state_dim: int
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Per-dimension mean and standard deviation of `[x_prev, x_curr]` over TRAINING batches.
 
     Returned as plain tuples so they can be stored as static module leaves and
     therefore cannot be trained -- see the note on `FABBaseline.input_mean`.
+
+    Args:
+        batches: Training batches with keys x_prev and x_curr.
+        state_dim: State dimension.
+    Returns:
+        Tuple (mean, scale) of per-dimension tuples.
+    Raises:
+        ValueError: If `batches` is empty.
     """
     stacked = []
     for batch in batches:
@@ -267,7 +399,9 @@ def fab_input_statistics(batches, state_dim: int) -> tuple[tuple[float, ...], tu
     return tuple(float(v) for v in mean), tuple(float(v) for v in scale)
 
 
-def with_input_statistics(model: "FABBaseline", mean, scale) -> "FABBaseline":
+def with_input_statistics(
+    model: "FABBaseline", mean: Iterable[float], scale: Iterable[float]
+) -> "FABBaseline":
     """Return a copy of `model` carrying `mean`/`scale`.
 
     Shallow copy with the two fields overwritten:
@@ -278,6 +412,13 @@ def with_input_statistics(model: "FABBaseline", mean, scale) -> "FABBaseline":
       `key` rather than these fields, and would re-initialise the networks from a key.
 
     `object.__setattr__` is required because the dataclass is frozen.
+
+    Args:
+        model: Model to copy.
+        mean: Per-dimension mean, length 2 * state_dim.
+        scale: Per-dimension scale, length 2 * state_dim.
+    Returns:
+        Copy of the model carrying the statistics.
     """
     import copy
 
@@ -295,7 +436,17 @@ def train_fab_baseline(
     *,
     key: jax.Array,
 ) -> FABBaseline:
-    """Train the FAB baseline with reconstruction-first objectives, logging per-step loss to wandb."""
+    """Train the FAB baseline with reconstruction-first objectives, logging per-step loss to wandb.
+
+    Args:
+        model: Model to train.
+        train_loader: Iterable of training batches.
+        val_loader: Iterable of validation batches; may be empty.
+        config: Training hyperparameters.
+        key: PRNG key for batch subsampling.
+    Returns:
+        The trained model.
+    """
     rng = np.random.default_rng(int(jax.random.randint(key, (), 0, 2**31)))
     optimizer = optax.adam(config.lr)
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
@@ -306,6 +457,15 @@ def train_fab_baseline(
         current_opt_state: optax.OptState,
         batch: dict[str, jax.Array],
     ) -> tuple[FABBaseline, optax.OptState, jax.Array]:
+        """One optimiser step on a batch.
+
+        Args:
+            current_model: Current model.
+            current_opt_state: Current optimiser state.
+            batch: Training batch.
+        Returns:
+            Tuple (updated model, updated optimiser state, loss).
+        """
         loss, grads = eqx.filter_value_and_grad(_fab_reconstruction_loss)(current_model, batch)
         updates, next_opt_state = optimizer.update(grads, current_opt_state)
         next_model = eqx.apply_updates(current_model, updates)
@@ -313,6 +473,14 @@ def train_fab_baseline(
 
     @eqx.filter_jit
     def _val_step(current_model: FABBaseline, batch: dict[str, jax.Array]) -> jax.Array:
+        """Validation loss on a batch.
+
+        Args:
+            current_model: Current model.
+            batch: Validation batch.
+        Returns:
+            Scalar loss.
+        """
         return _fab_reconstruction_loss(current_model, batch)
 
     train_batches = list(train_loader)

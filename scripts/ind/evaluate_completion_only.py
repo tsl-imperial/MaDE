@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Completion-only appendix: attributing the inD ADE rise between the COMPLETION step and
 the CORRECTION step.
 
@@ -31,6 +41,10 @@ from __future__ import annotations
 
 import argparse, importlib.util, json, sys, time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 import jax, numpy as np
 
@@ -44,7 +58,16 @@ _PCTS = [25, 50, 75, 95, 99]
 _TRIM = 0.05
 
 
-def _load(name, path):
+def _load(name: str, path: Path) -> "ModuleType":
+    """Import a Python file as a module registered under ``name``.
+
+    Args:
+        name: Module name to register in ``sys.modules``.
+        path: Path of the source file.
+
+    Returns:
+        The loaded module.
+    """
     spec = importlib.util.spec_from_file_location(name, path)
     m = importlib.util.module_from_spec(spec); sys.modules[name] = m
     spec.loader.exec_module(m); return m
@@ -55,7 +78,15 @@ from made.evaluation import metrics as M  # noqa: E402
 from made.upstream.stage_training import apply_made_trajectory_with_controls  # noqa: E402
 
 
-def stats(a):
+def stats(a: np.ndarray) -> dict:
+    """Summarise the finite entries: count, mean, percentiles and 5% trimmed mean.
+
+    Args:
+        a: Array of values; non-finite entries are ignored.
+
+    Returns:
+        Dict with ``n``, ``mean``, ``p<q>`` percentiles and ``trimmed_mean_5pct``.
+    """
     a = np.asarray(a).reshape(-1); f = a[np.isfinite(a)]
     n = f.size; k = int(np.floor(n * _TRIM))
     tr = np.sort(f)[k:n - k] if n - 2 * k > 0 else f
@@ -64,8 +95,27 @@ def stats(a):
             "trimmed_mean_5pct": float(np.mean(tr))}
 
 
-def made_rows(made_model, x_pred, metadata, x0, dt, mode):
-    """As eval_lib._made_pnp_rows, but with the correction mode exposed."""
+def made_rows(
+    made_model: Any,
+    x_pred: jax.Array,
+    metadata: jax.Array,
+    x0: jax.Array,
+    dt: float,
+    mode: str,
+) -> tuple[jax.Array, jax.Array]:
+    """As eval_lib._made_pnp_rows, but with the correction mode exposed.
+
+    Args:
+        made_model: The frozen ``MaDEModel``.
+        x_pred: Predicted futures, shape ``[K, F, D]``.
+        metadata: Per-window metadata.
+        x0: Seed states, shape ``[K, D]``.
+        dt: Time step in seconds.
+        mode: Correction mode passed to the cell.
+
+    Returns:
+        Corrected states and the emitted controls for all windows.
+    """
     params = made_model.params_from_metadata(metadata)
     return jax.vmap(
         lambda xp, p, z: apply_made_trajectory_with_controls(
@@ -74,6 +124,7 @@ def made_rows(made_model, x_pred, metadata, x0, dt, mode):
 
 
 def main() -> None:
+    """Evaluate the completion-only ablation for every predictor family and seed."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(HERE / "data" / "inD-preprocessed" / "v1"))
     ap.add_argument("--families", default="lstm,ssm,transformer")

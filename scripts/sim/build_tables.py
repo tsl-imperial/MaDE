@@ -1,4 +1,14 @@
-"""Aggregate E01 per-seed metrics into LaTeX results tables.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Aggregate simulated-experiment per-seed metrics into LaTeX results tables.
 
 Walks the scoring tree for per-seed ``metrics.json`` files, computes per-cell mean
 and population std across seeds, and emits inner ``tabular`` bodies for the
@@ -98,7 +108,14 @@ RATIO = 3.0
 
 
 def _flagged(values: list[float]) -> bool:
-    """True when some seed exceeds ABS_FLOOR and RATIO x the median of the OTHER seeds."""
+    """True when some seed exceeds ABS_FLOOR and RATIO x the median of the OTHER seeds.
+
+    Args:
+        values: Per-seed values of one cell.
+
+    Returns:
+        Whether the cell carries a dagger.
+    """
     if len(values) < 2:
         return False
     for i, v in enumerate(values):
@@ -114,7 +131,17 @@ def _flagged(values: list[float]) -> bool:
 
 
 def _seed_values(seed_level: dict, row_label: str, variant: str, metric_key: str) -> list[float]:
-    """Per-seed values for one (row, variant, metric), in sorted seed-dir order."""
+    """Per-seed values for one (row, variant, metric), in sorted seed-dir order.
+
+    Args:
+        seed_level: Seed-level metrics keyed by row label, variant and seed directory.
+        row_label: Table row label.
+        variant: Variant name.
+        metric_key: Metric name.
+
+    Returns:
+        The numeric per-seed values.
+    """
     per_variant = (seed_level.get(row_label) or {}).get(variant) or {}
     values: list[float] = []
     for seed_name in sorted(per_variant):
@@ -132,6 +159,13 @@ def _dagger_flags(
     A cell rendered as a pending placeholder (no numeric seed values) is never flagged; this
     function only ever sees numeric series, so that exclusion falls out of `_seed_values`
     returning an empty list for such cells.
+
+    Args:
+        seed_level: Seed-level metrics keyed by row label, variant and seed directory.
+        cols: Table columns as (label, variant) pairs.
+
+    Returns:
+        The flagged (row_label, variant, metric_key) triples.
     """
     flagged: set[tuple[str, str, str]] = set()
     for row_label, _, _ in ROWS:
@@ -145,12 +179,22 @@ def _dagger_flags(
 
 @dataclass
 class CellStats:
+    """Mean, population standard deviation and count of one table cell."""
+
     mean: float
     std: float
     n: int
 
     @classmethod
     def from_values(cls, values: list[float]) -> "CellStats | None":
+        """Summarise the finite values of a cell.
+
+        Args:
+            values: Per-seed values.
+
+        Returns:
+            The statistics, or None when no value is finite.
+        """
         finite = [v for v in values if math.isfinite(v)]
         if not finite:
             return None
@@ -160,6 +204,15 @@ class CellStats:
 
 
 def _load_seeds(variant_dir: Path, filename: str) -> dict[str, list[float]]:
+    """Collect each metric's per-seed values from the seed directories of a variant.
+
+    Args:
+        variant_dir: Directory holding ``seed*`` subdirectories.
+        filename: Metrics file name inside each seed directory.
+
+    Returns:
+        Metric key to the list of per-seed values.
+    """
     bucket: dict[str, list[float]] = {key: [] for _, key in METRICS}
     if not variant_dir.is_dir():
         return bucket
@@ -184,6 +237,16 @@ def _load_seeds(variant_dir: Path, filename: str) -> dict[str, list[float]]:
 def _gather_cell(
     system: str, condition: str, variant: str
 ) -> dict[str, CellStats | None]:
+    """Aggregate one cell's metrics over its seeds.
+
+    Args:
+        system: System name.
+        condition: Condition directory name.
+        variant: Variant name.
+
+    Returns:
+        Metric key to its statistics, or None when there are no values.
+    """
     variant_dir = OUT_ROOT / system / condition / variant
     seeds = _load_seeds(variant_dir, "metrics.json")
     return {key: CellStats.from_values(values) for key, values in seeds.items()}
@@ -194,6 +257,14 @@ def _gather_cell_seed_level(system: str, condition: str, variant: str) -> dict[s
 
     Separate from :func:`_gather_cell`: that one collapses seeds into mean and population
     std, but some claims rest on an ordering holding in each of five seeds, not just the mean.
+
+    Args:
+        system: System name.
+        condition: Condition directory name.
+        variant: Variant name.
+
+    Returns:
+        Seed directory name to its metric values.
     """
     import json as _json
 
@@ -233,6 +304,15 @@ _UNSTABLE_MEAN_THRESHOLDS: dict[str, float] = {
 
 
 def _is_unstable(stats: "CellStats | None", metric_key: str) -> bool:
+    """Whether a cell's mean exceeds its metric's plausibility threshold.
+
+    Args:
+        stats: The cell statistics, or None.
+        metric_key: Metric name.
+
+    Returns:
+        True when the mean is non-finite or above the threshold.
+    """
     if stats is None:
         return False
     if not math.isfinite(stats.mean):
@@ -250,6 +330,13 @@ def _row_ranking(
 
     Best/second-best computed over cells present and not flagged unstable, since unstable
     means are unreliable for ranking. Lower is better for every metric in this table.
+
+    Args:
+        row_stats: Statistics of each cell along the row.
+        metric_key: Metric name.
+
+    Returns:
+        Indices of the best, second-best and unstable cells.
     """
     unstable_idxs = {
         i for i, s in enumerate(row_stats) if _is_unstable(s, metric_key)
@@ -272,7 +359,14 @@ def _row_ranking(
 
 
 def _format_scalar(value: float) -> str:
-    """Format a single mean or std in LaTeX math-mode-ready text."""
+    """Format a single mean or std in LaTeX math-mode-ready text.
+
+    Args:
+        value: The number to format.
+
+    Returns:
+        The formatted text.
+    """
     if not math.isfinite(value):
         return r"\mathrm{nan}"
     rounded = round(value, DISPLAY_DECIMALS)
@@ -288,7 +382,17 @@ def _format_cell(
     unstable: bool = False,
     dagger: bool = False,
 ) -> str:
-    """Render one cell with mean and std on the same line."""
+    """Render one cell with mean and std on the same line.
+
+    Args:
+        stats: The cell statistics, or None for a missing cell.
+        rank: ``best``, ``second`` or None.
+        unstable: Accepted for call compatibility; affects ranking only.
+        dagger: Append a dagger when a seed is an outlier.
+
+    Returns:
+        The LaTeX cell text (``--`` when missing).
+    """
     if stats is None:
         return "--"
     body = (
@@ -304,9 +408,9 @@ def _format_cell(
         body = r"$\mathbf{" + inner + r"}$"
     elif rank == "second":
         body = r"\underline{" + body + r"}"
-    # E01 tables carry no red text: `unstable` affects ranking only (see `_row_ranking`)
-    # and emits no markup here; kept in the signature since callers pass it and the audit
-    # JSON records it.
+    # The simulated-experiment tables carry no red text: `unstable` affects ranking only
+    # (see `_row_ranking`) and emits no markup here; kept in the signature since callers pass
+    # it and the audit JSON records it.
     del unstable
     # A pending placeholder cell is never daggered; dagger appended last, after bold/underline.
     if dagger and PENDING_MARK not in body and DAGGER not in body:
@@ -321,6 +425,20 @@ def _build_table(
     table_kind: str,
     seed_level: dict | None = None,
 ) -> str:
+    """Render a results table as a LaTeX tabular block.
+
+    Args:
+        stats_grid: Cell statistics keyed by row label and variant.
+        cols: Table columns as (label, variant) pairs.
+        table_kind: ``headline`` or ``ablation``.
+        seed_level: Seed-level metrics used for dagger flags, or None.
+
+    Returns:
+        The LaTeX tabular source.
+
+    Raises:
+        ValueError: If ``table_kind`` is unknown.
+    """
     lines: list[str] = []
     # The column spans are DERIVED from the column list, not written by hand, so the count
     # cannot go wrong when a column is added or removed.
@@ -389,6 +507,15 @@ def _dyn_learned_recovery(system: str, condition: str, variant: str) -> dict | N
     A row with its own learned model has no entry: its Dyn.-L is its own emitted control
     through its own model. A row with none carries the borrowed-model record
     `scripts/sim/evaluate.py` writes.
+
+    Args:
+        system: System name.
+        condition: Condition directory name.
+        variant: Variant name.
+
+    Returns:
+        Dict with the recovery path(s), seed count and whether it is uniform across seeds, or
+        None when no seed records one.
     """
     paths, seeds = set(), 0
     for seed_dir in sorted((OUT_ROOT / system / condition / variant).glob("seed*")):
@@ -409,6 +536,16 @@ def _dyn_learned_recovery(system: str, condition: str, variant: str) -> dict | N
 def _build_audit(
     stats_grid: dict, cols: list[tuple[str, str]], seed_level: dict | None = None
 ) -> dict:
+    """Build the audit record behind a table.
+
+    Args:
+        stats_grid: Cell statistics keyed by row label and variant.
+        cols: Table columns as (label, variant) pairs.
+        seed_level: Seed-level metrics, or None.
+
+    Returns:
+        The audit dict keyed by row label.
+    """
     seed_level = seed_level or {}
     dagger_flags = _dagger_flags(seed_level, cols)
     audit: dict = {}
@@ -472,6 +609,12 @@ def _prior_only_comparison(seed_level: dict) -> dict:
     """DB `made-prior-only` vs `made`, mean/std/n per metric, from the seed-level series.
 
     This is the artifact a quoted prior-only appendix number is recomputed from.
+
+    Args:
+        seed_level: Seed-level metrics keyed by row label, variant and seed directory.
+
+    Returns:
+        Metric name to per-variant mean, population std and count.
     """
     db = seed_level.get("DB", {})
     out: dict[str, dict] = {}
@@ -488,14 +631,21 @@ def _prior_only_comparison(seed_level: dict) -> dict:
     return out
 
 
-def _checked_write(path, label, text):
-    """Compile a fragment before writing it. Refuses rather than warns."""
+def _checked_write(path: str | Path, label: str, text: str) -> None:
+    """Compile a fragment before writing it. Refuses rather than warns.
+
+    Args:
+        path: Output file path.
+        label: Name used in compile errors.
+        text: LaTeX fragment to check and write.
+    """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     assert_compiles(text, name=label)
     Path(path).write_text(text)
 
 
 def main() -> None:
+    """Aggregate the scored runs and write the simulated-experiment tables and their audits."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--results-root",

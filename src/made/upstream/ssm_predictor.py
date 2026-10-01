@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Compact selective state-space (S6) sequence model upstream predictor.
 
 A faithful but small S6 (selective state-space) implementation in Equinox: no
@@ -52,7 +62,18 @@ class _SSMBlock(eqx.Module):
         conv_kernel: int = 4,
         dt_init: float = 0.05,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build one selective-SSM block.
+
+        Args:
+            d_model: Model width.
+            static_dim: Width of the static conditioning vector.
+            d_state: SSM state size.
+            expand: Expansion factor of the inner width.
+            conv_kernel: Causal convolution kernel size.
+            dt_init: Initial discretisation step.
+            key: PRNG key.
+        """
         in_key, conv_key, x_key, dt_key, init_key, out_key = jax.random.split(key, 6)
         d_inner = expand * d_model
         dt_rank = max(1, d_model // 16)
@@ -98,6 +119,14 @@ class _SSMBlock(eqx.Module):
         self.dt_rank = dt_rank
 
     def __call__(self, x_seq: jax.Array, static: jax.Array) -> jax.Array:
+        """Apply the block to a sequence.
+
+        Args:
+            x_seq: Sequence, shape (T, d_model).
+            static: Static conditioning vector.
+        Returns:
+            Sequence of the same shape.
+        """
         normed = jax.vmap(self.norm)(x_seq)
         xz = jax.vmap(self.in_proj)(normed)
         x_in, z = xz[:, : self.d_inner], xz[:, self.d_inner :]
@@ -116,7 +145,17 @@ class _SSMBlock(eqx.Module):
 
         h0 = self.init_state_proj(static).reshape(self.d_inner, self.d_state)
 
-        def _step(h, inputs):
+        def _step(
+            h: jax.Array, inputs: tuple[jax.Array, jax.Array]
+        ) -> tuple[jax.Array, jax.Array]:
+            """One recurrence step of the selective scan.
+
+            Args:
+                h: Hidden state.
+                inputs: Tuple (discretised A, discretised B times x).
+            Returns:
+                Tuple (new hidden state, new hidden state).
+            """
             a_t, bx_t = inputs
             h_next = a_t * h + bx_t
             return h_next, h_next
@@ -167,7 +206,27 @@ class SSMPredictor(UpstreamPredictor):
         embedding_dim: int = 4,
         location_id_index: int = 4,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the SSM encoder and delta decoder.
+
+        Args:
+            horizon: Number of future steps to predict.
+            state_mean: Train-split state mean, shape (4,).
+            state_std: Train-split state std, shape (4,).
+            d_model: Model width.
+            num_blocks: Number of SSM blocks.
+            d_state: SSM state size.
+            expand: Expansion factor of the inner width.
+            conv_kernel: Causal convolution kernel size.
+            decoder_width: Hidden width of the delta decoder.
+            decoder_depth: Hidden depth of the delta decoder.
+            state_dim: State dimension.
+            metadata_dim: Metadata width.
+            num_locations: Number of location ids.
+            embedding_dim: Location embedding size.
+            location_id_index: Metadata column holding the location id.
+            key: PRNG key.
+        """
         keys = jax.random.split(key, num_blocks + 3)
         input_key, decoder_key, embed_key = keys[0], keys[1], keys[2]
         block_keys = keys[3:]
@@ -207,6 +266,13 @@ class SSMPredictor(UpstreamPredictor):
         self._state_dim = state_dim
 
     def __call__(self, context: jax.Array) -> jax.Array:
+        """Predict future states from a context window.
+
+        Args:
+            context: Context window, shape (H, 4).
+        Returns:
+            Predicted states, shape (horizon, 4).
+        """
         states = context[:, : self._state_dim]
         meta = context[0, self._state_dim :]
         features = canonicalise_window(states, self.state_mean, self.state_std)
@@ -222,4 +288,9 @@ class SSMPredictor(UpstreamPredictor):
 
     @property
     def state_dim(self) -> int:
+        """State dimension of the predictions.
+
+        Returns:
+            State dimension.
+        """
         return self._state_dim

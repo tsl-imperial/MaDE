@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for `return_diagnostics` threaded through `apply_made_trajectory_with_controls`.
 
 `apply_made_trajectory_with_controls` applies a frozen `MaDECell` autoregressively
@@ -11,6 +21,7 @@ caller) must keep returning the plain `(states, controls)` 2-tuple.
 
 from __future__ import annotations
 
+from typing import Any
 import jax
 import jax.numpy as jnp
 import pytest
@@ -30,7 +41,15 @@ def _db_cell(key: jax.Array, *, eval_max_steps: int = 3) -> MaDECell:
     """eval_tol=-1e9 forces the adaptive loop to always run every one of
     `eval_max_steps` iterations -- a deterministic, non-degenerate reference
     for `n_iterations`/`cap_hit` (same trick as
-    `tests/test_corrector_box_projection.py`)."""
+    `tests/test_corrector_box_projection.py`).
+
+    Args:
+        key: PRNG key for initialisation.
+        eval_max_steps: Maximum adaptive correction iterations.
+
+    Returns:
+        MaDE cell with a dynamic-bicycle physics model.
+    """
     physics = KinematicBicycleAsDynamicState()
     constraints = dynamic_bicycle_constraints()
     return MaDECell.from_config(
@@ -51,12 +70,20 @@ def _db_cell(key: jax.Array, *, eval_max_steps: int = 3) -> MaDECell:
 
 
 def _x_pred(state_dim: int) -> jnp.ndarray:
+    """Build a predicted trajectory for the diagnostics tests.
+
+    Args:
+        state_dim: Expected state dimension.
+
+    Returns:
+        Predicted trajectory of shape (T, state_dim).
+    """
     base = jnp.array([0.05, 0.0, 0.05, 5.0, 0.0, 0.0])
     assert base.shape[0] == state_dim
     return jnp.stack([base * (1.0 + 0.01 * i) for i in range(_T)], axis=0)
 
 
-def test_default_signature_unaffected_by_diagnostics_kwarg():
+def test_default_signature_unaffected_by_diagnostics_kwarg() -> None:
     """Every existing caller never passes `return_diagnostics`; the default
     return shape must remain the plain `(states, controls)` 2-tuple."""
     key = jax.random.key(0)
@@ -73,7 +100,8 @@ def test_default_signature_unaffected_by_diagnostics_kwarg():
     assert controls.shape[0] == _T
 
 
-def test_return_diagnostics_rejected_outside_eval_adaptive():
+def test_return_diagnostics_rejected_outside_eval_adaptive() -> None:
+    """Verify return diagnostics rejected outside eval adaptive."""
     key = jax.random.key(0)
     cell = _db_cell(key)
     x_pred = _x_pred(cell.augmented_dynamics.physics.state_dim)
@@ -90,7 +118,7 @@ def test_return_diagnostics_rejected_outside_eval_adaptive():
         )
 
 
-def test_diagnostics_shape_and_matches_manual_per_timestep_calls_with_x0():
+def test_diagnostics_shape_and_matches_manual_per_timestep_calls_with_x0() -> None:
     """With an explicit `x0`, every row of `x_pred` is corrected. The stacked
     `[T]` diagnostics from the scan must exactly match calling
     `cell(..., return_diagnostics=True)` once per timestep in a Python loop."""
@@ -139,7 +167,7 @@ def test_diagnostics_shape_and_matches_manual_per_timestep_calls_with_x0():
     assert all(expected_cap_hit)
 
 
-def test_diagnostics_legacy_first_row_is_zero_placeholder():
+def test_diagnostics_legacy_first_row_is_zero_placeholder() -> None:
     """Without `x0`, the first row is passed through uncorrected (as with
     `controls`, which are zero-filled for row 0). Its diagnostics entry must
     be a zero-filled placeholder (`n_iterations=0`, `cap_hit=False`), and rows
@@ -176,7 +204,7 @@ def test_diagnostics_legacy_first_row_is_zero_placeholder():
         x_prev = x_next
 
 
-def test_vmap_over_batch_yields_kt_shaped_diagnostics():
+def test_vmap_over_batch_yields_kt_shaped_diagnostics() -> None:
     """`jax.vmap` over a batch of K trajectories must yield `[K, T]`-shaped
     diagnostics, matching how states/controls become `[K, T, D]`/`[K, T, U]`."""
     key = jax.random.key(0)
@@ -187,7 +215,16 @@ def test_vmap_over_batch_yields_kt_shaped_diagnostics():
     x0_single = jnp.array([0.0, 0.0, 0.0, 5.0, 0.0, 0.0])
     x0_batch = jnp.broadcast_to(x0_single, (k,) + x0_single.shape)
 
-    def _apply(x_pred, x0):
+    def _apply(x_pred: jax.Array, x0: jax.Array) -> tuple[jax.Array, jax.Array, Any]:
+        """Apply the correction to one trajectory with diagnostics.
+
+        Args:
+            x_pred: Predicted trajectory.
+            x0: Initial state.
+
+        Returns:
+            States, controls and diagnostics.
+        """
         return apply_made_trajectory_with_controls(
             cell,
             x_pred,

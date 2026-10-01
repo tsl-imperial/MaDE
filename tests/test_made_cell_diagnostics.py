@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for `return_diagnostics` threaded through `MaDECell.__call__`.
 
 `Corrector.__call__`/`Corrector._correct_eval` already support an opt-in
@@ -21,12 +31,26 @@ from made.models.corrector import CorrectorDiagnostics
 from made.physics import KinematicBicycleAsDynamicState, dynamic_bicycle_constraints
 from made.utils import CorrectorConfig, ModelConfig
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from made.physics import ConstraintSet
+    from made.physics import DoubleIntegrator
+
 
 def _build_db_cell(key: jax.Array, *, eval_max_steps: int = 3) -> MaDECell:
     """Small DB MaDECell with eval_tol=-1e9 so the adaptive loop always runs
     every one of `eval_max_steps` iterations -- a deterministic, non-degenerate
     `n_iterations`/`cap_hit` reference (same trick as
-    `tests/test_corrector_box_projection.py`)."""
+    `tests/test_corrector_box_projection.py`).
+
+    Args:
+        key: PRNG key for the cell initialisation.
+        eval_max_steps: Cap on adaptive corrector iterations.
+
+    Returns:
+        The constructed cell.
+    """
     physics = KinematicBicycleAsDynamicState()
     constraints = dynamic_bicycle_constraints()
     return MaDECell.from_config(
@@ -52,7 +76,10 @@ _PARAMS = jnp.array([2.7])
 _DT = 0.1
 
 
-def test_default_call_returns_2_tuple(small_cell, double_integrator):
+def test_default_call_returns_2_tuple(
+    small_cell: MaDECell,
+    double_integrator: "tuple[DoubleIntegrator, ConstraintSet]",
+) -> None:
     """No `return_diagnostics` kwarg at all -- the pre-existing call shape."""
     physics, _ = double_integrator
     x_prev = jnp.zeros(physics.state_dim)
@@ -62,7 +89,10 @@ def test_default_call_returns_2_tuple(small_cell, double_integrator):
     assert len(result) == 2
 
 
-def test_explicit_false_returns_2_tuple(small_cell, double_integrator):
+def test_explicit_false_returns_2_tuple(
+    small_cell: MaDECell,
+    double_integrator: "tuple[DoubleIntegrator, ConstraintSet]",
+) -> None:
     """`return_diagnostics=False` passed explicitly is equivalent to omitting it."""
     physics, _ = double_integrator
     x_prev = jnp.zeros(physics.state_dim)
@@ -72,7 +102,7 @@ def test_explicit_false_returns_2_tuple(small_cell, double_integrator):
     assert len(result) == 2
 
 
-def test_return_diagnostics_true_yields_3_tuple_matching_corrector():
+def test_return_diagnostics_true_yields_3_tuple_matching_corrector() -> None:
     """`MaDECell.__call__(return_diagnostics=True)` under `eval_adaptive` is a
     thin forward: it must equal what you get by manually computing (I -> T)
     and then calling `cell.corrector` directly with the same flag."""
@@ -112,7 +142,7 @@ def test_return_diagnostics_true_yields_3_tuple_matching_corrector():
     assert bool(diag_cell.cap_hit) is True
 
 
-def test_return_diagnostics_rejected_outside_eval_adaptive():
+def test_return_diagnostics_rejected_outside_eval_adaptive() -> None:
     """`training=True` resolves to `mode="train_fixed"` inside the corrector,
     which must reject `return_diagnostics=True` with the same ValueError the
     corrector itself raises (MaDECell adds no separate check -- it forwards)."""
@@ -122,7 +152,7 @@ def test_return_diagnostics_rejected_outside_eval_adaptive():
         cell(_X_PREV, _X_CURR, _PARAMS, _DT, training=True, return_diagnostics=True)
 
 
-def test_return_diagnostics_rejected_when_corrector_disabled():
+def test_return_diagnostics_rejected_when_corrector_disabled() -> None:
     """corrector_mode='disabled' forces mode='it_only' regardless of `training`;
     `return_diagnostics=True` must still be rejected consistently."""
     physics = KinematicBicycleAsDynamicState()
@@ -140,7 +170,7 @@ def test_return_diagnostics_rejected_when_corrector_disabled():
         cell(_X_PREV, _X_CURR, _PARAMS, _DT, training=False, return_diagnostics=True)
 
 
-def test_vmap_over_batch_yields_stacked_diagnostics():
+def test_vmap_over_batch_yields_stacked_diagnostics() -> None:
     """`jax.vmap` over a batch of (x_prev, x_curr) pairs must yield a
     `CorrectorDiagnostics` whose leaves have a leading batch axis, matching how
     x/u themselves are vmapped."""
@@ -151,7 +181,19 @@ def test_vmap_over_batch_yields_stacked_diagnostics():
     x_curr_batch = jnp.broadcast_to(_X_CURR, (batch,) + _X_CURR.shape)
     params_batch = jnp.broadcast_to(_PARAMS, (batch,) + _PARAMS.shape)
 
-    def _call(x_prev, x_curr, params):
+    def _call(
+        x_prev: jax.Array, x_curr: jax.Array, params: jax.Array
+    ) -> tuple[jax.Array, jax.Array, CorrectorDiagnostics]:
+        """Call the cell with diagnostics on, for `jax.vmap`.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            params: Physical parameters.
+
+        Returns:
+            The `(x, u, diagnostics)` triple from the cell.
+        """
         return cell(
             x_prev, x_curr, params, _DT, training=False, return_diagnostics=True
         )

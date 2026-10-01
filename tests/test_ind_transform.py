@@ -1,4 +1,14 @@
-"""Phase 2 acceptance tests for made.data.ind.transform.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Tests for made.data.ind.transform.
 
 Covers vehicle filtering, downsampling stride, state shape, and the
 process_recording_tracks end-to-end pipeline using synthetic row data.
@@ -28,7 +38,17 @@ def _make_track_rows(
     recording_id: int = 0,
     start_frame: int = 0,
 ) -> list[dict[str, str]]:
-    """Minimal synthetic XX_tracks.csv rows for a single track."""
+    """Minimal synthetic XX_tracks.csv rows for a single track.
+
+    Args:
+        track_id: Track identifier.
+        n_frames: Number of rows.
+        recording_id: Recording identifier.
+        start_frame: First frame index.
+
+    Returns:
+        List of row dicts.
+    """
     rows = []
     for i in range(n_frames):
         rows.append(
@@ -47,6 +67,15 @@ def _make_track_rows(
 
 
 def _make_meta_row(track_id: int, class_: str = "car") -> dict[str, str]:
+    """Minimal synthetic XX_tracksMeta.csv row.
+
+    Args:
+        track_id: Track identifier.
+        class_: Agent class label.
+
+    Returns:
+        Row dict.
+    """
     return {
         "trackId": str(track_id),
         "width": "1.8",
@@ -58,6 +87,7 @@ def _make_meta_row(track_id: int, class_: str = "car") -> dict[str, str]:
 # _wrap_to_pi
 
 def test_wrap_to_pi_in_range() -> None:
+    """Checks wrap to pi in range."""
     for angle in [0.0, math.pi - 0.001, -math.pi + 0.001, math.pi * 1.5, -math.pi * 2.5]:
         result = _wrap_to_pi(angle)
         assert -math.pi < result <= math.pi, f"wrap_to_pi({angle}) = {result} out of (-π, π]"
@@ -66,6 +96,7 @@ def test_wrap_to_pi_in_range() -> None:
 # _filter_vehicle_track_ids
 
 def test_filter_vehicle_track_ids_excludes_non_vehicles() -> None:
+    """Checks filter vehicle track ids excludes non vehicles."""
     meta = [
         _make_meta_row(0, "car"),
         _make_meta_row(1, "truck_bus"),
@@ -99,6 +130,7 @@ def test_downsample_non_divisible_length_correct() -> None:
 # _rows_to_state
 
 def test_rows_to_state_shape() -> None:
+    """Checks rows to state shape."""
     rows = _make_track_rows(track_id=0, n_frames=8)
     states = _rows_to_state(rows)
     assert states.shape == (8, 4)
@@ -106,6 +138,7 @@ def test_rows_to_state_shape() -> None:
 
 
 def test_rows_to_state_no_nan() -> None:
+    """Checks rows to state no nan."""
     rows = _make_track_rows(track_id=0, n_frames=10)
     states = _rows_to_state(rows)
     assert np.all(np.isfinite(states))

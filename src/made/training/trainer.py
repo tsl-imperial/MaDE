@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Training loop and step functions for MaDE."""
 
 from __future__ import annotations
@@ -18,7 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from jax.sharding import NamedSharding, PartitionSpec
+from jax.sharding import Mesh, NamedSharding, PartitionSpec
 from tqdm.auto import tqdm
 
 from made.models import MaDECell, MaDEModel
@@ -61,6 +71,13 @@ def _rewrite_phase1_seed_meta(meta_path: Path, pretrained_path: str) -> bool:
     legitimately reaches ``phase=1`` again. Observing ``pretrained_phase1_path`` matching but
     ``resume.phase=1`` therefore only happens on the stale-partial-seed migration path this
     function targets, so any ``phase=1`` meta is treated as a rewrite candidate.
+
+    Args:
+        meta_path: Path to ``train_meta.json``.
+        pretrained_path: Path of the Phase-1 source run.
+
+    Returns:
+        True when the meta was rewritten.
     """
     if not meta_path.exists():
         return False
@@ -130,6 +147,10 @@ def _self_heal_curriculum_seed_meta(
     _check_train_meta accepts the resume. Idempotent — no-op once the meta is already
     in the curriculum-seed state, on a non-curriculum config (pretrained_phase1_path is
     None), or on an empty checkpoints dir.
+
+    Args:
+        checkpoint_manager: Manager of the local checkpoint directory.
+        pretrained_phase1_path: Phase-1 source directory, or None for a non-curriculum run.
     """
     if pretrained_phase1_path is None:
         return
@@ -164,6 +185,14 @@ def _maybe_copy_pretrained_checkpoint(
     (preserves partial runs). Raises ``FileNotFoundError`` if ``pretrained_path`` does not
     exist; ``ValueError`` if the source has no numeric step subdirs, the highest-step dir
     is missing ``train_meta.json``, or no step subdir records ``resume.phase == 1``.
+
+    Args:
+        pretrained_path: Source checkpoint directory, or None to do nothing.
+        local_dir: Local checkpoint directory.
+
+    Raises:
+        FileNotFoundError: If ``pretrained_path`` does not exist.
+        ValueError: If the source has no usable Phase-1 checkpoint.
     """
     if pretrained_path is None:
         return
@@ -278,6 +307,11 @@ class _EarlyStoppingState:
     reasons: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the state to a JSON-compatible dict.
+
+        Returns:
+            Dict of the stopper fields.
+        """
         return {
             "best_loss": self.best_loss,
             "best_step": self.best_step,
@@ -289,6 +323,14 @@ class _EarlyStoppingState:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "_EarlyStoppingState":
+        """Rebuild the state from ``to_dict`` output.
+
+        Args:
+            payload: Dict produced by ``to_dict``; missing keys take defaults.
+
+        Returns:
+            The restored state.
+        """
         return cls(
             best_loss=float(payload.get("best_loss", float("inf"))),
             best_step=payload.get("best_step"),
@@ -304,16 +346,41 @@ class _EarlyStoppingState:
 
 
 def _cell(model: MaDELike) -> MaDECell:
+    """Return the underlying ``MaDECell`` of a model.
+
+    Args:
+        model: A cell or a wrapper model.
+
+    Returns:
+        The cell.
+    """
     return model.cell if isinstance(model, MaDEModel) else model
 
 
 def _replace_cell(model: MaDELike, cell: MaDECell) -> MaDELike:
+    """Replace the cell of a wrapper model, or return the new cell for a bare cell.
+
+    Args:
+        model: A cell or a wrapper model.
+        cell: Replacement cell.
+
+    Returns:
+        Model of the same kind as ``model``.
+    """
     if isinstance(model, MaDEModel):
         return eqx.tree_at(lambda made_model: made_model.cell, model, cell)
     return cell
 
 
 def _to_compiled_state(state: TrainState) -> _CompiledTrainState:
+    """Drop host-owned step and phase from a train state for JIT use.
+
+    Args:
+        state: Full train state.
+
+    Returns:
+        JIT-facing train state.
+    """
     return _CompiledTrainState(
         model=state.model,
         opt_state_I=state.opt_state_I,
@@ -323,6 +390,16 @@ def _to_compiled_state(state: TrainState) -> _CompiledTrainState:
 
 
 def _to_train_state(compiled: _CompiledTrainState, *, step: int, phase: int) -> TrainState:
+    """Attach host-owned step and phase to a JIT-facing train state.
+
+    Args:
+        compiled: JIT-facing train state.
+        step: Global step.
+        phase: Training phase.
+
+    Returns:
+        Full train state.
+    """
     return TrainState(
         model=compiled.model,
         opt_state_I=compiled.opt_state_I,
@@ -333,14 +410,31 @@ def _to_train_state(compiled: _CompiledTrainState, *, step: int, phase: int) -> 
     )
 
 
-def _t_trainable(model: MaDELike):
+def _t_trainable(model: MaDELike) -> tuple[Any, ...]:
+    """Select the T-side trainable submodules (residual and, if present, encoder).
+
+    Args:
+        model: Model or cell.
+
+    Returns:
+        Tuple of trainable submodules.
+    """
     cell = _cell(model)
     if isinstance(model, MaDEModel) and model.encoder is not None:
         return (cell.augmented_dynamics.residual, model.encoder)
     return (cell.augmented_dynamics.residual,)
 
 
-def _replace_t_trainable(model: MaDELike, updated) -> MaDELike:
+def _replace_t_trainable(model: MaDELike, updated: tuple[Any, ...]) -> MaDELike:
+    """Write updated T-side submodules back into the model.
+
+    Args:
+        model: Model or cell.
+        updated: Tuple matching ``_t_trainable`` output.
+
+    Returns:
+        Model with the updated submodules.
+    """
     cell = _cell(model)
     residual_updated = updated[0]
     augmented_updated = eqx.tree_at(
@@ -356,7 +450,15 @@ def _replace_t_trainable(model: MaDELike, updated) -> MaDELike:
 
 
 def _make_lr_schedule(lr: float, warmup_steps: int) -> optax.ScalarOrSchedule:
-    """Return a constant lr or a linear warmup schedule."""
+    """Return a constant lr or a linear warmup schedule.
+
+    Args:
+        lr: Peak learning rate.
+        warmup_steps: Number of linear-warmup steps; 0 disables warmup.
+
+    Returns:
+        Learning rate or optax schedule.
+    """
     if warmup_steps > 0:
         return optax.linear_schedule(
             init_value=0.0, end_value=lr, transition_steps=warmup_steps
@@ -374,11 +476,28 @@ def _make_optimizers(
     (NaN/NaN = NaN) and poison weights for the rest of training. zero_nans
     has empty state (no opt_state shape impact); zero_nans_enabled is
     recorded in train_meta.json for provenance only (not strict-equality).
+
+    Args:
+        config: Training configuration.
+
+    Returns:
+        Tuple ``(opt_I, opt_T)``.
     """
     lr_I = _make_lr_schedule(config.lr_I, config.warmup_steps)
     lr_T = _make_lr_schedule(config.lr_T, config.warmup_steps)
 
-    def _build(lr, clip_norm):
+    def _build(
+        lr: optax.ScalarOrSchedule, clip_norm: float | None
+    ) -> optax.GradientTransformation:
+        """Build one optimizer chain.
+
+        Args:
+            lr: Learning rate or schedule.
+            clip_norm: Global gradient-norm clip, or None for no clipping.
+
+        Returns:
+            Optimizer chain.
+        """
         if clip_norm is not None:
             return optax.chain(
                 optax.zero_nans(),
@@ -392,8 +511,17 @@ def _make_optimizers(
     return opt_I, opt_T
 
 
-def create_train_state(cell: MaDELike, config, key: jax.Array) -> TrainState:
-    """Initialise the train state and optimiser slots."""
+def create_train_state(cell: MaDELike, config: TrainingConfig, key: jax.Array) -> TrainState:
+    """Initialise the train state and optimiser slots.
+
+    Args:
+        cell: Model or cell to train.
+        config: Training configuration.
+        key: PRNG key stored in the state.
+
+    Returns:
+        Fresh train state at step 0, phase 1.
+    """
     opt_I, opt_T = _make_optimizers(config)
     inverse_params = eqx.filter(_cell(cell).inverse_dynamics, eqx.is_array)
     residual_params = eqx.filter(_t_trainable(cell), eqx.is_array)
@@ -408,8 +536,8 @@ def create_train_state(cell: MaDELike, config, key: jax.Array) -> TrainState:
 
 
 def _migrate_opt_state_for_zero_nans(
-    opt_state, new_opt: optax.GradientTransformation, params
-):
+    opt_state: optax.OptState, new_opt: optax.GradientTransformation, params: Any
+) -> optax.OptState:
     """Adapt a checkpoint's opt_state to the current optimizer chain.
 
     The chain gained a leading `optax.zero_nans()` transform, so pre-existing checkpoints
@@ -417,6 +545,14 @@ def _migrate_opt_state_for_zero_nans(
     `chain.update` on a mismatched-length tuple raises. Detects the mismatch and prepends
     a fresh `zero_nans` state, preserving saved Adam moments and clip-norm state so resume
     stays momentum-faithful.
+
+    Args:
+        opt_state: Optimizer state restored from a checkpoint.
+        new_opt: Current optimizer chain.
+        params: Parameters the optimizer updates.
+
+    Returns:
+        Optimizer state matching the current chain.
     """
     expected_state = new_opt.init(params)
     if not isinstance(expected_state, tuple) or not isinstance(opt_state, tuple):
@@ -431,6 +567,14 @@ def _migrate_opt_state_for_zero_nans(
 def _batch_arrays(
     batch: Any,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array | None, jax.Array | None]:
+    """Unpack a batch into its arrays.
+
+    Args:
+        batch: Batch as a dict or tuple.
+
+    Returns:
+        Tuple ``(x_prev, x_curr, params, u_gt, metadata)``; absent entries are None.
+    """
     if isinstance(batch, dict):
         return (
             batch["x_prev"],
@@ -445,11 +589,32 @@ def _batch_arrays(
 
 
 def _batch_size(batch: Any) -> int:
+    """Number of samples in a batch.
+
+    Args:
+        batch: Batch as a dict or tuple.
+
+    Returns:
+        Batch size.
+    """
     x_prev, _, _, _, _ = _batch_arrays(batch)
     return int(x_prev.shape[0])
 
 
 def _resolve_params(model: MaDELike, params: jax.Array | None, metadata: jax.Array | None) -> jax.Array:
+    """Resolve physical parameters for a batch.
+
+    Args:
+        model: Model or cell.
+        params: Known parameters, or None.
+        metadata: Metadata vectors, or None.
+
+    Returns:
+        Resolved parameters.
+
+    Raises:
+        ValueError: If a bare cell is given no params.
+    """
     if isinstance(model, MaDEModel):
         return model.resolve_params(params, metadata)
     if params is None:
@@ -464,6 +629,14 @@ def _proposal_perturbation_key(seed: int, stream: int, *counters: int) -> jax.Ar
     (`_PROPOSAL_KEY_STREAM_TRAIN` / `_PROPOSAL_KEY_STREAM_VAL`) and host-side counters
     (global step, and batch index for validation) — never `TrainState.key` — so a
     checkpoint resume replays a bit-identical corruption sequence.
+
+    Args:
+        seed: Training seed.
+        stream: Stream constant.
+        counters: Host-side counters folded in order.
+
+    Returns:
+        PRNG key.
     """
     key = jax.random.fold_in(jax.random.key(seed), stream)
     for counter in counters:
@@ -502,6 +675,19 @@ def _compute_x_proposal(
     stays exactly unperturbed under every mode; a clean-drawn sample is bit-identical on
     every dimension. Both knobs are gaussian-only; ``bound_violation`` raises if either is
     set.
+
+    Args:
+        x_curr: Current states.
+        phase: Training phase.
+        training_config: Training configuration.
+        cell: Cell providing the constraint box.
+        key: PRNG key for the gaussian family; ignored otherwise.
+
+    Returns:
+        Proposal states with the same shape as ``x_curr``.
+
+    Raises:
+        ValueError: If the perturbation configuration is invalid or inconsistent.
     """
     if phase != 2:
         return x_curr
@@ -612,11 +798,27 @@ def _compute_x_proposal(
 def _sample_batch_controls(
     model: MaDELike,
     batch: Any,
-    config,
+    config: TrainingConfig,
     key: jax.Array,
     step: int | jax.Array,
     total_steps: int,
 ) -> tuple[jax.Array, jax.Array, bool]:
+    """Sample or read the controls used for inverse-consistency training.
+
+    Args:
+        model: Model or cell.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        key: PRNG key.
+        step: Current training step.
+        total_steps: Total number of training steps.
+
+    Returns:
+        Tuple ``(controls, next_key, used_supervised)``.
+
+    Raises:
+        ValueError: If ``inverse_training`` is unsupported or supervised data is missing.
+    """
     x_prev, x_curr, params, u_gt, metadata = _batch_arrays(batch)
     params = _resolve_params(model, params, metadata)
     if config.inverse_training == "supervised_pretrain":
@@ -646,11 +848,27 @@ def _sample_batch_controls(
 
 
 def _metrics_to_float(metrics: dict[str, jax.Array]) -> dict[str, float]:
+    """Convert metric arrays to Python floats.
+
+    Args:
+        metrics: Metric name to scalar array.
+
+    Returns:
+        Metric name to float.
+    """
     return {key: float(value) for key, value in metrics.items()}
 
 
 def _phase_metric_context(*, phase: int, phase_step: int) -> dict[str, float]:
-    """Return phase-local axis fields for metrics whose global-step origin varies."""
+    """Return phase-local axis fields for metrics whose global-step origin varies.
+
+    Args:
+        phase: Training phase.
+        phase_step: Step within the phase.
+
+    Returns:
+        Dict with ``phase`` and ``phase_step``.
+    """
     return {
         "phase": float(phase),
         "phase_step": float(phase_step),
@@ -658,6 +876,15 @@ def _phase_metric_context(*, phase: int, phase_step: int) -> dict[str, float]:
 
 
 def _validation_metric_context(*, phase: int, phase_step: int) -> dict[str, float]:
+    """Phase-local axis fields prefixed with ``val/``.
+
+    Args:
+        phase: Training phase.
+        phase_step: Step within the phase.
+
+    Returns:
+        Dict with ``val/phase`` and ``val/phase_step``.
+    """
     context = _phase_metric_context(phase=phase, phase_step=phase_step)
     return {f"val/{key}": value for key, value in context.items()}
 
@@ -668,6 +895,19 @@ def _effective_steps_per_epoch(
     *,
     name: str,
 ) -> int:
+    """Resolve the number of steps per epoch against the available batches.
+
+    Args:
+        requested: Requested steps per epoch, or None for all batches.
+        available_batches: Number of available batches.
+        name: Config field name used in error messages.
+
+    Returns:
+        Steps per epoch.
+
+    Raises:
+        ValueError: If ``requested`` exceeds the available batches.
+    """
     n_batches = max(available_batches, 1)
     if requested is None:
         return n_batches
@@ -684,6 +924,18 @@ def _epoch_batches(
     *,
     capped: bool,
 ) -> list[Any]:
+    """Select the batches for one epoch, a random subset when capped.
+
+    Args:
+        batches: All batches.
+        steps_per_epoch: Number of batches per epoch when capped.
+        key_root: Root PRNG key.
+        epoch_index: Global epoch index folded into the key.
+        capped: Whether steps per epoch is capped.
+
+    Returns:
+        Batches for the epoch.
+    """
     if not batches or not capped:
         return batches
     perm = jax.random.permutation(jax.random.fold_in(key_root, epoch_index), max(len(batches), 1))
@@ -699,6 +951,16 @@ def _write_train_meta(
     dp_overrides: dict | None = None,
     data_cfg: DataConfig | None = None,
 ) -> None:
+    """Write ``train_meta.json`` for a checkpoint step.
+
+    Args:
+        cm: Checkpoint manager.
+        step: Checkpoint step.
+        cfg: Training configuration.
+        extra: Additional entries merged into the meta.
+        dp_overrides: Data-parallel entries merged into the comparability signature.
+        data_cfg: Data configuration; contributes ``noise_scale``.
+    """
     _sig: dict = {
         "validation_interval_epochs": cfg.validation_interval_epochs,
         "checkpoint_save_interval": cfg.checkpoint_save_interval,
@@ -750,6 +1012,18 @@ def _check_train_meta(
     num_devices: int = 1,
     data_cfg: DataConfig | None = None,
 ) -> None:
+    """Check that a checkpoint's recorded settings match the current config.
+
+    Args:
+        cm: Checkpoint manager.
+        step: Checkpoint step.
+        cfg: Training configuration.
+        num_devices: Number of data-parallel devices.
+        data_cfg: Data configuration; contributes ``noise_scale``.
+
+    Raises:
+        ValueError: If a setting that must be stable across resumes differs.
+    """
     meta = _read_train_meta(cm, step)
     if meta is None:
         return
@@ -833,6 +1107,15 @@ def _check_train_meta(
 
 
 def _read_train_meta(cm: CheckpointManager, step: int) -> dict[str, Any] | None:
+    """Read ``train_meta.json`` for a checkpoint step.
+
+    Args:
+        cm: Checkpoint manager.
+        step: Checkpoint step.
+
+    Returns:
+        Parsed meta, or None if absent.
+    """
     meta_path = Path(cm.directory) / str(step) / "train_meta.json"
     if not meta_path.exists():
         return None
@@ -840,6 +1123,14 @@ def _read_train_meta(cm: CheckpointManager, step: int) -> dict[str, Any] | None:
 
 
 def _early_stopping_config_meta(cfg: TrainingConfig) -> dict[str, Any]:
+    """Early-stopping settings recorded in the checkpoint meta.
+
+    Args:
+        cfg: Training configuration.
+
+    Returns:
+        Dict of early-stopping settings.
+    """
     return {
         "enabled": cfg.early_stopping_enabled,
         "min_epochs": cfg.early_stopping_min_epochs,
@@ -857,6 +1148,12 @@ def _early_stopping_config_meta(cfg: TrainingConfig) -> dict[str, Any]:
 
 
 def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
+    """Choose where the progress bar is drawn.
+
+    Returns:
+        Tuple ``(file, disabled, owned_file)``; ``owned_file`` must be closed by the caller when not
+        None.
+    """
     if sys.stderr.isatty():
         return sys.stderr, False, None
     try:
@@ -871,7 +1168,16 @@ def _phase_epoch_progress(
     phase1_steps: int,
     train_steps_per_epoch: int,
 ) -> tuple[int, int, int]:
-    """Return completed epochs and current-epoch batch offset from a step checkpoint."""
+    """Return completed epochs and current-epoch batch offset from a step checkpoint.
+
+    Args:
+        step: Global step of the checkpoint.
+        phase1_steps: Total Phase-1 steps.
+        train_steps_per_epoch: Steps per epoch.
+
+    Returns:
+        Tuple ``(phase1_epochs, phase2_epochs, batch_offset)``.
+    """
     if step < phase1_steps:
         return step // train_steps_per_epoch, 0, step % train_steps_per_epoch
     phase2_steps = step - phase1_steps
@@ -885,6 +1191,14 @@ def _phase_epoch_progress(
 def _weighted_mean_metric_dict(
     weighted_metric_dicts: list[tuple[int, dict[str, float]]],
 ) -> dict[str, float]:
+    """Weighted mean of per-batch metric dicts.
+
+    Args:
+        weighted_metric_dicts: List of ``(weight, metrics)`` pairs.
+
+    Returns:
+        Mean metrics, or ``{"loss": inf}`` when there is no weight.
+    """
     if not weighted_metric_dicts:
         return {"loss": float("inf")}
     total_weight = sum(weight for weight, _ in weighted_metric_dicts)
@@ -901,10 +1215,28 @@ def _weighted_mean_metric_dict(
 
 
 def _metrics_below(metrics: dict[str, float], thresholds: dict[str, float]) -> bool:
+    """Whether every named metric is at or below its threshold.
+
+    Args:
+        metrics: Metric values.
+        thresholds: Metric name to upper bound.
+
+    Returns:
+        True when all metrics are below their thresholds.
+    """
     return all(metrics.get(name, float("inf")) <= threshold for name, threshold in thresholds.items())
 
 
 def _physical_exact_reason(cfg: TrainingConfig, metrics: dict[str, float]) -> str | None:
+    """Early-stop reason when all physical metrics are below tolerance.
+
+    Args:
+        cfg: Training configuration.
+        metrics: Validation metrics.
+
+    Returns:
+        ``"physical_exact"`` or None.
+    """
     if not cfg.early_stopping_physical_exact:
         return None
     thresholds = {
@@ -922,6 +1254,15 @@ def _physical_saturation_reason(
     cfg: TrainingConfig,
     history: list[dict[str, float]],
 ) -> str | None:
+    """Early-stop reason when physical metrics have saturated over a window.
+
+    Args:
+        cfg: Training configuration.
+        history: Validation metrics per epoch.
+
+    Returns:
+        ``"physical_saturation"`` or None.
+    """
     if not cfg.early_stopping_physical_saturation:
         return None
     window_size = cfg.early_stopping_saturation_window
@@ -952,6 +1293,18 @@ def _early_stop_reason(
     phase: int,
     epoch_in_phase: int,
 ) -> str | None:
+    """Update the early-stopping state and return a stop reason, if any.
+
+    Args:
+        cfg: Training configuration.
+        state: Mutable early-stopping state.
+        metrics: Validation metrics, including ``step``.
+        phase: Training phase.
+        epoch_in_phase: Epoch index within the phase.
+
+    Returns:
+        Stop reason string, or None to continue.
+    """
     if not cfg.early_stopping_enabled:
         return None
 
@@ -1007,6 +1360,14 @@ def _early_stop_reason(
 
 
 def _early_stopping_meta(stopper: _EarlyStoppingState) -> dict[str, Any]:
+    """Early-stopping summary fields for the checkpoint meta.
+
+    Args:
+        stopper: Early-stopping state.
+
+    Returns:
+        Dict of summary fields.
+    """
     return {
         "early_stop_reasons": stopper.reasons,
         "early_stop_best_loss": stopper.best_loss,
@@ -1017,6 +1378,14 @@ def _early_stopping_meta(stopper: _EarlyStoppingState) -> dict[str, Any]:
 
 
 def _phase_stoppers_meta(phase_stoppers: dict[int, _EarlyStoppingState]) -> dict[str, Any]:
+    """Serialise the per-phase early-stopping states.
+
+    Args:
+        phase_stoppers: Phase number to early-stopping state.
+
+    Returns:
+        Dict with an ``early_stopping`` entry.
+    """
     return {
         "early_stopping": {
             str(phase): stopper.to_dict() for phase, stopper in phase_stoppers.items()
@@ -1025,6 +1394,15 @@ def _phase_stoppers_meta(phase_stoppers: dict[int, _EarlyStoppingState]) -> dict
 
 
 def _load_phase_stoppers(cm: CheckpointManager, step: int) -> dict[int, _EarlyStoppingState]:
+    """Restore the per-phase early-stopping states from a checkpoint.
+
+    Args:
+        cm: Checkpoint manager.
+        step: Checkpoint step.
+
+    Returns:
+        Phase number to early-stopping state.
+    """
     meta = _read_train_meta(cm, step)
     if meta is None:
         return {1: _EarlyStoppingState(), 2: _EarlyStoppingState()}
@@ -1043,6 +1421,18 @@ def _checkpoint_meta(
     batch_offset: int,
     validation_completed: bool,
 ) -> dict[str, Any]:
+    """Build the early-stopping and resume entries for the checkpoint meta.
+
+    Args:
+        phase_stoppers: Phase number to early-stopping state.
+        active_phase: Current phase.
+        epoch_in_phase: Epoch index within the phase.
+        batch_offset: Batches already done in the epoch.
+        validation_completed: Whether validation finished for the epoch.
+
+    Returns:
+        Meta dict.
+    """
     all_reasons = phase_stoppers[1].reasons + phase_stoppers[2].reasons
     meta = _early_stopping_meta(phase_stoppers[active_phase])
     meta["early_stop_reasons"] = all_reasons
@@ -1062,6 +1452,17 @@ def _load_resume_cursor(
     phase1_steps: int,
     train_steps_per_epoch: int,
 ) -> tuple[int, int, int, bool]:
+    """Recover the resume position from a checkpoint.
+
+    Args:
+        cm: Checkpoint manager.
+        step: Checkpoint step.
+        phase1_steps: Total Phase-1 steps.
+        train_steps_per_epoch: Steps per epoch.
+
+    Returns:
+        Tuple ``(phase, epoch_in_phase, batch_offset, validation_completed)``.
+    """
     meta = _read_train_meta(cm, step)
     if meta is not None:
         resume = meta.get("resume")
@@ -1087,7 +1488,7 @@ def _load_resume_cursor(
 def _train_step_phase1_i(
     state: _CompiledTrainState,
     batch: Any,
-    config,
+    config: TrainingConfig,
     dt: float,
     total_steps: int,
     opt_I: optax.GradientTransformation,
@@ -1095,6 +1496,22 @@ def _train_step_phase1_i(
     step_scalar: jax.Array,
     x_proposal: jax.Array,
 ) -> tuple[_CompiledTrainState, dict[str, jax.Array]]:
+    """JIT-compiled Phase 1 update of the I side.
+
+    Args:
+        state: JIT-facing train state.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        dt: Step length.
+        total_steps: Total number of training steps.
+        opt_I: Inverse-side optimizer.
+        opt_T: Forward-side optimizer.
+        step_scalar: Current global step as an array.
+        x_proposal: Proposal states used as I-input.
+
+    Returns:
+        Tuple ``(new_state, metrics)``.
+    """
     return _train_step_impl(
         state, batch, config, dt, total_steps, opt_I, opt_T,
         phase=1, target="I", step=step_scalar, x_proposal=x_proposal,
@@ -1105,7 +1522,7 @@ def _train_step_phase1_i(
 def _train_step_phase1_t(
     state: _CompiledTrainState,
     batch: Any,
-    config,
+    config: TrainingConfig,
     dt: float,
     total_steps: int,
     opt_I: optax.GradientTransformation,
@@ -1113,6 +1530,22 @@ def _train_step_phase1_t(
     step_scalar: jax.Array,
     x_proposal: jax.Array,
 ) -> tuple[_CompiledTrainState, dict[str, jax.Array]]:
+    """JIT-compiled Phase 1 update of the T side.
+
+    Args:
+        state: JIT-facing train state.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        dt: Step length.
+        total_steps: Total number of training steps.
+        opt_I: Inverse-side optimizer.
+        opt_T: Forward-side optimizer.
+        step_scalar: Current global step as an array.
+        x_proposal: Proposal states used as I-input.
+
+    Returns:
+        Tuple ``(new_state, metrics)``.
+    """
     return _train_step_impl(
         state, batch, config, dt, total_steps, opt_I, opt_T,
         phase=1, target="T", step=step_scalar, x_proposal=x_proposal,
@@ -1123,7 +1556,7 @@ def _train_step_phase1_t(
 def _train_step_phase2_i(
     state: _CompiledTrainState,
     batch: Any,
-    config,
+    config: TrainingConfig,
     dt: float,
     total_steps: int,
     opt_I: optax.GradientTransformation,
@@ -1131,6 +1564,22 @@ def _train_step_phase2_i(
     step_scalar: jax.Array,
     x_proposal: jax.Array,
 ) -> tuple[_CompiledTrainState, dict[str, jax.Array]]:
+    """JIT-compiled Phase 2 update of the I side.
+
+    Args:
+        state: JIT-facing train state.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        dt: Step length.
+        total_steps: Total number of training steps.
+        opt_I: Inverse-side optimizer.
+        opt_T: Forward-side optimizer.
+        step_scalar: Current global step as an array.
+        x_proposal: Proposal states used as I-input.
+
+    Returns:
+        Tuple ``(new_state, metrics)``.
+    """
     return _train_step_impl(
         state, batch, config, dt, total_steps, opt_I, opt_T,
         phase=2, target="I", step=step_scalar, x_proposal=x_proposal,
@@ -1141,7 +1590,7 @@ def _train_step_phase2_i(
 def _train_step_phase2_t(
     state: _CompiledTrainState,
     batch: Any,
-    config,
+    config: TrainingConfig,
     dt: float,
     total_steps: int,
     opt_I: optax.GradientTransformation,
@@ -1149,6 +1598,22 @@ def _train_step_phase2_t(
     step_scalar: jax.Array,
     x_proposal: jax.Array,
 ) -> tuple[_CompiledTrainState, dict[str, jax.Array]]:
+    """JIT-compiled Phase 2 update of the T side.
+
+    Args:
+        state: JIT-facing train state.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        dt: Step length.
+        total_steps: Total number of training steps.
+        opt_I: Inverse-side optimizer.
+        opt_T: Forward-side optimizer.
+        step_scalar: Current global step as an array.
+        x_proposal: Proposal states used as I-input.
+
+    Returns:
+        Tuple ``(new_state, metrics)``.
+    """
     return _train_step_impl(
         state, batch, config, dt, total_steps, opt_I, opt_T,
         phase=2, target="T", step=step_scalar, x_proposal=x_proposal,
@@ -1158,7 +1623,7 @@ def _train_step_phase2_t(
 def _train_step_impl(
     state: _CompiledTrainState,
     batch: Any,
-    config,
+    config: TrainingConfig,
     dt: float,
     total_steps: int,
     opt_I: optax.GradientTransformation,
@@ -1169,6 +1634,24 @@ def _train_step_impl(
     step: jax.Array,
     x_proposal: jax.Array,
 ) -> tuple[_CompiledTrainState, dict[str, jax.Array]]:
+    """One optimisation step on the selected side.
+
+    Args:
+        state: JIT-facing train state.
+        batch: Batch as a dict or tuple.
+        config: Training configuration.
+        dt: Step length.
+        total_steps: Total number of training steps.
+        opt_I: Inverse-side optimizer.
+        opt_T: Forward-side optimizer.
+        phase: Training phase, 1 or 2.
+        target: Side to update, ``"I"`` or ``"T"``.
+        step: Current global step as an array.
+        x_proposal: Proposal states used as I-input.
+
+    Returns:
+        Tuple ``(new_state, metrics)``.
+    """
     x_prev, x_curr, params, _, metadata = _batch_arrays(batch)
     params = _resolve_params(state.model, params, metadata)
     key, subkey = jax.random.split(state.key)
@@ -1182,6 +1665,14 @@ def _train_step_impl(
     )
 
     def _loss_fn(model: MaDELike) -> tuple[jax.Array, dict[str, jax.Array]]:
+        """Targeted phase loss as a function of the model, for differentiation.
+
+        Args:
+            model: Model to differentiate.
+
+        Returns:
+            Tuple ``(loss, metrics)``.
+        """
         return targeted_phase_loss(
             model,
             x_prev,
@@ -1242,6 +1733,19 @@ def _validation_epoch(
     phase: int,
     phase_step: int,
 ) -> tuple[TrainState, dict[str, float]]:
+    """Evaluate the validation loss over all batches.
+
+    Args:
+        state: Train state.
+        batches: Validation batches.
+        config: Experiment configuration.
+        total_steps: Total number of training steps.
+        phase: Training phase, 1 or 2.
+        phase_step: Step within the phase.
+
+    Returns:
+        Tuple ``(state, mean_metrics)`` where ``state`` carries the advanced PRNG key.
+    """
     training_config = config.training
     epoch_metrics = []
     for batch_index, batch in enumerate(batches):
@@ -1317,17 +1821,30 @@ def train(
     config: ExperimentConfig,
     checkpoint_manager: CheckpointManager,
     *,
-    mesh=None,
+    mesh: Mesh | None = None,
     constraints_factory: Callable[[], "BoxConstraints"] | None = None,
 ) -> MaDELike:
     """Train MaDE across Phase 1 and Phase 2.
 
     Args:
-        constraints_factory: Optional zero-arg builder for a fresh BoxConstraints. When
-            given, the cell's constraints are forced to constraints_factory() right after
-            checkpoint restore (or fresh state creation) -- mandatory on the inD/field-data
-            path to prevent stale finite-x,y bounds resurfacing via
-            eqx.tree_deserialise_leaves. E01 callers omit this kwarg.
+        cell: Model or cell to train.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        config: Experiment configuration.
+        checkpoint_manager: Checkpoint manager for save and resume.
+        mesh: Device mesh for data parallelism, or None for a single device.
+        constraints_factory: Optional zero-arg builder for a fresh BoxConstraints. When given, the
+            cell's constraints are forced to constraints_factory() right after checkpoint restore
+            (or fresh state creation) -- mandatory on the inD/field-data path to prevent stale
+            finite-x,y bounds resurfacing via eqx.tree_deserialise_leaves. Simulated-experiment
+            callers omit this kwarg.
+
+    Returns:
+        The trained model.
+
+    Raises:
+        ValueError: If a resume on field data lacks ``constraints_factory``, or
+            ``restore_phase1_best_before_phase2`` cannot be honoured.
     """
     training_config = config.training
     num_devices = mesh.shape[0] if mesh is not None else 1

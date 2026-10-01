@@ -1,6 +1,0 @@
-# Package versions the test suite was validated with on macOS (CPU).
-# The paper's results were produced with constraints/linux-cuda12.txt. Random streams match across
-# both, because made.utils.jax_setup.configure() fixes jax_threefry_partitionable=True.
-
-jax==0.4.38
-jaxlib==0.4.38

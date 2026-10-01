@@ -1,6 +1,16 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Evaluation metrics for feasibility and fidelity.
 
-Also exposes a real-data metric suite (E2/E3, inD dataset):
+Also exposes a real-data metric suite (inD experiments):
 :class:`EmpiricalEnvelope`, :func:`estimate_empirical_envelope`,
 :func:`envelope_constraint`, :func:`empirical_envelope_violation_rate`,
 :func:`empirical_envelope_violation_magnitude`, :func:`ade`, :func:`fde`,
@@ -9,7 +19,7 @@ Also exposes a real-data metric suite (E2/E3, inD dataset):
 :data:`METRIC_VERSION`.
 
 ``fidelity``, ``dynamics_violation_*``, ``compute_metrics`` are pinned by
-Experiment 1 paper tables and regression tests; do not change their behaviour.
+the simulated-experiment paper tables and regression tests; do not change their behaviour.
 """
 
 from __future__ import annotations
@@ -28,17 +38,31 @@ METRIC_VERSION: str = "real-data-v3-gaussian"
 
 
 def _is_batched(array: jax.Array) -> bool:
+    """Whether the array carries a leading batch dimension.
+
+    Args:
+        array: Array of states or controls.
+    Returns:
+        True when the array has at least three dimensions.
+    """
     return array.ndim >= 3
 
 
 def _align_controls_to_states(x: jax.Array, u: jax.Array) -> jax.Array:
-    """Return one control per state for inequality metrics."""
+    """Return one control per state for inequality metrics.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+    Returns:
+        Controls with one row per state.
+    """
     if u.shape[0] == x.shape[0]:
         return u
     return jnp.concatenate([u, u[-1:]], axis=0)
 
 
-def _violation_channel_slice(constraints, channel: str):
+def _violation_channel_slice(constraints: ConstraintSet, channel: str) -> slice | None:
     """Column slice of a `BoxConstraints` violation vector for one channel.
 
     `BoxConstraints.__call__` concatenates, in this order::
@@ -48,6 +72,14 @@ def _violation_channel_slice(constraints, channel: str):
     First `2 * state_dim` columns are STATE-bound, remainder are CONTROL-bound. Returns `None`
     when the split can't be taken (e.g. `SpeedNormConstraint` has no `state_min`) -- caller
     must then report the combined figure, never guess a split.
+
+    Args:
+        constraints: Constraint set to score against.
+        channel: Which bounds to score: "all", "state" or "control".
+    Returns:
+        Column slice, or None for the combined figure.
+    Raises:
+        ValueError: If `channel` is not "all", "state" or "control".
     """
     if channel == "all":
         return None
@@ -71,6 +103,14 @@ def _trajectory_inequality_violation_rate(
     """`channel` selects state-bound, control-bound or both.
 
     Shares one implementation across channels so components can't drift from the total.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        constraints: Constraint set to score against.
+        channel: Which bounds to score: "all", "state" or "control".
+    Returns:
+        Fraction of violating steps.
     """
     if x.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x.dtype)
@@ -96,6 +136,14 @@ def _trajectory_inequality_violation_magnitude(
     vector (e.g. state=4, control=6 gives sqrt(4^2+6^2)=7.2111, not 10), and rate is an "any"
     over the union (`rate_all <= rate_state + rate_control`). Reconstructing one channel by
     subtracting the other from the total gives a wrong but plausible-looking number.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        constraints: Constraint set to score against.
+        channel: Which bounds to score: "all", "state" or "control".
+    Returns:
+        Mean violation magnitude over violating steps.
     """
     if x.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x.dtype)
@@ -120,6 +168,17 @@ def _trajectory_dynamics_violation_known(
     params: jax.Array,
     dt: float,
 ) -> jax.Array:
+    """Mean one-step violation of one trajectory under the known physics model.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        physics: Known physics model.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+    Returns:
+        Scalar metric value.
+    """
     if x.shape[0] <= 1:
         return jnp.asarray(0.0, dtype=x.dtype)
     predicted = jax.vmap(
@@ -146,6 +205,17 @@ def _trajectory_dynamics_violation_learned(
     params: jax.Array,
     dt: float,
 ) -> jax.Array:
+    """Mean one-step violation of one trajectory under the learned dynamics.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        augmented_dynamics: Learned augmented dynamics.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+    Returns:
+        Scalar metric value.
+    """
     if x.shape[0] <= 1:
         return jnp.asarray(0.0, dtype=x.dtype)
     predicted = jax.vmap(
@@ -155,6 +225,14 @@ def _trajectory_dynamics_violation_learned(
 
 
 def _trajectory_fidelity(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
+    """Mean per-step distance of one trajectory to ground truth.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Scalar metric value.
+    """
     if x_corrected.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x_corrected.dtype)
     return jnp.mean(jnp.linalg.norm(x_corrected - x_gt, axis=-1))
@@ -179,6 +257,14 @@ def inequality_violation_rate(
 
     Returns FLOAT32 (`jnp.mean` of a bool array is float32 even under x64), unlike every other
     metric here (float64).
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        constraints: Constraint set to score against.
+        channel: Which bounds to score: "all", "state" or "control".
+    Returns:
+        Fraction of violating steps, as float32.
     """
     if _is_batched(x):
         return jnp.mean(
@@ -197,7 +283,16 @@ def inequality_violation_magnitude(
     constraints: ConstraintSet,
     channel: str = "all",
 ) -> jax.Array:
-    """Mean violation magnitude over violating steps."""
+    """Mean violation magnitude over violating steps.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        constraints: Constraint set to score against.
+        channel: Which bounds to score: "all", "state" or "control".
+    Returns:
+        Scalar metric value.
+    """
     if _is_batched(x):
         return jnp.mean(
             jax.vmap(
@@ -216,7 +311,17 @@ def dynamics_violation_known(
     params: jax.Array,
     dt: float,
 ) -> jax.Array:
-    """Mean one-step violation under the known physics model."""
+    """Mean one-step violation under the known physics model.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        physics: Known physics model.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+    Returns:
+        Scalar metric value.
+    """
     if _is_batched(x):
         return jnp.mean(
             jax.vmap(
@@ -239,7 +344,17 @@ def dynamics_violation_learned(
     params: jax.Array,
     dt: float,
 ) -> jax.Array:
-    """Mean one-step violation under the learned augmented dynamics."""
+    """Mean one-step violation under the learned augmented dynamics.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        augmented_dynamics: Learned augmented dynamics.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+    Returns:
+        Scalar metric value.
+    """
     if _is_batched(x):
         return jnp.mean(
             jax.vmap(
@@ -258,7 +373,17 @@ def dynamics_violation_true(
     true_params: jax.Array,
     dt: float,
 ) -> jax.Array:
-    """Mean one-step violation under the ground-truth physics model."""
+    """Mean one-step violation under the ground-truth physics model.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        u: Controls aligned with the states.
+        true_dynamics: Ground-truth physics model.
+        true_params: Ground-truth physics parameters.
+        dt: Timestep in seconds.
+    Returns:
+        Scalar metric value.
+    """
     if _is_batched(x):
         return jnp.mean(
             jax.vmap(
@@ -271,7 +396,14 @@ def dynamics_violation_true(
 
 
 def fidelity(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """Mean per-step distance to ground-truth states."""
+    """Mean per-step distance to ground-truth states.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Scalar metric value.
+    """
     if _is_batched(x_corrected):
         return jnp.mean(jax.vmap(_trajectory_fidelity)(x_corrected, x_gt))
     return _trajectory_fidelity(x_corrected, x_gt)
@@ -312,6 +444,27 @@ def compute_metrics(
     ``dynamics_violation_learned`` always uses ``u_corrected`` (ignoring ``u_for_dynamics``)
     since it's a cycle-consistency check tied to the model's own output. ``u_for_dyn_learned``
     is for rows with no learned model of their own, borrowing the canonical MaDE model's.
+
+    Args:
+        x_corrected: Corrected states.
+        u_corrected: Controls produced by the method.
+        x_gt: Ground-truth states.
+        u_gt: Ground-truth controls.
+        constraints: Constraint set for the inequality metrics.
+        physics_known: Known physics model.
+        dynamics_learned: Learned augmented dynamics.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+        dynamics_true: Ground-truth physics model, if available.
+        true_params: Ground-truth parameters, if available.
+        u_for_dynamics: Control override for the dynamics-violation metrics.
+        u_for_inequality: Control override for the inequality metrics.
+        u_for_dyn_known: Control override for the known-model dynamics violation.
+        u_for_dyn_true: Control override for the ground-truth dynamics violation.
+        u_for_dyn_learned: Control override for the learned-model dynamics violation.
+        dyn_learned_available: Whether the learned-dynamics metric applies to this row.
+    Returns:
+        Dict of metric name to value.
     """
     del u_gt
     u_dyn = u_corrected if u_for_dynamics is None else u_for_dynamics
@@ -356,7 +509,8 @@ def compute_metrics(
     return metrics
 
 
-# Real-data (E2 / E3) metric helpers, additive siblings of the E1 helpers above.
+# Real-data (inD experiments) metric helpers, additive siblings of the simulated-experiment
+# helpers above.
 
 
 @dataclass(frozen=True)
@@ -382,6 +536,12 @@ def _flatten_with_lengths(
 
     Returns ``(M, D)``, ``M`` the total valid timesteps. ``lengths=None`` treats every entry
     as valid. Mirrors the inD pipeline, which pads ragged trajectories to a fixed length.
+
+    Args:
+        array: Array of shape (N, T, D).
+        lengths: Valid length per trajectory; None treats every step as valid.
+    Returns:
+        Valid timesteps, shape (M, D).
     """
     if array.ndim == 2:
         return array
@@ -401,7 +561,15 @@ def _round_outward(
     bounds_high: jax.Array,
     rounding: tuple[float, ...] | None,
 ) -> tuple[jax.Array, jax.Array]:
-    """Round lower bounds DOWN and upper bounds UP to multiples of ``rounding``."""
+    """Round lower bounds DOWN and upper bounds UP to multiples of ``rounding``.
+
+    Args:
+        bounds_low: Lower bounds.
+        bounds_high: Upper bounds.
+        rounding: Per-dimension rounding increments; None disables rounding.
+    Returns:
+        Tuple (rounded lower bounds, rounded upper bounds).
+    """
     if rounding is None:
         return bounds_low, bounds_high
     inc = jnp.asarray(rounding, dtype=bounds_low.dtype)
@@ -428,6 +596,17 @@ def estimate_empirical_envelope(
 
     Bounds are the 1st/99th percentile (configurable), rounded outward when increments are
     given. No IO; callable from JIT contexts.
+
+    Args:
+        states: Training states.
+        controls: Training controls.
+        lower_quantile: Lower quantile for the bounds.
+        upper_quantile: Upper quantile for the bounds.
+        state_rounding: Per-dimension rounding increments for state bounds.
+        control_rounding: Per-dimension rounding increments for control bounds.
+        lengths: Valid length per trajectory; masks padding.
+    Returns:
+        The estimated envelope.
     """
     state_lengths = lengths
     flat_states = _flatten_with_lengths(states, state_lengths)
@@ -464,6 +643,11 @@ def _envelope_state_only_constraint(envelope: EmpiricalEnvelope) -> ConstraintSe
 
     Used when the caller passes ``u=None`` to the empirical-envelope helpers: control box is
     ``[-inf, +inf]`` so control-side terms contribute zero violation.
+
+    Args:
+        envelope: Empirical envelope of the training data.
+    Returns:
+        Constraint set with permissive control bounds.
     """
     state_dtype = envelope.state_min.dtype
     ctrl_dim = envelope.control_min.shape[-1]
@@ -481,6 +665,11 @@ def envelope_constraint(envelope: EmpiricalEnvelope) -> ConstraintSet:
 
     For sampling/perturbation finite x,y, use _envelope_sampling_constraint
     or EmpiricalEnvelope directly.
+
+    Args:
+        envelope: Empirical envelope of the training data.
+    Returns:
+        Constraint set with x and y bounds removed.
     """
     xy_idx = jnp.asarray([0, 1])
     state_min = envelope.state_min.at[xy_idx].set(-jnp.inf)
@@ -497,6 +686,11 @@ def _envelope_sampling_constraint(envelope: EmpiricalEnvelope) -> "BoxConstraint
     """Return the unwrapped finite box from the envelope (including x,y bounds).
 
     Use this for sampling or perturbation where finite x,y limits are needed.
+
+    Args:
+        envelope: Empirical envelope of the training data.
+    Returns:
+        Finite box including x and y bounds.
     """
     return BoxConstraints(
         state_min=envelope.state_min,
@@ -507,6 +701,13 @@ def _envelope_sampling_constraint(envelope: EmpiricalEnvelope) -> "BoxConstraint
 
 
 def _envelope_constraint(envelope: EmpiricalEnvelope) -> ConstraintSet:
+    """Constraint set derived from the envelope for inequality scoring.
+
+    Args:
+        envelope: Empirical envelope of the training data.
+    Returns:
+        Constraint set.
+    """
     return envelope_constraint(envelope)
 
 
@@ -520,6 +721,13 @@ def empirical_envelope_violation_rate(
     When ``u`` is ``None``, only the state-side bounds are checked
     (used by non-MaDE variants which do not produce internal controls).
     Batched/unbatched dispatch matches :func:`inequality_violation_rate`.
+
+    Args:
+        x: States.
+        u: Controls, or None to check state bounds only.
+        envelope: Empirical envelope.
+    Returns:
+        Fraction of violating steps.
     """
     if u is None:
         constraints = _envelope_state_only_constraint(envelope)
@@ -546,6 +754,13 @@ def empirical_envelope_violation_magnitude(
 
     Mirrors the ``u=None`` semantics of
     :func:`empirical_envelope_violation_rate`.
+
+    Args:
+        x: States.
+        u: Controls, or None to check state bounds only.
+        envelope: Empirical envelope.
+    Returns:
+        Mean violation magnitude.
     """
     if u is None:
         constraints = _envelope_state_only_constraint(envelope)
@@ -565,45 +780,95 @@ def empirical_envelope_violation_magnitude(
 def ade(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
     """Average Displacement Error.
 
-    Alias of :func:`fidelity` (kept since Experiment 1 imports that name). Full-state norm
-    (all state dims), used by E01 and the locked ``results_e05.json``. Printed inD tables use
-    :func:`position_ade` / :func:`position_fde` instead, restricted to (x, y).
+    Alias of :func:`fidelity` (kept for existing imports of that name). Full-state norm
+    (all state dims), used by the simulated experiments and the inD results JSON.
+    Printed inD tables use :func:`position_ade` / :func:`position_fde` instead, restricted to
+    (x, y).
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Average displacement error.
     """
     return fidelity(x_corrected, x_gt)
 
 
 def _trajectory_fde(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
+    """Final-step L2 distance of one trajectory to ground truth.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Scalar distance.
+    """
     if x_corrected.shape[0] == 0:
         return jnp.asarray(0.0, dtype=x_corrected.dtype)
     return jnp.linalg.norm(x_corrected[-1] - x_gt[-1])
 
 
 def fde(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """Final Displacement Error — L2 distance between final timesteps."""
+    """Final Displacement Error — L2 distance between final timesteps.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Final displacement error.
+    """
     if _is_batched(x_corrected):
         return jnp.mean(jax.vmap(_trajectory_fde)(x_corrected, x_gt))
     return _trajectory_fde(x_corrected, x_gt)
 
 
 def _trajectory_position_ade(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """Mean over steps of the Euclidean (x, y) distance -- state indices 0 and 1."""
+    """Mean over steps of the Euclidean (x, y) distance -- state indices 0 and 1.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Mean position error.
+    """
     return _trajectory_fidelity(x_corrected[..., :2], x_gt[..., :2])
 
 
 def _trajectory_position_fde(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """Euclidean (x, y) distance at the final step."""
+    """Euclidean (x, y) distance at the final step.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Final position error.
+    """
     return _trajectory_fde(x_corrected[..., :2], x_gt[..., :2])
 
 
 def position_ade(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """inD ADE, position only, metres. Batched ([K,F,D]) or single ([F,D])."""
+    """inD ADE, position only, metres. Batched ([K,F,D]) or single ([F,D]).
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Position ADE in metres.
+    """
     if _is_batched(x_corrected):
         return jnp.mean(jax.vmap(_trajectory_position_ade)(x_corrected, x_gt))
     return _trajectory_position_ade(x_corrected, x_gt)
 
 
 def position_fde(x_corrected: jax.Array, x_gt: jax.Array) -> jax.Array:
-    """inD FDE, position only, metres. Batched or single."""
+    """inD FDE, position only, metres. Batched or single.
+
+    Args:
+        x_corrected: Corrected states.
+        x_gt: Ground-truth states.
+    Returns:
+        Position FDE in metres.
+    """
     if _is_batched(x_corrected):
         return jnp.mean(jax.vmap(_trajectory_position_fde)(x_corrected, x_gt))
     return _trajectory_position_fde(x_corrected, x_gt)
@@ -629,6 +894,17 @@ def gt_normalised_dynamics_residual(
         ``dynamics_violation_known`` evaluates against, the residual is bounded by Heun
         discretisation error and the ratio is uninformative. Use only on trajectories NOT
         produced by that stencil (real inD data, or rollouts off the KB+L manifold).
+
+    Args:
+        x: Trajectory states.
+        u: Controls.
+        physics: Known physics model.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+        gt_reference_residual: Reference residual on ground-truth trajectories.
+        eps: Floor on the reference residual.
+    Returns:
+        Normalised residual.
     """
     method = dynamics_violation_known(x, u, physics, params, dt)
     denom = jnp.maximum(jnp.asarray(gt_reference_residual, x.dtype), eps)
@@ -649,6 +925,16 @@ def estimate_gt_reference_residual(
     Per-trajectory residual via ``_trajectory_dynamics_violation_known``, meaned across
     trajectories (``lengths`` masks out padding). Returns a Python ``float`` for embedding in
     JSON metadata.
+
+    Args:
+        gt_states: Ground-truth training states.
+        gt_controls: Ground-truth training controls.
+        physics: Known physics model.
+        params: Physics parameters.
+        dt: Timestep in seconds.
+        lengths: Valid length per trajectory; masks padding.
+    Returns:
+        Mean residual as a Python float.
     """
     if gt_states.ndim == 2:
         residual = _trajectory_dynamics_violation_known(
@@ -683,6 +969,15 @@ def _trajectory_jerk(
     dt: float,
     position_indices: tuple[int, int],
 ) -> jax.Array:
+    """Mean L2 norm of the third finite difference of position for one trajectory.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        dt: Timestep in seconds.
+        position_indices: State indices of the (x, y) position.
+    Returns:
+        Scalar metric value.
+    """
     if x.shape[0] < 4:
         return jnp.asarray(0.0, dtype=x.dtype)
     pos = x[..., jnp.asarray(position_indices)]
@@ -701,6 +996,13 @@ def jerk(
 
     Returns ``0.0`` when the trajectory has fewer than four states.
     Defaults assume inD state ordering ``[x, y, heading, speed]``.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        dt: Timestep in seconds.
+        position_indices: State indices of the (x, y) position.
+    Returns:
+        Mean position jerk.
     """
     if _is_batched(x):
         return jnp.mean(
@@ -714,6 +1016,15 @@ def _trajectory_heading_jerk(
     dt: float,
     heading_index: int,
 ) -> jax.Array:
+    """Mean absolute heading jerk of one trajectory after unwrapping.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        dt: Timestep in seconds.
+        heading_index: State index of the heading.
+    Returns:
+        Scalar metric value.
+    """
     if x.shape[0] < 4:
         return jnp.asarray(0.0, dtype=x.dtype)
     h = jnp.unwrap(x[..., heading_index])
@@ -730,6 +1041,13 @@ def heading_jerk(
     """Mean absolute heading jerk after unwrapping.
 
     Returns ``0.0`` when the trajectory has fewer than four states.
+
+    Args:
+        x: States, shape (T, state_dim) or (N, T, state_dim).
+        dt: Timestep in seconds.
+        heading_index: State index of the heading.
+    Returns:
+        Mean absolute heading jerk.
     """
     if _is_batched(x):
         return jnp.mean(
@@ -739,10 +1057,15 @@ def heading_jerk(
 
 
 def _perturb_base_vector(envelope: EmpiricalEnvelope) -> jax.Array:
-    """Locked-spec base perturbation vector for E02 multiplier sweep.
+    """Base perturbation vector for the inD multiplier sweep.
 
     State dim 4 (KB ordering x, y, theta, v). Heading dim (idx 2) is ABSOLUTE
-    radians (0.1) per locked spec D8/§3.3 — NOT envelope-relative.
+    radians (0.1), NOT envelope-relative.
+
+    Args:
+        envelope: Empirical envelope of the training data.
+    Returns:
+        Base perturbation per state dimension.
     """
     state_min = envelope.state_min
     state_max = envelope.state_max
@@ -758,12 +1081,28 @@ def _perturb_pair(
     base_vec: jax.Array,
     sign: jax.Array,
 ) -> jax.Array:
-    """Single-pair perturbation: x_t + m * base * sign."""
+    """Single-pair perturbation: x_t + m * base * sign.
+
+    Args:
+        state_curr: Current state.
+        multiplier: Perturbation multiplier.
+        base_vec: Base perturbation vector.
+        sign: Random sign per dimension.
+    Returns:
+        Perturbed state.
+    """
     return state_curr + multiplier * base_vec * sign
 
 
 def _stationary_infeasible_mask(v_avg: jax.Array, threshold: float = 0.5) -> jax.Array:
-    """True iff |v_avg| < threshold (KB inverse degenerates near v=0)."""
+    """True iff |v_avg| < threshold (KB inverse degenerates near v=0).
+
+    Args:
+        v_avg: Average speed over the step.
+        threshold: Speed below which a step is stationary.
+    Returns:
+        Boolean mask.
+    """
     return jnp.abs(v_avg) < threshold
 
 
@@ -779,9 +1118,19 @@ def _i_known(
 
     Returns (u, is_stationary_carry): u has shape (2,), is_stationary_carry is a scalar bool.
     Distinct from `kinematic_bicycle_inverse_controls` (trajectory-major).
+
+    Args:
+        x_prev: Previous state.
+        x_curr: Current state.
+        dt: Timestep in seconds.
+        wheelbase: Vehicle wheelbase in metres.
+        stationary_speed_threshold: Speed below which a step counts as stationary.
+
+    Returns:
+        Tuple (u, is_stationary_carry).
     """
-    # FieldData deliberately: used on inD, where the option-D fallback belongs. The analytic
-    # base would change a published real-data feasibility metric; fallback stays scoped to
+    # FieldData deliberately: used on inD, where the simulated-data fallback does not apply. The
+    # analytic base would change a published real-data feasibility metric; fallback stays scoped to
     # simulated data.
     from made.physics.kinematic_bicycle import KinematicBicycleFieldData
     physics = KinematicBicycleFieldData()
@@ -814,6 +1163,17 @@ def evaluate_stepwise_feasible_split(
     ``fraction_infeasible`` and ``fraction_stationary_carry`` are DISJOINT —
     stationary steps are removed from the infeasible bucket because
     ``_i_known``'s arctan branch is unreliable at ``|v_avg| < 0.5 m/s``.
+
+    Args:
+        x_perturbed: Perturbed current states, shape (M, state_dim).
+        x_prev_gt: Ground-truth previous states.
+        x_corrected: Corrected current states.
+        x_curr_gt: Ground-truth current states.
+        dt: Timestep in seconds.
+        constraints_phys: Physical constraint set.
+        wheelbase: Vehicle wheelbase in metres.
+    Returns:
+        Dict of scalar arrays with the keys listed above.
     """
     i_known_v = jax.vmap(lambda xp, xc: _i_known(xp, xc, dt, wheelbase=wheelbase))
     u_known, is_stationary = i_known_v(x_prev_gt, x_perturbed)
@@ -852,6 +1212,11 @@ def _physical_state_only_constraint(physical: "ConstraintSet") -> ConstraintSet:
     Used when :func:`compute_inequality_dual` is called with ``u=None`` (methods
     that do not produce their own controls, e.g. raw upstream-predictor output).
     Mirrors :func:`_envelope_state_only_constraint`.
+
+    Args:
+        physical: Physical constraint set.
+    Returns:
+        Constraint set with permissive control bounds.
     """
     state_dtype = physical.state_min.dtype
     ctrl_dim = physical.control_min.shape[-1]
@@ -877,6 +1242,15 @@ def compute_inequality_dual(
     e.g. raw upstream-predictor output or the clamp baseline), only the
     state-side bounds are checked on both constraint sets — mirrors the
     ``u=None`` semantics of :func:`empirical_envelope_violation_rate`.
+
+    Args:
+        x: Corrected states.
+        u: Controls, or None to check state bounds only.
+        envelope: Empirical envelope.
+        physical: Physical constraint set.
+        lengths: Valid length per trajectory; masks padding.
+    Returns:
+        Dict of inequality metrics on both constraint sets.
     """
     env_box = envelope_constraint(envelope)
     if u is None:
@@ -938,12 +1312,18 @@ def kinematic_bicycle_inverse_controls(
         plus ``v_avg``-regularisation and is uninformative. Informative only on trajectories
         NOT generated by that stencil (real inD data; not Heun-perfect synthetic ones).
 
-    Returns
-    -------
-    controls : ``(N, T-1, 2)`` or ``(T-1, 2)``
-        Recovered ``[δ, a]`` per consecutive state pair.
-    aux : dict
-        ``{"stationary_frame_count": int}``, transitions in the stationary-frame branch.
+    Returns:
+        Tuple ``(controls, aux)``. ``controls`` has shape ``(N, T-1, 2)`` or ``(T-1, 2)`` and holds
+        the recovered ``[δ, a]`` per consecutive state pair. ``aux`` is
+        ``{"stationary_frame_count": int}``, the transitions in the stationary-frame branch.
+
+    Args:
+        states: States, shape (N, T, 4) or (T, 4).
+        dt: Timestep in seconds.
+        wheelbase: Vehicle wheelbase in metres.
+        eps: Unused; regularisation lives in the physics model.
+        stationary_speed_threshold: Speed below which the previous steering angle is carried
+            forward.
     """
     del eps  # v_avg regularisation is inside known_control_prior
     physics = KinematicBicycle()
@@ -951,6 +1331,13 @@ def kinematic_bicycle_inverse_controls(
 
     def _per_traj(traj: jax.Array) -> tuple[jax.Array, jax.Array]:
         # traj: (T, 4) -> controls (T-1, 2) plus a (T-1,) stationary mask.
+        """Recover controls for one trajectory.
+
+        Args:
+            traj: States, shape (T, 4).
+        Returns:
+            Tuple (controls (T-1, 2), stationary mask (T-1,)).
+        """
         prev = traj[:-1]
         curr = traj[1:]
         v_avg = 0.5 * (prev[:, 3] + curr[:, 3])
@@ -963,7 +1350,17 @@ def kinematic_bicycle_inverse_controls(
         # Carry forward δ when stationary: walk left-to-right, replacing
         # δ_t with δ_{t-1} (or 0.0 at t=0). a_t (raw[..., 1]) is exact under
         # ZOH and stays as-is.
-        def step(prev_delta, inputs):
+        def step(
+            prev_delta: jax.Array, inputs: tuple[jax.Array, jax.Array]
+        ) -> tuple[jax.Array, jax.Array]:
+            """Carry the previous steering angle forward on stationary steps.
+
+            Args:
+                prev_delta: Previous steering angle.
+                inputs: Tuple (raw controls, stationary flag).
+            Returns:
+                Tuple (new steering angle, controls row).
+            """
             r, s = inputs
             new_delta = jnp.where(s, prev_delta, r[0])
             out = jnp.stack([new_delta, r[1]])

@@ -1,7 +1,17 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Production-dt round-trip tests for known_control_prior on KB and DynBike.
 
 These tests pin the Newton-on-Heun inverse priors at the production dt=0.1 used
-by E01.  Heun integration of (delta, a) under ZOH constant control is the
+in the simulated experiments.  Heun integration of (delta, a) under ZOH constant control is the
 forward map the trainer actually uses; the inverse priors are constructed to be
 exact (KB, closed-form) or machine-zero accurate (DynBike, Newton-on-Heun)
 against that same forward map.
@@ -31,15 +41,27 @@ from made.physics import (
     KinematicBicycleFieldData,
     resolve_params,
 )
+from made.physics import PhysicsModel
 
 
 _DT = 0.1
 
 
 def _heun_step(
-    physics, x0: jax.Array, control: jax.Array, params: jax.Array, dt: float
+    physics: PhysicsModel, x0: jax.Array, control: jax.Array, params: jax.Array, dt: float
 ) -> jax.Array:
-    """Single diffrax Heun step at constant control over [0, dt]."""
+    """Single diffrax Heun step at constant control over [0, dt].
+
+    Args:
+        physics: Physics model.
+        x0: Initial state.
+        control: Constant control.
+        params: Physics parameters.
+        dt: Step size.
+
+    Returns:
+        State after one step.
+    """
     term = diffrax.ODETerm(lambda t, y, args: physics.vector_field(y, control, params, t))
     sol = diffrax.diffeqsolve(
         term,
@@ -57,7 +79,7 @@ def _heun_step(
 # KinematicBicycle: closed-form Heun inverse must be exact (machine zero).
 
 
-def test_kinematic_bicycle_inverse_exact_at_production_dt():
+def test_kinematic_bicycle_inverse_exact_at_production_dt() -> None:
     """KB Heun inverse with v_avg = (v_prev + v_curr)/2 must recover (delta, a)
     to machine precision at production dt=0.1.
 
@@ -87,7 +109,7 @@ def test_kinematic_bicycle_inverse_exact_at_production_dt():
     )
 
 
-def test_kinematic_bicycle_inverse_stationary_delta_zero_at_production_dt():
+def test_kinematic_bicycle_inverse_stationary_delta_zero_at_production_dt() -> None:
     """Option D: |v_avg| < 0.5 m/s → δ = 0 by fiat; acceleration is ZOH-exact.
 
     Stationary fallback is a primitive-level convention: the arctan singularity
@@ -139,7 +161,7 @@ def test_kinematic_bicycle_inverse_stationary_delta_zero_at_production_dt():
     assert jnp.abs(u_pred[1]) < 1e-12
 
 
-def test_kinematic_bicycle_inverse_exact_multi_regime():
+def test_kinematic_bicycle_inverse_exact_multi_regime() -> None:
     """KB inverse exact across mild/strong/aggressive (delta, a) at dt=0.1."""
     physics = KinematicBicycle()
     params = jnp.array([2.7], dtype=jnp.float64)
@@ -160,7 +182,7 @@ def test_kinematic_bicycle_inverse_exact_multi_regime():
 # DynamicBicycle: Newton-on-Heun inverse should match Heun forward to ~1e-8.
 
 
-def test_dynamic_bicycle_inverse_machine_zero_at_production_dt():
+def test_dynamic_bicycle_inverse_machine_zero_at_production_dt() -> None:
     """DynBike Newton-on-Heun inverse recovers (delta, a) to ~1e-8 at dt=0.1.
 
     With ``_NEWTON_HEUN_STEPS = 3`` outer iterations, the residual converges
@@ -189,7 +211,7 @@ def test_dynamic_bicycle_inverse_machine_zero_at_production_dt():
     )
 
 
-def test_dynamic_bicycle_inverse_multi_regime_at_production_dt():
+def test_dynamic_bicycle_inverse_multi_regime_at_production_dt() -> None:
     """DynBike inverse stays accurate across mild/strong/aggressive at dt=0.1."""
     physics = DynamicBicycle()
     params = resolve_params("dynamic_bicycle", {})
@@ -211,7 +233,7 @@ def test_dynamic_bicycle_inverse_multi_regime_at_production_dt():
         )
 
 
-def test_dynamic_bicycle_inverse_vmap_at_production_dt():
+def test_dynamic_bicycle_inverse_vmap_at_production_dt() -> None:
     """jax.vmap over a batch of Heun-generated pairs returns finite, accurate u."""
     physics = DynamicBicycle()
     params = resolve_params("dynamic_bicycle", {})
@@ -226,7 +248,17 @@ def test_dynamic_bicycle_inverse_vmap_at_production_dt():
     x1_batch = jnp.tile(x1[None], (B, 1))
     p_batch = jnp.tile(params[None], (B, 1))
 
-    def prior_single(xp, xc, p):
+    def prior_single(xp: jax.Array, xc: jax.Array, p: jax.Array) -> jax.Array:
+        """Known control prior for a single transition.
+
+        Args:
+            xp: Previous state.
+            xc: Current state.
+            p: Parameters.
+
+        Returns:
+            Prior control.
+        """
         return physics.known_control_prior(xp, xc, p, _DT)
 
     out = jax.vmap(prior_single)(x0_batch, x1_batch, p_batch)
@@ -239,7 +271,7 @@ def test_dynamic_bicycle_inverse_vmap_at_production_dt():
 # KinematicBicycleAsDynamicState delegation regression: bytewise equality.
 
 
-def test_kinematic_bicycle_as_dynamic_state_delegation_is_identical():
+def test_kinematic_bicycle_as_dynamic_state_delegation_is_identical() -> None:
     """KBAsDyn.known_control_prior == KB.known_control_prior on sliced state.
 
     The underspecified-condition wrapper must continue to delegate exactly to
@@ -272,11 +304,11 @@ def test_kinematic_bicycle_as_dynamic_state_delegation_is_identical():
         )
 
 
-def test_kinematic_bicycle_base_keeps_the_analytic_arctan():
+def test_kinematic_bicycle_base_keeps_the_analytic_arctan() -> None:
     """The base class must NOT zero δ, and the value it returns is why the split exists.
 
     On a jittery at-rest pair the analytic inverse returns ≈ ±π/2 — the spurious steering
-    the option-D fallback was introduced to suppress. That is correct to suppress on
+    the low-speed fallback was introduced to suppress. That is correct to suppress on
     recorded data and wrong to suppress on simulated data, which has no jitter. The split
     rests on that premise alone. The fallback IS what shifted the published simulated numbers
     on the seeds that ran under it.

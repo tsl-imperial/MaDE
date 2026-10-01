@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Default-tier dispatch tests for scripts/ind/train_made._train_variant.
 
 Exercises every legal variant (`made.utils.config._LEGAL_VARIANTS`) plus the unknown-variant
@@ -9,6 +19,8 @@ Budget: ~10 s on CPU + float64 with batch_size=8 and steps_per_epoch=1.
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
 import json
 import math
 import os
@@ -22,7 +34,7 @@ jax.config.update("jax_enable_x64", True)
 import pytest
 from dataclasses import replace
 
-from made.utils.config import _LEGAL_VARIANTS, load_config
+from made.utils.config import _LEGAL_VARIANTS, ExperimentConfig, load_config
 from scripts.ind.train_made import _build_data_loaders, _train_variant
 
 _CONFIG_PATH = "configs/ind/made.json"
@@ -39,13 +51,19 @@ _SENTINEL_CHECKS: dict[str, list[str]] = {
 }
 
 
-def _minimal_config(variant: str):
+def _minimal_config(variant: str) -> ExperimentConfig:
     """Load the shipped inD config, retag it with `variant`, and shrink to 1-step smoke size.
 
     made_phase2 overrides pretrained_phase1_path=None so the trainer skips the Phase-1 restore
     and runs from a fresh init. This is intentional: we only need to verify the dispatch fires
     the right code path and writes the sentinel -- full Phase-2 quality is not a default-tier
     obligation.
+
+    Args:
+        variant: Model variant tag.
+
+    Returns:
+        Config shrunk to smoke-test size.
     """
     config = load_config(_CONFIG_PATH)
     config = replace(
@@ -77,8 +95,16 @@ def _minimal_config(variant: str):
     return config
 
 
-def _stub_loaders(config, seed: int = 0):
-    """Build stub in-memory loaders (no real inD data required)."""
+def _stub_loaders(config: ExperimentConfig, seed: int = 0) -> tuple[Any, Any]:
+    """Build stub in-memory loaders (no real inD data required).
+
+    Args:
+        config: Experiment configuration.
+        seed: Random seed for the stub data.
+
+    Returns:
+        Train and validation loaders.
+    """
     train_loader, val_loader, _train_states, _train_lengths = _build_data_loaders(
         data_dir="<unused>",
         config=config,
@@ -101,7 +127,7 @@ _VARIANT_PARAMS = [
 
 
 @pytest.mark.parametrize("variant", _VARIANT_PARAMS)
-def test_train_variant_sentinel_and_summary(variant, tmp_path):
+def test_train_variant_sentinel_and_summary(variant: str, tmp_path: Path) -> None:
     """Each variant (a) writes its checkpoint sentinel and (b) produces a
     training_summary.json with a finite final_loss and the correct variant tag.
     """
@@ -138,7 +164,7 @@ def test_train_variant_sentinel_and_summary(variant, tmp_path):
 # Unknown-variant error
 
 
-def test_unknown_variant_raises(tmp_path):
+def test_unknown_variant_raises(tmp_path: Path) -> None:
     """_train_variant must raise ValueError containing 'Unknown variant' for bogus input."""
     config = load_config(_CONFIG_PATH)
     config = replace(config, variant="bogus", output_dir=str(tmp_path))

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Inequality-correcting control update loop."""
 
 from __future__ import annotations
@@ -38,7 +48,12 @@ class Corrector(eqx.Module):
     proximity_gamma: float
     tracking_gamma: float
 
-    def __init__(self, config: CorrectorConfig):
+    def __init__(self, config: CorrectorConfig) -> None:
+        """Copy the corrector hyperparameters from ``config``.
+
+        Args:
+            config: Corrector configuration.
+        """
         self.step_size = config.step_size
         self.momentum = config.momentum
         self.train_steps = config.train_steps
@@ -75,6 +90,22 @@ class Corrector(eqx.Module):
         | `_correct_train` | passed explicitly | `tracking_gamma` (differentiated through in phase 2) |
 
         Both fields default to 0.0; when the applicable one is zero the term is not built.
+
+        Args:
+            u: Candidate control.
+            constraints: Constraint set.
+            dynamics: Augmented dynamics used to propagate ``x_prev``.
+            x_prev: Previous state.
+            params: Physical parameters.
+            dt: Step length.
+            solver: Optional diffrax solver.
+            adjoint: Optional diffrax adjoint.
+            fast: Optional override for the single-step Heun fast path.
+            u_ref: Inverse-dynamics proposal for the quadratic term, or None.
+            gamma: Weight of the quadratic term; None uses ``proximity_gamma``.
+
+        Returns:
+            Scalar objective.
         """
         x = dynamics.integrate(
             x_prev, u, params, dt, solver=solver, adjoint=adjoint, fast=fast
@@ -105,6 +136,22 @@ class Corrector(eqx.Module):
         solver: diffrax.AbstractSolver | None,
         adjoint: diffrax.AbstractAdjoint | None,
     ) -> tuple[jax.Array, jax.Array]:
+        """Fixed-step momentum descent on the violation loss (differentiable).
+
+        Args:
+            x_pred: Predicted next state.
+            u: Initial control proposal.
+            constraints: Constraint set.
+            dynamics: Augmented dynamics.
+            x_prev: Previous state.
+            params: Physical parameters.
+            dt: Step length.
+            solver: Optional diffrax solver.
+            adjoint: Optional diffrax adjoint for the outer integration.
+
+        Returns:
+            Tuple ``(x_final, u_final)``.
+        """
         grad_adjoint = diffrax.DirectAdjoint() if adjoint is None else adjoint
 
         # `tracking_gamma` is a static float field, so this is a Python-level branch taken
@@ -117,6 +164,15 @@ class Corrector(eqx.Module):
             _: int,
             carry: tuple[jax.Array, jax.Array, jax.Array],
         ) -> tuple[jax.Array, jax.Array, jax.Array]:
+            """One momentum step.
+
+            Args:
+                _: Loop index (unused).
+                carry: ``(u, velocity, x)``.
+
+            Returns:
+                Updated ``(u, velocity, x)``.
+            """
             u_curr, velocity, _ = carry
             grad_u = jax.grad(self._violation_loss)(
                 u_curr,
@@ -171,9 +227,34 @@ class Corrector(eqx.Module):
     ) -> (
         tuple[jax.Array, jax.Array] | tuple[jax.Array, jax.Array, CorrectorDiagnostics]
     ):
+        """Adaptive momentum descent that stops at tolerance or the step cap.
+
+        Args:
+            x_pred: Predicted next state.
+            u: Initial control proposal.
+            constraints: Constraint set.
+            dynamics: Augmented dynamics.
+            x_prev: Previous state.
+            params: Physical parameters.
+            dt: Step length.
+            solver: Optional diffrax solver.
+            adjoint: Optional diffrax adjoint.
+            return_diagnostics: Also return a ``CorrectorDiagnostics``.
+
+        Returns:
+            ``(x_final, u_final)``, plus diagnostics when requested.
+        """
         adjoint = diffrax.DirectAdjoint() if adjoint is None else adjoint
 
         def _cond(carry: tuple[jax.Array, jax.Array, jax.Array, int]) -> jax.Array:
+            """Continue while violated and under the step cap.
+
+            Args:
+                carry: ``(u, velocity, x, step)``.
+
+            Returns:
+                Boolean scalar.
+            """
             u_curr, velocity, x_curr, step = carry
             del velocity
             return (jnp.max(constraints(x_curr, u_curr)) > self.eval_tol) & (
@@ -188,6 +269,14 @@ class Corrector(eqx.Module):
         def _body(
             carry: tuple[jax.Array, jax.Array, jax.Array, int],
         ) -> tuple[jax.Array, jax.Array, jax.Array, int]:
+            """One momentum step.
+
+            Args:
+                carry: ``(u, velocity, x, step)``.
+
+            Returns:
+                Updated ``(u, velocity, x, step)``.
+            """
             u_curr, velocity, _, step = carry
             grad_u = jax.grad(self._violation_loss)(
                 u_curr,
@@ -240,6 +329,31 @@ class Corrector(eqx.Module):
     ) -> (
         tuple[jax.Array, jax.Array] | tuple[jax.Array, jax.Array, CorrectorDiagnostics]
     ):
+        """Correct the control proposal according to ``mode``.
+
+        Args:
+            x_pred: Predicted next state.
+            u: Initial control proposal.
+            constraints: Constraint set.
+            dynamics: Augmented dynamics.
+            x_prev: Previous state.
+            params: Physical parameters.
+            dt: Step length.
+            training: Selects ``train_fixed`` when True and ``eval_adaptive`` otherwise, if
+                ``mode`` is None.
+            mode: One of ``train_fixed``, ``eval_adaptive``, ``it_only``,
+                ``detached_correction``.
+            solver: Optional diffrax solver.
+            adjoint: Optional diffrax adjoint.
+            return_diagnostics: Also return diagnostics (``eval_adaptive`` only).
+
+        Returns:
+            ``(x, u)``, plus ``CorrectorDiagnostics`` when requested.
+
+        Raises:
+            ValueError: If diagnostics are requested outside ``eval_adaptive`` or ``mode`` is
+                unsupported.
+        """
         mode = ("train_fixed" if training else "eval_adaptive") if mode is None else mode
         if return_diagnostics and mode != "eval_adaptive":
             raise ValueError(

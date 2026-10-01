@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """DynamicBicycle physics contract tests."""
 
 # ruff: noqa: E402
@@ -24,13 +34,15 @@ _BENIGN_STATE = jnp.array([0.0, 0.0, 0.0, 5.0, 0.1, 0.01], dtype=jnp.float64)
 _BENIGN_CONTROL = jnp.array([0.05, 0.2], dtype=jnp.float64)
 
 
-def test_vector_field_shape():
+def test_vector_field_shape() -> None:
+    """Verify vector field shape."""
     out = _DB.vector_field(_BENIGN_STATE, _BENIGN_CONTROL, _PARAMS, 0.0)
     assert out.shape == (6,)
     assert jnp.all(jnp.isfinite(out))
 
 
-def test_vmap_over_batch():
+def test_vmap_over_batch() -> None:
+    """Verify vmap over batch."""
     batch_size = 8
     states = jnp.broadcast_to(_BENIGN_STATE[None], (batch_size, 6))
     controls = jnp.broadcast_to(_BENIGN_CONTROL[None], (batch_size, 2))
@@ -39,9 +51,17 @@ def test_vmap_over_batch():
     assert jnp.all(jnp.isfinite(out))
 
 
-def test_finite_diff_vs_autodiff():
+def test_finite_diff_vs_autodiff() -> None:
     """Jacobian via finite differences vs autodiff (rel tol 1e-4) at non-zero v_x."""
     def f(s: jax.Array) -> jax.Array:
+        """Evaluate the vector field at state s.
+
+        Args:
+            s: State vector.
+
+        Returns:
+            Vector field value.
+        """
         return _DB.vector_field(s, _BENIGN_CONTROL, _PARAMS, 0.0)
 
     jac_auto = jax.jacobian(f)(_BENIGN_STATE)
@@ -58,7 +78,7 @@ def test_finite_diff_vs_autodiff():
     assert float(rel_err) < 1e-4, f"Relative Jacobian error {float(rel_err):.2e} exceeds 1e-4"
 
 
-def test_simulator_smoke():
+def test_simulator_smoke() -> None:
     """Generate 4 feasible DynamicBicycle trajectories of length 8."""
     constraints = dynamic_bicycle_constraints()
     states, controls = generate_trajectories(
@@ -70,7 +90,7 @@ def test_simulator_smoke():
     assert jnp.all(jnp.isfinite(controls))
 
 
-def test_simulator_runbook_dt_regression():
+def test_simulator_runbook_dt_regression() -> None:
     """Generate DynamicBicycle trajectories at the default runbook dt."""
     constraints = dynamic_bicycle_constraints()
     states, controls = generate_trajectories(

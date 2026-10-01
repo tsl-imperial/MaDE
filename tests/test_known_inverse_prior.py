@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for the known-inverse prior: known_control_prior methods and InverseDynamics refactor."""
 
 # ruff: noqa: E402
@@ -26,6 +36,7 @@ from made.physics import (
 )
 from made.training.dispatch import build_trainable
 from made.utils.config import CorrectorConfig, ExperimentConfig, ModelConfig, PhysicsConfig, TrainingConfig
+from typing import Any
 
 
 _DT = 0.1
@@ -36,7 +47,8 @@ _KEY = jax.random.key(42)
 
 
 @pytest.fixture
-def di_state_pair():
+def di_state_pair() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Double-integrator (x_prev, x_curr, params) triple."""
     x_prev = jnp.array([0.0, 0.0, 1.0, 2.0])
     x_curr = jnp.array([0.1, 0.2, 1.5, 2.3])
     params = jnp.zeros(0)
@@ -44,7 +56,8 @@ def di_state_pair():
 
 
 @pytest.fixture
-def unicycle_state_pair():
+def unicycle_state_pair() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Unicycle (x_prev, x_curr, params) triple."""
     x_prev = jnp.array([0.0, 0.0, 0.0, 1.0])
     x_curr = jnp.array([0.1, 0.0, 0.05, 1.1])
     params = jnp.zeros(0)
@@ -52,7 +65,8 @@ def unicycle_state_pair():
 
 
 @pytest.fixture
-def kinbicycle_state_pair():
+def kinbicycle_state_pair() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Kinematic-bicycle (x_prev, x_curr, params) triple."""
     L = 2.7
     x_prev = jnp.array([0.0, 0.0, 0.0, 5.0])
     x_curr = jnp.array([0.5, 0.0, 0.1, 5.1])
@@ -61,7 +75,8 @@ def kinbicycle_state_pair():
 
 
 @pytest.fixture
-def dynbicycle_state_pair():
+def dynbicycle_state_pair() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Dynamic-bicycle (x_prev, x_curr, params) triple."""
     params = resolve_params("dynamic_bicycle", {})
     x_prev = jnp.array([0.0, 0.0, 0.0, 5.0, 0.0, 0.0])
     x_curr = jnp.array([0.5, 0.0, 0.05, 5.1, 0.0, 0.1])
@@ -71,36 +86,49 @@ def dynbicycle_state_pair():
 # known_control_prior: shape and finiteness
 
 
-def test_double_integrator_known_control_prior_shape(di_state_pair):
+def test_double_integrator_known_control_prior_shape(
+    di_state_pair: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks double integrator known control prior shape."""
     x_prev, x_curr, params = di_state_pair
     u = DoubleIntegrator().known_control_prior(x_prev, x_curr, params, _DT)
     assert u.shape == (2,)
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_double_integrator_known_control_prior_exact(di_state_pair):
+def test_double_integrator_known_control_prior_exact(
+    di_state_pair: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks double integrator known control prior exact."""
     x_prev, x_curr, params = di_state_pair
     u = DoubleIntegrator().known_control_prior(x_prev, x_curr, params, _DT)
     expected = (x_curr[2:4] - x_prev[2:4]) / _DT
     assert jnp.allclose(u, expected)
 
 
-def test_unicycle_known_control_prior_shape(unicycle_state_pair):
+def test_unicycle_known_control_prior_shape(
+    unicycle_state_pair: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks unicycle known control prior shape."""
     x_prev, x_curr, params = unicycle_state_pair
     u = Unicycle().known_control_prior(x_prev, x_curr, params, _DT)
     assert u.shape == (2,)
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_kinematic_bicycle_known_control_prior_shape(kinbicycle_state_pair):
+def test_kinematic_bicycle_known_control_prior_shape(
+    kinbicycle_state_pair: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks kinematic bicycle known control prior shape."""
     x_prev, x_curr, params = kinbicycle_state_pair
     u = KinematicBicycle().known_control_prior(x_prev, x_curr, params, _DT)
     assert u.shape == (2,)
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_kinematic_bicycle_known_control_prior_near_zero_speed():
+def test_kinematic_bicycle_known_control_prior_near_zero_speed() -> None:
     # Should not produce NaN or Inf when speed is near zero
+    """Checks kinematic bicycle known control prior near zero speed."""
     params = jnp.array([2.7])
     x_prev = jnp.array([0.0, 0.0, 0.0, 0.0])
     x_curr = jnp.array([0.0, 0.0, 0.01, 0.01])
@@ -109,14 +137,18 @@ def test_kinematic_bicycle_known_control_prior_near_zero_speed():
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_dynamic_bicycle_known_control_prior_shape(dynbicycle_state_pair):
+def test_dynamic_bicycle_known_control_prior_shape(
+    dynbicycle_state_pair: tuple[jax.Array, jax.Array, jax.Array],
+) -> None:
+    """Checks dynamic bicycle known control prior shape."""
     x_prev, x_curr, params = dynbicycle_state_pair
     u = DynamicBicycle().known_control_prior(x_prev, x_curr, params, _DT)
     assert u.shape == (2,)
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_kinematic_bicycle_as_dynamic_state_known_control_prior():
+def test_kinematic_bicycle_as_dynamic_state_known_control_prior() -> None:
+    """Checks kinematic bicycle as dynamic state known control prior."""
     physics = KinematicBicycleAsDynamicState()
     params = jnp.array([2.7])
     x_prev = jnp.array([0.0, 0.0, 0.0, 5.0, 0.0, 0.0])
@@ -129,7 +161,7 @@ def test_kinematic_bicycle_as_dynamic_state_known_control_prior():
 # InverseDynamics structural decomposition
 
 
-def test_inverse_dynamics_with_residual_uses_known_prior():
+def test_inverse_dynamics_with_residual_uses_known_prior() -> None:
     """InverseDynamics(use_residual=True) output changes when mlp is perturbed,
     but the known-prior component is independent of mlp parameters."""
     physics = DoubleIntegrator()
@@ -143,14 +175,14 @@ def test_inverse_dynamics_with_residual_uses_known_prior():
     assert jnp.all(jnp.isfinite(u))
 
 
-def test_inverse_dynamics_fixed_i_has_no_mlp():
+def test_inverse_dynamics_fixed_i_has_no_mlp() -> None:
     """InverseDynamics(use_residual=False) should have mlp=None."""
     physics = DoubleIntegrator()
     inv = InverseDynamics(4, 2, 0, (16,), key=_KEY, known_physics=physics, dt=_DT, use_residual=False)
     assert inv.mlp is None
 
 
-def test_inverse_dynamics_fixed_i_returns_prior_exactly():
+def test_inverse_dynamics_fixed_i_returns_prior_exactly() -> None:
     """InverseDynamics(use_residual=False) output equals known_control_prior exactly."""
     physics = DoubleIntegrator()
     inv = InverseDynamics(4, 2, 0, (16,), key=_KEY, known_physics=physics, dt=_DT, use_residual=False)
@@ -162,7 +194,7 @@ def test_inverse_dynamics_fixed_i_returns_prior_exactly():
     assert jnp.allclose(u, u_prior)
 
 
-def test_inverse_dynamics_init_scale_zero():
+def test_inverse_dynamics_init_scale_zero() -> None:
     """ΔI MLP with init_scale=0.0 should produce near-zero outputs at init."""
     physics = DoubleIntegrator()
     inv = InverseDynamics(
@@ -187,7 +219,7 @@ def test_inverse_dynamics_init_scale_zero():
     assert jnp.allclose(inv.residual_norm(x_prev, x_curr, params), 0.0)
 
 
-def test_inverse_dynamics_fixed_i_residual_norm_is_zero():
+def test_inverse_dynamics_fixed_i_residual_norm_is_zero() -> None:
     """Fixed-I variants should report zero Delta I magnitude."""
     physics = DoubleIntegrator()
     inv = InverseDynamics(4, 2, 0, (16,), key=_KEY, known_physics=physics, dt=_DT, use_residual=False)
@@ -210,26 +242,28 @@ _DI_CFG = ExperimentConfig(
 )
 
 
-def test_made_fixed_i_builds():
+def test_made_fixed_i_builds() -> None:
+    """Checks made fixed i builds."""
     from made.models import MaDECell
     model = build_trainable(_DI_CFG, "made-fixed-i", _KEY)
     assert isinstance(model, MaDECell)
 
 
-def test_made_fixed_i_has_no_delta_i_mlp():
+def test_made_fixed_i_has_no_delta_i_mlp() -> None:
+    """Checks made fixed i has no delta i mlp."""
     model = build_trainable(_DI_CFG, "made-fixed-i", _KEY)
     assert model.inverse_dynamics.mlp is None
     assert not model.inverse_dynamics.use_residual
 
 
-def test_made_fixed_i_has_learned_fa_residual():
+def test_made_fixed_i_has_learned_fa_residual() -> None:
     """made-fixed-i: I is fixed but F_a in T is still learned."""
     from made.models.augmented_dynamics import ResidualNetwork
     model = build_trainable(_DI_CFG, "made-fixed-i", _KEY)
     assert isinstance(model.augmented_dynamics.residual, ResidualNetwork)
 
 
-def test_made_fixed_i_smoke_10_steps():
+def test_made_fixed_i_smoke_10_steps() -> None:
     """made-fixed-i completes 10 training steps without error."""
     import optax
     from made.training.losses import phase1_loss
@@ -247,13 +281,31 @@ def test_made_fixed_i_smoke_10_steps():
     rng = jax.random.key(0)
 
     @eqx.filter_jit
-    def step(model, opt_state, key):
+    def step(model: Any, opt_state: Any, key: jax.Array) -> tuple[Any, Any, jax.Array]:
+        """One Phase 1 optimiser step on random states.
+
+        Args:
+            model: Model being trained.
+            opt_state: Optimiser state.
+            key: PRNG key.
+
+        Returns:
+            Tuple of (new_model, new_opt_state, loss).
+        """
         k1, k2 = jax.random.split(key)
         states = jax.random.normal(k1, (batch_size, 4))
         u_sampled = jax.random.normal(k2, (batch_size, 2))
         params_batch = jnp.tile(params, (batch_size, 1))
 
-        def loss_fn(m):
+        def loss_fn(m: Any) -> jax.Array:
+            """Phase 1 loss for a model.
+
+            Args:
+                m: Model to evaluate.
+
+            Returns:
+                Scalar loss.
+            """
             total, _ = phase1_loss(m, states, states, params_batch, dt, u_sampled, train_cfg)
             return total
 
@@ -268,7 +320,8 @@ def test_made_fixed_i_smoke_10_steps():
         assert jnp.isfinite(loss), f"Loss is non-finite at step {i}: {loss}"
 
 
-def test_phase1_metrics_report_delta_i_norm():
+def test_phase1_metrics_report_delta_i_norm() -> None:
+    """Checks phase1 metrics report delta i norm."""
     from made.physics import resolve_params
     from made.training.losses import phase1_loss
 
@@ -299,7 +352,7 @@ def test_phase1_metrics_report_delta_i_norm():
 
 
 @pytest.fixture
-def feasible_dyn_bicycle_trajectory():
+def feasible_dyn_bicycle_trajectory() -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, float]:
     """A feasible (x_prev, x_curr, params, control_true, dt) triple from the simulator.
 
     Uses a single Heun integration step with nontrivial steering so the
@@ -337,7 +390,9 @@ def feasible_dyn_bicycle_trajectory():
     return x0, x1, params, control, dt
 
 
-def test_dynamic_bicycle_inverse_recovers_truth(feasible_dyn_bicycle_trajectory):
+def test_dynamic_bicycle_inverse_recovers_truth(
+    feasible_dyn_bicycle_trajectory: tuple[jax.Array, jax.Array, jax.Array, jax.Array, float],
+) -> None:
     """New prior recovers (delta, a) accurately vs ground-truth controls.
 
     Tolerance: absolute error < 1e-3 rad (delta) and < 5e-3 m/s^2 (accel).
@@ -362,7 +417,9 @@ def test_dynamic_bicycle_inverse_recovers_truth(feasible_dyn_bicycle_trajectory)
     )
 
 
-def test_dynamic_bicycle_kinematic_prior_fails_same_tolerance(feasible_dyn_bicycle_trajectory):
+def test_dynamic_bicycle_kinematic_prior_fails_same_tolerance(
+    feasible_dyn_bicycle_trajectory: tuple[jax.Array, jax.Array, jax.Array, jax.Array, float],
+) -> None:
     """Old kinematic prior misses by ≥10× vs new prior on delta (anti-tautology guard).
 
     The old formula is replicated inline so this test does not depend on the
@@ -398,7 +455,9 @@ def test_dynamic_bicycle_kinematic_prior_fails_same_tolerance(feasible_dyn_bicyc
     )
 
 
-def test_dynamic_bicycle_inverse_one_iter_already_strong(feasible_dyn_bicycle_trajectory):
+def test_dynamic_bicycle_inverse_one_iter_already_strong(
+    feasible_dyn_bicycle_trajectory: tuple[jax.Array, jax.Array, jax.Array, jax.Array, float],
+) -> None:
     """A single Newton iteration already beats the kinematic prior by ≥5×.
 
     Documents that _NEWTON_STEPS=2 is safety margin, not load-bearing math
@@ -445,7 +504,7 @@ def test_dynamic_bicycle_inverse_one_iter_already_strong(feasible_dyn_bicycle_tr
     )
 
 
-def test_dynamic_bicycle_inverse_finite_at_low_vx():
+def test_dynamic_bicycle_inverse_finite_at_low_vx() -> None:
     """Prior returns finite (delta, a) when vx is inside the safe_vx branch."""
     physics = DynamicBicycle()
     params = resolve_params("dynamic_bicycle", {})
@@ -457,7 +516,9 @@ def test_dynamic_bicycle_inverse_finite_at_low_vx():
     assert jnp.all(jnp.isfinite(u)), f"Prior returned non-finite values at low vx: {u}"
 
 
-def test_dynamic_bicycle_inverse_vmap_compatible(feasible_dyn_bicycle_trajectory):
+def test_dynamic_bicycle_inverse_vmap_compatible(
+    feasible_dyn_bicycle_trajectory: tuple[jax.Array, jax.Array, jax.Array, jax.Array, float],
+) -> None:
     """jax.vmap over a batch of (x_prev, x_curr, params) returns shape (B, 2) finite."""
     x_prev, x_curr, params, _, dt = feasible_dyn_bicycle_trajectory
     B = 8
@@ -467,7 +528,17 @@ def test_dynamic_bicycle_inverse_vmap_compatible(feasible_dyn_bicycle_trajectory
 
     physics = DynamicBicycle()
 
-    def prior_single(xp, xc, p):
+    def prior_single(xp: jax.Array, xc: jax.Array, p: jax.Array) -> jax.Array:
+        """Known control prior for a single transition.
+
+        Args:
+            xp: Previous state.
+            xc: Current state.
+            p: Parameters.
+
+        Returns:
+            Prior control.
+        """
         return physics.known_control_prior(xp, xc, p, dt)
 
     result = jax.vmap(prior_single)(x_prev_batch, x_curr_batch, params_batch)
@@ -475,7 +546,9 @@ def test_dynamic_bicycle_inverse_vmap_compatible(feasible_dyn_bicycle_trajectory
     assert jnp.all(jnp.isfinite(result))
 
 
-def test_dynamic_bicycle_inverse_jit_compatible(feasible_dyn_bicycle_trajectory):
+def test_dynamic_bicycle_inverse_jit_compatible(
+    feasible_dyn_bicycle_trajectory: tuple[jax.Array, jax.Array, jax.Array, jax.Array, float],
+) -> None:
     """eqx.filter_jit on known_control_prior traces cleanly; output matches eager within 1e-12."""
     x_prev, x_curr, params, _, dt = feasible_dyn_bicycle_trajectory
     physics = DynamicBicycle()
@@ -489,7 +562,7 @@ def test_dynamic_bicycle_inverse_jit_compatible(feasible_dyn_bicycle_trajectory)
     )
 
 
-def test_dynamic_bicycle_safe_vx_eps_consistency():
+def test_dynamic_bicycle_safe_vx_eps_consistency() -> None:
     """_SAFE_VX_EPS ClassVar is used in both vector_field and known_control_prior.
 
     Verifies single source of truth: if the epsilon ever changes, both

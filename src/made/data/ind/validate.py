@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Validation harness for preprocessed inD artefacts.
 
 CLI: python -m made.data.ind.validate <data_dir>
@@ -29,6 +39,11 @@ class ValidationReport:
     warnings: List[str] = field(default_factory=list)
 
     def __str__(self) -> str:
+        """Human-readable report.
+
+        Returns:
+            Multi-line summary of errors and warnings.
+        """
         lines = ["ValidationReport:"]
         lines.append(f"  PASSED: {self.passed}")
         if self.errors:
@@ -45,15 +60,11 @@ class ValidationReport:
 def validate_preprocessed(data_dir: str) -> ValidationReport:
     """Run all validation checks on a preprocessed inD directory.
 
-    Parameters
-    ----------
-    data_dir:
-        Path to a versioned preprocessed root (e.g. ``data/inD-preprocessed/v1``).
+    Args:
+        data_dir: Path to a versioned preprocessed root (e.g. ``data/inD-preprocessed/v1``).
 
-    Returns
-    -------
-    ValidationReport
-        ``.passed`` is True iff zero errors were found.
+    Returns:
+        ValidationReport: ``.passed`` is True iff zero errors were found.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -231,12 +242,12 @@ def validate_preprocessed(data_dir: str) -> ValidationReport:
 def validate_and_check_lanelet_paths(data_dir: str, raw_dir: str) -> ValidationReport:
     """Run full validation including lanelet map file existence check.
 
-    Parameters
-    ----------
-    data_dir:
-        Preprocessed root directory.
-    raw_dir:
-        inD raw ``data/`` directory (used to locate the dataset root for map files).
+    Args:
+        data_dir: Preprocessed root directory.
+        raw_dir: inD raw ``data/`` directory (used to locate the dataset root for map files).
+
+    Returns:
+        Report that also covers lanelet map files.
     """
     report = validate_preprocessed(data_dir)
 
@@ -266,6 +277,7 @@ def validate_and_check_lanelet_paths(data_dir: str, raw_dir: str) -> ValidationR
 
 # CLI entry point: python -m made.data.ind.validate
 def _cli() -> None:
+    """Command-line entry point."""
     import argparse
     import sys
 

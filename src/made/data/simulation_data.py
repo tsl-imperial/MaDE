@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Synthetic trajectory generation and storage."""
 
 from __future__ import annotations
@@ -5,6 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -25,7 +36,16 @@ __all__ = [
 ]
 
 
-def _instantiate_system(system: str):
+def _instantiate_system(system: str) -> tuple[Any, Any, Any]:
+    """Build the physics model and constraints for a named system.
+
+    Args:
+        system: Physics system name.
+    Returns:
+        Tuple (physics, constraints, parameter order).
+    Raises:
+        ValueError: If the system is not supported.
+    """
     if system not in PARAMETER_ORDER:
         raise ValueError(f"Unsupported physics system '{system}'.")
     physics, constraints = build_system(system)
@@ -33,11 +53,26 @@ def _instantiate_system(system: str):
 
 
 def _true_params_array(physics_config: PhysicsConfig) -> tuple[jax.Array, tuple[str, ...]]:
+    """Resolve the true parameter array and its ordering.
+
+    Args:
+        physics_config: Physics configuration.
+    Returns:
+        Tuple (parameter array, parameter names).
+    """
     _, _, param_order = _instantiate_system(physics_config.true_system)
     return resolve_params(physics_config.true_system, physics_config.true_params), tuple(param_order)
 
 
 def _save_split(output_dir: Path, split: str, states: jax.Array, controls: jax.Array) -> None:
+    """Write one split as states.npy and controls.npy.
+
+    Args:
+        output_dir: Dataset root.
+        split: Split name.
+        states: State trajectories.
+        controls: Control trajectories.
+    """
     split_dir = output_dir / split
     split_dir.mkdir(parents=True, exist_ok=True)
     np.save(split_dir / "states.npy", np.asarray(states))
@@ -55,7 +90,14 @@ def generate_and_save(
     output_dir: str,
     key: jax.Array,
 ) -> None:
-    """Generate train/val/test splits and persist them to disk."""
+    """Generate train/val/test splits and persist them to disk.
+
+    Args:
+        physics_config: Physics configuration.
+        data_config: Data configuration.
+        output_dir: Directory to write the dataset to.
+        key: Root PRNG key.
+    """
     physics, constraints, param_order = _instantiate_system(physics_config.true_system)
     true_params, param_order = _true_params_array(physics_config)
     key_train, key_val, key_test = jax.random.split(key, 3)
@@ -136,7 +178,14 @@ def generate_and_save(
 
 
 def load_split(data_dir: str, split: str) -> tuple[jax.Array, jax.Array]:
-    """Load one simulated split from disk."""
+    """Load one simulated split from disk.
+
+    Args:
+        data_dir: Dataset directory.
+        split: Split name.
+    Returns:
+        Tuple (states, controls) as float64 arrays.
+    """
     split_dir = Path(data_dir) / split
     states = np.load(split_dir / "states.npy")
     controls = np.load(split_dir / "controls.npy")

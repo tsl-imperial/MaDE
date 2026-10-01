@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Per-track filtering, grouping, downsampling, and state extraction.
 
 Downsample rule: keep frames where (track_frame_index % DOWNSAMPLE_FACTOR ==
@@ -8,7 +18,7 @@ State schema: (x, y, theta_rad, v) where x, y are xCenter/yCenter from the inD C
 (metres); theta is deg2rad(heading) wrapped to (-pi, pi]; v is
 hypot(xVelocity, yVelocity), NOT lonVelocity (body-frame gotcha).
 
-Metadata schema (plan §3): [length, width, class_one_hot[0], class_one_hot[1],
+Metadata schema: [length, width, class_one_hot[0], class_one_hot[1],
 location_id_float], class_one_hot over ("car", "truck_bus").
 """
 
@@ -29,7 +39,13 @@ from made.data.ind.constants import (
 
 
 def _filter_vehicle_track_ids(meta_rows: list[dict[str, str]]) -> set[int]:
-    """Return the set of track IDs whose class is in VEHICLE_CLASSES."""
+    """Return the set of track IDs whose class is in VEHICLE_CLASSES.
+
+    Args:
+        meta_rows: Rows of the tracks metadata table.
+    Returns:
+        Vehicle track ids.
+    """
     return {
         int(row["trackId"])
         for row in meta_rows
@@ -41,7 +57,14 @@ def _group_track_frames(
     track_rows: list[dict[str, str]],
     vehicle_ids: set[int],
 ) -> dict[int, list[dict[str, str]]]:
-    """Group track rows by track ID, keeping only vehicle tracks, sorted by frame."""
+    """Group track rows by track ID, keeping only vehicle tracks, sorted by frame.
+
+    Args:
+        track_rows: Rows of the tracks table.
+        vehicle_ids: Track ids to keep.
+    Returns:
+        Mapping track id -> rows sorted by frame.
+    """
     grouped: dict[int, list[dict[str, str]]] = defaultdict(list)
     for row in track_rows:
         tid = int(row["trackId"])
@@ -61,12 +84,24 @@ def _downsample_track(
 
     The relative frame index starts at 0 for the track's first native frame,
     regardless of the global frame counter.  This gives Δt = 0.2 s per step.
+
+    Args:
+        rows: Track rows in frame order.
+        phase: Relative index of the first retained frame.
+    Returns:
+        Retained rows.
     """
     return [row for i, row in enumerate(rows) if i % DOWNSAMPLE_FACTOR == phase]
 
 
 def _wrap_to_pi(angle_rad: float) -> float:
-    """Wrap angle to (-pi, pi]."""
+    """Wrap angle to (-pi, pi].
+
+    Args:
+        angle_rad: Angle in radians.
+    Returns:
+        Wrapped angle.
+    """
     wrapped = math.fmod(angle_rad, 2 * math.pi)
     # fmod preserves sign; shift into (-pi, pi]
     if wrapped > math.pi:
@@ -80,6 +115,11 @@ def _rows_to_state(rows: list[dict[str, str]]) -> np.ndarray:
     """Convert a list of track rows to a float64 state array of shape [T, 4].
 
     State columns: (x, y, theta_rad, v).
+
+    Args:
+        rows: Track rows.
+    Returns:
+        State array, shape [T, 4].
     """
     T = len(rows)
     states = np.empty((T, 4), dtype=np.float64)
@@ -99,7 +139,13 @@ def _rows_to_state(rows: list[dict[str, str]]) -> np.ndarray:
 
 
 def _class_one_hot(class_label: str) -> list[float]:
-    """One-hot over CLASS_VOCAB = ["car", "truck_bus"]."""
+    """One-hot over CLASS_VOCAB = ["car", "truck_bus"].
+
+    Args:
+        class_label: Vehicle class label.
+    Returns:
+        One-hot list.
+    """
     return [1.0 if class_label == item else 0.0 for item in CLASS_VOCAB]
 
 
@@ -111,6 +157,12 @@ def _track_metadata(
 
     Schema: [length, width, one_hot_car, one_hot_truck_bus, location_id_float]
     Shape: [5] float64.
+
+    Args:
+        meta_row: Row of the tracks metadata table.
+        location_id: Location id of the recording.
+    Returns:
+        Metadata vector, shape [5].
     """
     length = float(meta_row["length"])
     width = float(meta_row["width"])
@@ -136,6 +188,16 @@ def process_recording_tracks(
         location_id     int
         recording_id    int
         start_frame_native  int   (first native frame retained after downsample)
+
+    Args:
+        track_rows: Rows of the tracks table.
+        track_meta_rows: Rows of the tracks metadata table.
+        location_id: Location id of the recording.
+        recording_id: Recording id.
+        min_frames: Minimum length after downsampling.
+        phase: Relative index of the first retained frame.
+    Returns:
+        One record per accepted trajectory.
     """
     meta_by_id: dict[int, dict[str, str]] = {
         int(row["trackId"]): row for row in track_meta_rows

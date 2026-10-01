@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Frozen configuration dataclasses and JSON helpers."""
 
 from __future__ import annotations
@@ -51,7 +61,7 @@ class ModelConfig:
     num_locations: int = 0
     embedding_dim: int = 8
     # Metadata encoder's output map. False (default, bit-identical to every existing
-    # checkpoint and E01) keeps `sigmoid(mlp(...)) * param_scales`. True makes it
+    # checkpoint and simulated experiment) keeps `sigmoid(mlp(...)) * param_scales`. True makes it
     # `softplus(mlp(...))`: positive and unbounded above, since a bounded map would cap the
     # learned wheelbase near 1 m (param_scales defaults to ones on the inD path) against a
     # physical ~3 m. No initial offset: softplus(0)=0.693 is already close to sigmoid(0)*1.0=0.5.
@@ -177,6 +187,11 @@ class TrainingConfig:
     is_field_data: bool = False
 
     def __post_init__(self) -> None:
+        """Validate training hyperparameters.
+
+        Raises:
+            ValueError: If a field is out of range.
+        """
         if self.steps_per_epoch is not None and self.steps_per_epoch <= 0:
             raise ValueError(
                 f"steps_per_epoch must be positive or None, got {self.steps_per_epoch}"
@@ -283,9 +298,9 @@ class DataConfig:
     perturbation_scale: float = 0.0
     perturbation_scale_per_dim: tuple[float, ...] | None = None
     noise_scale: float = 0.0
-    # "iid_uniform" (default) reproduces E01's canonical white-noise-steering datasets
-    # byte-for-byte. "smooth_ou" opts into a temporally-correlated Ornstein-Uhlenbeck
-    # control profile for inD-like calm driving (E05).
+    # "iid_uniform" (default) reproduces the simulated experiments' canonical
+    # white-noise-steering datasets byte-for-byte. "smooth_ou" opts into a
+    # temporally-correlated Ornstein-Uhlenbeck control profile for inD-like calm driving.
     control_profile: str = "iid_uniform"
     control_tau: float = 1.5
     # Minimum longitudinal speed a trajectory must maintain at every timestep
@@ -306,6 +321,11 @@ class DataConfig:
     add_generation_noise: bool = False
 
     def __post_init__(self) -> None:
+        """Validate the control-sampling bounds.
+
+        Raises:
+            ValueError: If a field is out of range.
+        """
         for name in ("control_sample_min", "control_sample_max"):
             v = getattr(self, name)
             if v is not None and not all(math.isfinite(x) for x in v):
@@ -359,7 +379,15 @@ class EvaluationConfig:
 
 
 def _baseline_post_init(cfg: Any) -> None:
-    """Shared validation for all *BaselineConfig dataclasses."""
+    """Shared validation for all *BaselineConfig dataclasses.
+
+    Args:
+        cfg: Baseline config exposing ``lr``, ``num_epochs``, ``steps_per_epoch`` and early-stopping
+            fields.
+
+    Raises:
+        ValueError: If a field is out of range.
+    """
     if cfg.lr <= 0:
         raise ValueError(f"{type(cfg).__name__}.lr must be > 0")
     if cfg.num_epochs < 1:
@@ -386,6 +414,7 @@ class MLPBaselineConfig:
     es_min_epochs: int = 0
 
     def __post_init__(self) -> None:
+        """Validate the baseline hyperparameters."""
         _baseline_post_init(self)
 
 
@@ -404,6 +433,7 @@ class FABBaselineConfig:
     normalise_inputs: bool = False
 
     def __post_init__(self) -> None:
+        """Validate the baseline hyperparameters."""
         _baseline_post_init(self)
 
 
@@ -432,7 +462,14 @@ class ExperimentConfig:
 
 
 def _migrate_schema(payload: dict[str, Any]) -> dict[str, Any]:
-    """Migrate old-schema JSON fields to current names."""
+    """Migrate old-schema JSON fields to current names.
+
+    Args:
+        payload: Config payload parsed from JSON.
+
+    Returns:
+        Copy of the payload using current field names and defaults.
+    """
     payload = dict(payload)
 
     # Migrate physics.system -> physics.true_system
@@ -514,7 +551,14 @@ def _migrate_schema(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _coerce_tuple_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    """Convert JSON list fields back into tuple-backed config fields."""
+    """Convert JSON list fields back into tuple-backed config fields.
+
+    Args:
+        payload: Config payload parsed from JSON.
+
+    Returns:
+        Copy of the payload with list fields converted to tuples.
+    """
     model_payload = dict(payload["model"])
     model_payload["inverse_hidden"] = tuple(model_payload["inverse_hidden"])
     model_payload["residual_hidden"] = tuple(model_payload["residual_hidden"])
@@ -540,12 +584,29 @@ def _coerce_tuple_fields(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def to_json(config: ExperimentConfig) -> str:
-    """Serialise an experiment config to stable JSON."""
+    """Serialise an experiment config to stable JSON.
+
+    Args:
+        config: Config to serialise.
+
+    Returns:
+        Sorted-key JSON string.
+    """
     return json.dumps(asdict(config), indent=2, sort_keys=True)
 
 
 def from_json(json_str: str) -> ExperimentConfig:
-    """Reconstruct an experiment config from JSON."""
+    """Reconstruct an experiment config from JSON.
+
+    Args:
+        json_str: JSON produced by ``to_json``.
+
+    Returns:
+        The reconstructed config.
+
+    Raises:
+        ValueError: If the JSON contains non-finite values.
+    """
     raw = json.loads(
         json_str,
         parse_constant=lambda s: (_ for _ in ()).throw(ValueError(f"Non-finite JSON value: {s}")),
@@ -569,17 +630,40 @@ def from_json(json_str: str) -> ExperimentConfig:
 
 
 def save_config(config: ExperimentConfig, path: str) -> None:
-    """Save a config to disk as JSON."""
+    """Save a config to disk as JSON.
+
+    Args:
+        config: Config to save.
+        path: Destination file.
+    """
     Path(path).write_text(to_json(config) + "\n", encoding="utf-8")
 
 
 def load_config(path: str) -> ExperimentConfig:
-    """Load a config from disk."""
+    """Load a config from disk.
+
+    Args:
+        path: JSON file written by ``save_config``.
+
+    Returns:
+        The loaded config.
+    """
     return from_json(Path(path).read_text(encoding="utf-8"))
 
 
 def override_config(config: ExperimentConfig, overrides: dict[str, Any]) -> ExperimentConfig:
-    """Apply dot-separated overrides to nested frozen dataclasses."""
+    """Apply dot-separated overrides to nested frozen dataclasses.
+
+    Args:
+        config: Config to override.
+        overrides: Map from ``"<section>.<field>"`` to the new value.
+
+    Returns:
+        New config with the overrides applied.
+
+    Raises:
+        ValueError: If an override key is not of the form ``<section>.<field>``.
+    """
     updated: ExperimentConfig = config
     for dotted_key, value in overrides.items():
         parts = dotted_key.split(".")

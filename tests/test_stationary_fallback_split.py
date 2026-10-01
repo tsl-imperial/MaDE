@@ -1,4 +1,14 @@
-"""The option-D stationary fallback applies to FIELD DATA ONLY.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""The stationary fallback applies to FIELD DATA ONLY.
 
 Three conventions coexist deliberately. These tests pin which is which, because the
 difference is silent: both classes return a well-formed control and only differ on
@@ -7,6 +17,7 @@ three orders.
 """
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -17,13 +28,23 @@ DT = 0.1
 PARAMS = jnp.asarray([2.7])
 
 
-def _pair(v_prev, v_curr, dtheta=0.02):
+def _pair(v_prev: float, v_curr: float, dtheta: float = 0.02) -> tuple[jax.Array, jax.Array]:
+    """Build a consecutive state pair with the given speeds.
+
+    Args:
+        v_prev: Speed at the previous step.
+        v_curr: Speed at the current step.
+        dtheta: Heading change between the two steps.
+
+    Returns:
+        The `(x_prev, x_curr)` state vectors.
+    """
     x_prev = jnp.asarray([0.0, 0.0, 0.0, v_prev])
     x_curr = jnp.asarray([0.0, 0.0, dtheta, v_curr])
     return x_prev, x_curr
 
 
-def test_below_threshold_base_is_analytic_fielddata_is_zero():
+def test_below_threshold_base_is_analytic_fielddata_is_zero() -> None:
     """The whole point of the split: same input, different delta, only when slow."""
     xp, xc = _pair(0.2, 0.2)          # v_avg = 0.2 < 0.5
     base = KinematicBicycle().known_control_prior(xp, xc, PARAMS, DT)
@@ -34,14 +55,16 @@ def test_below_threshold_base_is_analytic_fielddata_is_zero():
                                err_msg="acceleration is ZOH-exact and must never diverge")
 
 
-def test_above_threshold_the_two_agree_exactly():
+def test_above_threshold_the_two_agree_exactly() -> None:
+    """Check that above threshold the two agree exactly."""
     xp, xc = _pair(8.0, 8.2)          # v_avg = 8.1 > 0.5
     base = KinematicBicycle().known_control_prior(xp, xc, PARAMS, DT)
     field = KinematicBicycleFieldData().known_control_prior(xp, xc, PARAMS, DT)
     np.testing.assert_array_equal(np.asarray(base), np.asarray(field))
 
 
-def test_threshold_boundary_is_strict_less_than():
+def test_threshold_boundary_is_strict_less_than() -> None:
+    """Check that threshold boundary is strict less than."""
     for v, expect_zero in ((0.499, True), (0.5, False), (0.501, False)):
         xp, xc = _pair(v, v)
         d = float(KinematicBicycleFieldData().known_control_prior(xp, xc, PARAMS, DT)[0])
@@ -49,7 +72,7 @@ def test_threshold_boundary_is_strict_less_than():
 
 
 @pytest.mark.parametrize("system", ["kinematic_bicycle", "double_integrator", "unicycle"])
-def test_simulated_construction_never_yields_the_fallback(system):
+def test_simulated_construction_never_yields_the_fallback(system: str) -> None:
     """build_system_for_model must hand back the ANALYTIC base: simulated data has no
     sensor jitter, so the jitter guard must not reach it."""
     physics, _ = build_system_for_model(system, None)
@@ -58,7 +81,7 @@ def test_simulated_construction_never_yields_the_fallback(system):
     )
 
 
-def test_underspecified_db_known_model_is_not_field_data():
+def test_underspecified_db_known_model_is_not_field_data() -> None:
     """DB-underspecified uses KB as its KNOWN model and is simulated, so it takes the base
     regardless of transition speeds -- pins the code boundary, not a data property."""
     physics, _ = build_system_for_model("dynamic_bicycle", "kinematic_bicycle")

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """FAB phase 2 — latent space structuring, implemented from arXiv:2604.03489.
 
 Implements the paper's second training phase; `fab_baseline` covers phase 1 plus the
@@ -87,7 +97,14 @@ class Discriminator(eqx.Module):
         hidden: tuple[int, ...] = (256, 256),
         *,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the discriminator MLP.
+
+        Args:
+            state_dim: State dimension.
+            hidden: Hidden layer widths.
+            key: PRNG key.
+        """
         width = hidden[0] if hidden else max(2 * state_dim, 1)
         self.mlp = eqx.nn.MLP(
             in_size=2 * state_dim,
@@ -99,13 +116,35 @@ class Discriminator(eqx.Module):
         )
 
     def logit(self, pair: jax.Array) -> jax.Array:
+        """Pre-sigmoid score of a state pair.
+
+        Args:
+            pair: Concatenated pair, shape (2 * state_dim,).
+        Returns:
+            Scalar logit.
+        """
         return self.mlp(pair)[0]
 
     def __call__(self, pair: jax.Array) -> jax.Array:
+        """Probability that a state pair is feasible.
+
+        Args:
+            pair: Concatenated pair, shape (2 * state_dim,).
+        Returns:
+            Scalar probability in [0, 1].
+        """
         return jax.nn.sigmoid(self.logit(pair))
 
 
 def _pair(x_prev: jax.Array, x_curr: jax.Array) -> jax.Array:
+    """Concatenate two states into one pair vector.
+
+    Args:
+        x_prev: Previous state.
+        x_curr: Current state.
+    Returns:
+        Pair, shape (2 * state_dim,).
+    """
     return jnp.concatenate([x_prev, x_curr])
 
 
@@ -117,6 +156,13 @@ def discriminator_loss(
     """Eq. 5, as a numerically stable binary cross-entropy over logits.
 
     `labels` is 1 for feasible and 0 for infeasible, matching the paper's `c`.
+
+    Args:
+        discriminator: Discriminator being trained.
+        pairs: State pairs, shape (N, 2 * state_dim).
+        labels: 1 for feasible, 0 for infeasible, shape (N,).
+    Returns:
+        Scalar loss.
     """
     logits = jax.vmap(discriminator.logit)(pairs)
     # Upstream weights the positive class by num_neg / max(num_pos, 1), via BCEWithLogitsLoss'
@@ -134,7 +180,15 @@ def discriminator_loss(
 
 
 def hinge_loss(model: FABBaseline, pairs: jax.Array, labels: jax.Array) -> jax.Array:
-    """Eq. 7 — feasible points inside the sphere of radius r, infeasible outside."""
+    """Eq. 7 — feasible points inside the sphere of radius r, infeasible outside.
+
+    Args:
+        model: FAB model providing the encoder and latent radius.
+        pairs: State pairs, shape (N, 2 * state_dim).
+        labels: 1 for feasible, 0 for infeasible, shape (N,).
+    Returns:
+        Scalar loss.
+    """
     state_dim = model.state_dim
     norms = jax.vmap(
         lambda p: jnp.linalg.norm(model.encode(p[:state_dim], p[state_dim:]))
@@ -153,9 +207,23 @@ def latent_loss(
     """Eq. 8 — points sampled from the ball must decode to something the critic calls feasible.
 
     `-log D(R(z))`, written as `softplus(-logit)` for the same stability reason as Eq. 5.
+
+    Args:
+        model: FAB model providing the decoder.
+        discriminator: Critic scoring decoded pairs.
+        z_samples: Latent samples from the ball, shape (N, latent_dim).
+    Returns:
+        Scalar loss.
     """
 
     def _one(z: jax.Array) -> jax.Array:
+        """Critic loss for the decode of one latent sample.
+
+        Args:
+            z: Latent sample.
+        Returns:
+            Scalar loss.
+        """
         x_prev, x_curr = model.decode(z)
         return jax.nn.softplus(-discriminator.logit(_pair(x_prev, x_curr)))
 
@@ -176,6 +244,13 @@ def geometric_loss(
     intrinsic dimension of the feasible set the Gram matrix is rank-deficient, `log det` is
     dominated by `k_deficient * log eps`, and the loss measures the regulariser rather than any
     geometry — which is why k is fixed at 8 for the dynamic bicycle.
+
+    Args:
+        model: FAB model providing the decoder.
+        z_samples: Latent samples from the ball, shape (N, latent_dim).
+        eps: Ridge added to the Gram matrix.
+    Returns:
+        Scalar variance of the log determinants.
     """
 
     # Upstream (undisclosed by the paper) caps the term at 32 latent samples and filters to
@@ -185,6 +260,13 @@ def geometric_loss(
     z_samples = z_samples[:GEOM_MAX_SAMPLES]
 
     def _logdet(z: jax.Array) -> jax.Array:
+        """Log determinant of the regularised Gram matrix of the decoder Jacobian.
+
+        Args:
+            z: Latent sample.
+        Returns:
+            Scalar log determinant.
+        """
         jac_prev, jac_curr = jax.jacfwd(model.decode)(z)
         jac = jnp.concatenate([jac_prev, jac_curr], axis=0)  # (n, k)
         gram = jac.T @ jac + eps * jnp.eye(jac.shape[1])
@@ -227,9 +309,23 @@ def feasibility_loss(
 
     Not a rename of `L_latent`: `L_latent` scores decodes of ball draws, `R(z)` for `z ~ S`;
     this scores the reconstruction path, `R(E(y, x))`, of a real input.
+
+    Args:
+        model: FAB model.
+        discriminator: Critic scoring reconstructions.
+        feasible_pairs: Feasible state pairs, shape (N, 2 * state_dim).
+    Returns:
+        Scalar loss.
     """
     state_dim = model.state_dim
     def _one(pair: jax.Array) -> jax.Array:
+        """Critic loss for the reconstruction of one pair.
+
+        Args:
+            pair: Concatenated feasible pair.
+        Returns:
+            Scalar loss.
+        """
         pred = model(pair[:state_dim], pair[state_dim:])
         return jax.nn.softplus(-discriminator.logit(_pair(*pred)))
 
@@ -266,6 +362,21 @@ def structuring_loss(
     Algorithm 1 line 20 computes `L_recon` via Eq. 4, which is defined over `T_feas`; the
     reconstruction target for an infeasible point is not defined by the paper and asking the
     decoder to reproduce one would contradict `L_latent`.
+
+    Args:
+        model: FAB model.
+        discriminator: Critic.
+        pairs: Labelled state pairs.
+        labels: 1 for feasible, 0 for infeasible.
+        feasible_pairs: Feasible state pairs.
+        z_samples: Latent samples from the ball.
+        lambda_recon: Weight of the reconstruction term.
+        lambda_feasibility: Weight of the feasibility term.
+        lambda_hinge: Weight of the hinge term.
+        lambda_latent: Weight of the latent term.
+        lambda_geom: Weight of the geometric term.
+    Returns:
+        StrucTerms holding each term and the weighted total.
     """
     state_dim = model.state_dim
     pred = jax.vmap(lambda p: model(p[:state_dim], p[state_dim:]))(feasible_pairs)
@@ -288,7 +399,16 @@ def structuring_loss(
 
 
 def sample_ball(key: jax.Array, n: int, latent_dim: int, radius: float) -> jax.Array:
-    """Uniform samples from `S := {z : ||z||_2 <= r}`, the set the paper projects onto."""
+    """Uniform samples from `S := {z : ||z||_2 <= r}`, the set the paper projects onto.
+
+    Args:
+        key: PRNG key.
+        n: Number of samples.
+        latent_dim: Latent dimension.
+        radius: Ball radius.
+    Returns:
+        Samples, shape (n, latent_dim).
+    """
     dir_key, rad_key = jax.random.split(key)
     directions = jax.random.normal(dir_key, (n, latent_dim))
     directions = directions / jnp.linalg.norm(directions, axis=1, keepdims=True)
@@ -321,11 +441,28 @@ def make_infeasible_generators(
 
     `step_fn(x_prev, u) -> x_curr` is the one-step forward map; it defines the manifold that
     generators 2 and 3 move off.
+
+    Args:
+        state_min: Lower state bounds.
+        state_max: Upper state bounds.
+        perturbation_scale_per_dim: Per-dimension perturbation scale of the evaluation protocol.
+        step_fn: One-step forward map (x_prev, u) -> x_curr.
+        control_min: Lower control bounds.
+        control_max: Upper control bounds.
+    Returns:
+        Mapping from generator name to generator.
     """
     def box_violating(key: jax.Array, x_prev: jax.Array, x_curr: jax.Array) -> jax.Array:
         """Push `x_curr` just past a bound, at the evaluation protocol's scales.
 
         Dimensions whose bound is infinite cannot be violated and are left at `x_curr`.
+
+        Args:
+            key: PRNG key.
+            x_prev: Previous state (unused).
+            x_curr: Current state.
+        Returns:
+            Perturbed current state.
         """
         sign_key, mag_key = jax.random.split(key)
         direction = jnp.sign(jax.random.normal(sign_key, x_curr.shape))
@@ -337,7 +474,15 @@ def make_infeasible_generators(
         return jnp.where(jnp.isfinite(bound), beyond, x_curr)
 
     def off_manifold(key: jax.Array, x_prev: jax.Array, x_curr: jax.Array) -> jax.Array:
-        """Move `x_curr` off the reachable set while keeping it inside the box."""
+        """Move `x_curr` off the reachable set while keeping it inside the box.
+
+        Args:
+            key: PRNG key.
+            x_prev: Previous state (unused).
+            x_curr: Current state.
+        Returns:
+            Perturbed current state.
+        """
         noise = perturbation_scale_per_dim * jax.random.normal(key, x_curr.shape)
         return jnp.clip(x_curr + noise, state_min, state_max)
 
@@ -348,6 +493,13 @@ def make_infeasible_generators(
         plausible in isolation, differing from a feasible pair only in the control that
         produced it. A discriminator that separates these has learned the manifold; one that
         separates only the box violations has learned the box.
+
+        Args:
+            key: PRNG key.
+            x_prev: Anchor state.
+            x_curr: Current state (unused).
+        Returns:
+            State reached under the sampled control.
         """
         u = jax.random.uniform(
             key, control_min.shape, minval=control_min, maxval=control_max
@@ -355,7 +507,15 @@ def make_infeasible_generators(
         return step_fn(x_prev, u)
 
     def ambient(key: jax.Array, x_prev: jax.Array, x_curr: jax.Array) -> jax.Array:
-        """Draw `x_curr` uniformly in the box. Infeasible with probability 1."""
+        """Draw `x_curr` uniformly in the box. Infeasible with probability 1.
+
+        Args:
+            key: PRNG key.
+            x_prev: Previous state (unused).
+            x_curr: Current state; only its shape is used.
+        Returns:
+            Uniform sample in the box.
+        """
         lo = jnp.where(jnp.isfinite(state_min), state_min, -jnp.ones_like(state_min))
         hi = jnp.where(jnp.isfinite(state_max), state_max, jnp.ones_like(state_max))
         return jax.random.uniform(key, x_curr.shape, minval=lo, maxval=hi)

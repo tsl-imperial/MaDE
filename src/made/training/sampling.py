@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Control sampling strategies for inverse-consistency training."""
 
 from __future__ import annotations
@@ -20,7 +30,26 @@ def sample_controls(
     total_steps: int,
     key: jax.Array,
 ) -> jax.Array:
-    """Sample a single control according to the requested strategy."""
+    """Sample a single control according to the requested strategy.
+
+    Args:
+        strategy: One of ``"prior"``, ``"predictions"``, ``"mixture"``, ``"annealed"``.
+        constraints: Constraint set providing the control box.
+        inverse_dynamics: Inverse-dynamics model; required for every strategy except ``"prior"``.
+        x_prev: Previous state.
+        x_curr: Current state.
+        params: Physical parameters.
+        step: Current training step.
+        total_steps: Total number of training steps.
+        key: PRNG key.
+
+    Returns:
+        Sampled control vector.
+
+    Raises:
+        ValueError: If a non-prior strategy is requested without an inverse-dynamics model, or the
+            strategy is unsupported.
+    """
     prior = jax.random.uniform(
         key,
         constraints.control_min.shape,

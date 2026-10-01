@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Perturbation determinism tests."""
 
 # ruff: noqa: E402
@@ -16,10 +26,18 @@ from made.utils.config import DataConfig
 
 
 def _make_states(seed: int = 0) -> jax.Array:
+    """Return a random (4, 10, 4) float64 state batch.
+
+    Args:
+        seed: PRNG seed.
+
+    Returns:
+        The state batch.
+    """
     return jax.random.normal(jax.random.key(seed), (4, 10, 4), dtype=jnp.float64)
 
 
-def test_same_seed_same_metrics():
+def test_same_seed_same_metrics() -> None:
     """Two calls with the same PRNG key produce byte-identical perturbed arrays."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.1, perturbation_type="gaussian")
@@ -31,7 +49,7 @@ def test_same_seed_same_metrics():
     assert jnp.array_equal(out1, out2), "Same seed must produce identical perturbation"
 
 
-def test_same_seed_is_not_identity():
+def test_same_seed_is_not_identity() -> None:
     """With scale > 0 the output differs from the input."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.1, perturbation_type="gaussian")
@@ -39,7 +57,7 @@ def test_same_seed_is_not_identity():
     assert not jnp.array_equal(out, states)
 
 
-def test_different_seed_different_perturbation():
+def test_different_seed_different_perturbation() -> None:
     """Different PRNG keys produce different perturbed arrays."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.1, perturbation_type="gaussian")
@@ -50,7 +68,7 @@ def test_different_seed_different_perturbation():
     assert not jnp.array_equal(out1, out2), "Different seeds must yield different noise"
 
 
-def test_zero_scale_returns_original():
+def test_zero_scale_returns_original() -> None:
     """perturbation_scale=0 is a no-op."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.0)
@@ -58,7 +76,8 @@ def test_zero_scale_returns_original():
     assert jnp.array_equal(out, states)
 
 
-def test_uniform_perturbation_determinism():
+def test_uniform_perturbation_determinism() -> None:
+    """Check that uniform perturbation determinism."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.2, perturbation_type="uniform")
     key = jax.random.key(7)
@@ -70,7 +89,7 @@ _BV_MIN = jnp.array([-10.0, -10.0, -5.0, -5.0])
 _BV_MAX = jnp.array([10.0, 10.0, 5.0, 5.0])
 
 
-def test_bound_violation_determinism():
+def test_bound_violation_determinism() -> None:
     """Same input + bounds → byte-identical output (branch is deterministic; key unused)."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.1, perturbation_type="bound_violation")
@@ -80,7 +99,7 @@ def test_bound_violation_determinism():
     assert jnp.array_equal(out1, out2), "bound_violation must be deterministic given the same inputs"
 
 
-def test_bound_violation_produces_infeasibility():
+def test_bound_violation_produces_infeasibility() -> None:
     """With scale=0.5 every state dimension is pushed outside [state_min, state_max]."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.5, perturbation_type="bound_violation")
@@ -90,7 +109,7 @@ def test_bound_violation_produces_infeasibility():
     assert jnp.all(outside), "Every element must be outside its bound after scale=0.5 push"
 
 
-def test_bound_violation_zero_scale_is_noop():
+def test_bound_violation_zero_scale_is_noop() -> None:
     """perturbation_scale=0.0 early-returns the original array unchanged."""
     states = _make_states()
     cfg = DataConfig(perturbation_scale=0.0, perturbation_type="bound_violation")
@@ -99,7 +118,7 @@ def test_bound_violation_zero_scale_is_noop():
     assert jnp.array_equal(out, states), "Zero scale must be a no-op"
 
 
-def test_bound_violation_missing_bounds_raises():
+def test_bound_violation_missing_bounds_raises() -> None:
     """Calling without state_bounds raises ValueError mentioning 'state_bounds'."""
     import pytest
 

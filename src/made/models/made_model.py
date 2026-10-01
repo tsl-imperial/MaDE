@@ -1,8 +1,19 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Thin model wrapper for optional metadata-backed parameter resolution."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import equinox as eqx
 import jax
@@ -11,6 +22,11 @@ from made.models.encoder import MetadataEncoder
 from made.models.made_cell import MaDECell
 from made.physics import ConstraintSet, PhysicsModel
 from made.utils import CorrectorConfig, ModelConfig
+
+if TYPE_CHECKING:
+    from made.models.augmented_dynamics import AugmentedDynamics
+    from made.models.corrector import Corrector
+    from made.models.inverse_dynamics import InverseDynamics
 
 
 class MaDEModel(eqx.Module):
@@ -24,23 +40,53 @@ class MaDEModel(eqx.Module):
     encoder: MetadataEncoder | None
 
     @property
-    def inverse_dynamics(self):
+    def inverse_dynamics(self) -> InverseDynamics:
+        """The cell's inverse-dynamics model.
+
+        Returns:
+            The inverse-dynamics module.
+        """
         return self.cell.inverse_dynamics
 
     @property
-    def augmented_dynamics(self):
+    def augmented_dynamics(self) -> AugmentedDynamics:
+        """The cell's augmented dynamics.
+
+        Returns:
+            The augmented-dynamics module.
+        """
         return self.cell.augmented_dynamics
 
     @property
-    def corrector(self):
+    def corrector(self) -> Corrector:
+        """The cell's corrector.
+
+        Returns:
+            The corrector module.
+        """
         return self.cell.corrector
 
     @property
-    def constraints(self):
+    def constraints(self) -> ConstraintSet:
+        """The cell's constraint set.
+
+        Returns:
+            The constraint set.
+        """
         return self.cell.constraints
 
     def params_from_metadata(self, metadata: jax.Array) -> jax.Array:
-        """Resolve physics parameters from one metadata vector or a metadata batch."""
+        """Resolve physics parameters from one metadata vector or a metadata batch.
+
+        Args:
+            metadata: Metadata vector ``[metadata_dim]`` or batch ``[B, metadata_dim]``.
+
+        Returns:
+            Physics parameters with matching leading dimension.
+
+        Raises:
+            ValueError: If the model has no encoder.
+        """
         if self.encoder is None:
             raise ValueError("Metadata was provided but this MaDEModel has no encoder.")
         if metadata.ndim == 1:
@@ -52,7 +98,18 @@ class MaDEModel(eqx.Module):
         params: jax.Array | None = None,
         metadata: jax.Array | None = None,
     ) -> jax.Array:
-        """Prefer known params, falling back to encoder-derived params when needed."""
+        """Prefer known params, falling back to encoder-derived params when needed.
+
+        Args:
+            params: Known per-sample parameters, or None.
+            metadata: Metadata for the encoder, or None.
+
+        Returns:
+            Resolved physics parameters.
+
+        Raises:
+            ValueError: If neither non-empty params nor metadata is available.
+        """
         if params is not None and params.shape[-1] > 0:
             return params
         if metadata is not None:
@@ -72,6 +129,20 @@ class MaDEModel(eqx.Module):
         training: bool = True,
         correction_mode: str | None = None,
     ) -> tuple[jax.Array, jax.Array]:
+        """Run the cell after resolving parameters.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            params: Known parameters, or None to use ``metadata``.
+            dt: Step length.
+            metadata: Metadata for the encoder, or None.
+            training: Selects the training or evaluation corrector loop.
+            correction_mode: Explicit corrector mode, or None for the default.
+
+        Returns:
+            Tuple ``(x, u)``.
+        """
         resolved_params = self.resolve_params(params, metadata)
         return self.cell(
             x_prev,
@@ -93,7 +164,22 @@ class MaDEModel(eqx.Module):
         param_scales: jax.Array | None = None,
         key: jax.Array,
     ) -> "MaDEModel":
-        """Construct a wrapper, creating an encoder only when configured."""
+        """Construct a wrapper, creating an encoder only when configured.
+
+        Args:
+            physics: Known physics model.
+            constraints: Constraint set.
+            model_config: Model configuration.
+            corrector_config: Corrector configuration.
+            param_scales: Per-parameter scales for the encoder; ones when None.
+            key: PRNG key for weight initialisation.
+
+        Returns:
+            A new ``MaDEModel``.
+
+        Raises:
+            ValueError: If the encoder is requested with a non-positive ``metadata_dim``.
+        """
         cell_key, encoder_key = jax.random.split(key)
         cell = MaDECell.from_config(
             physics,
@@ -133,6 +219,12 @@ class MaDEModel(eqx.Module):
         of the run's early-stopping state. Returns ``None`` when the field is absent (a
         checkpoint written before this was persisted) or when no checkpoint exists at that
         step, so callers can fall back rather than fail.
+
+        Args:
+            path: Checkpoint directory.
+
+        Returns:
+            The best step, or None.
         """
         import json
 
@@ -172,6 +264,18 @@ class MaDEModel(eqx.Module):
         Falls back to the highest step, with a warning, when ``"best"`` is asked for but no
         ``early_stop_best_step`` is recorded or its checkpoint is absent, so a checkpoint
         written before this field existed still loads.
+
+        Args:
+            path: Checkpoint directory.
+            select: ``"best"`` or ``"last"``.
+
+        Returns:
+            The restored model.
+
+        Raises:
+            ValueError: If ``select`` is not ``"best"`` or ``"last"``.
+            FileNotFoundError: If no checkpoint exists at ``path``.
+            TypeError: If the checkpoint does not contain a ``MaDEModel``.
         """
         import sys
 

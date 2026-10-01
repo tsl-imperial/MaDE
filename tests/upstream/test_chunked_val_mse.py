@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Correctness tests for train_predictor._chunked_weighted_mean (validation MSE).
 
 Vmapping over the entire val split (50,114 windows for real inD data) makes XLA try to
@@ -11,6 +21,7 @@ correctly.
 
 from __future__ import annotations
 
+from types import ModuleType
 import importlib.util
 import sys
 from pathlib import Path
@@ -26,7 +37,8 @@ _SCRIPT = _REPO_ROOT / "scripts" / "ind" / "train_predictor.py"
 
 
 @pytest.fixture(scope="module")
-def script_module():
+def script_module() -> ModuleType:
+    """Provide the predictor training script loaded as a module."""
     spec = importlib.util.spec_from_file_location("train_predictor", str(_SCRIPT))
     module = importlib.util.module_from_spec(spec)
     sys.modules["train_predictor"] = module
@@ -40,11 +52,38 @@ class _SumSquaredModel(eqx.Module):
     scale: jax.Array
 
     def __call__(self, c: jax.Array) -> jax.Array:
+        """Scale the input.
+
+        Args:
+            c: Input window.
+
+        Returns:
+            Scaled window.
+        """
         return c * self.scale
 
 
-def _unchunked_mse(model, context, x_gt) -> float:
-    def _single(c, g):
+def _unchunked_mse(model: eqx.Module, context: jax.Array, x_gt: jax.Array) -> float:
+    """Compute the reference mean MSE with a single vmap over all windows.
+
+    Args:
+        model: Predictor model.
+        context: Context windows.
+        x_gt: Ground-truth targets.
+
+    Returns:
+        Mean per-window MSE.
+    """
+    def _single(c: jax.Array, g: jax.Array) -> jax.Array:
+        """Return the MSE of one window.
+
+        Args:
+            c: Context window.
+            g: Ground-truth target.
+
+        Returns:
+            Scalar MSE.
+        """
         return jnp.mean((model(c) - g) ** 2)
 
     return float(jnp.mean(jax.vmap(_single)(context, x_gt)))
@@ -59,7 +98,12 @@ def _unchunked_mse(model, context, x_gt) -> float:
         (5, 2048),  # chunk_size >> num_samples: effective chunk must cap at num_samples
     ],
 )
-def test_chunked_matches_unchunked_mean(script_module, num_samples: int, chunk_size: int) -> None:
+def test_chunked_matches_unchunked_mean(
+    script_module: ModuleType,
+    num_samples: int,
+    chunk_size: int,
+) -> None:
+    """Verify chunked matches unchunked mean."""
     model = _SumSquaredModel(scale=jnp.asarray(1.7))
     key_c, key_g = jax.random.split(jax.random.key(0))
     context = jax.random.normal(key_c, (num_samples, 4))
@@ -68,8 +112,33 @@ def test_chunked_matches_unchunked_mean(script_module, num_samples: int, chunk_s
     expected = _unchunked_mse(model, context, x_gt)
 
     @eqx.filter_jit
-    def _chunk_stats(model, context_chunk, x_gt_chunk, mask_chunk):
-        def _single(c, g):
+    def _chunk_stats(
+        model: eqx.Module,
+        context_chunk: jax.Array,
+        x_gt_chunk: jax.Array,
+        mask_chunk: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        """Return the masked MSE sum and the mask sum for one chunk.
+
+        Args:
+            model: Predictor model.
+            context_chunk: Context windows in the chunk.
+            x_gt_chunk: Targets in the chunk.
+            mask_chunk: 1 for real windows, 0 for padding.
+
+        Returns:
+            Masked sum of MSE and the number of real windows.
+        """
+        def _single(c: jax.Array, g: jax.Array) -> jax.Array:
+            """Return the MSE of one window.
+
+            Args:
+                c: Context window.
+                g: Ground-truth target.
+
+            Returns:
+                Scalar MSE.
+            """
             return jnp.mean((model(c) - g) ** 2)
 
         per_window = jax.vmap(_single)(context_chunk, x_gt_chunk)
@@ -82,14 +151,40 @@ def test_chunked_matches_unchunked_mean(script_module, num_samples: int, chunk_s
     np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-12)
 
 
-def test_chunked_weighted_mean_empty_returns_nan(script_module) -> None:
+def test_chunked_weighted_mean_empty_returns_nan(script_module: ModuleType) -> None:
+    """Verify chunked weighted mean empty returns nan."""
     model = _SumSquaredModel(scale=jnp.asarray(1.0))
     context = jnp.zeros((0, 4))
     x_gt = jnp.zeros((0, 4))
 
     @eqx.filter_jit
-    def _chunk_stats(model, context_chunk, x_gt_chunk, mask_chunk):
-        def _single(c, g):
+    def _chunk_stats(
+        model: eqx.Module,
+        context_chunk: jax.Array,
+        x_gt_chunk: jax.Array,
+        mask_chunk: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        """Return the masked MSE sum and the mask sum for one chunk.
+
+        Args:
+            model: Predictor model.
+            context_chunk: Context windows in the chunk.
+            x_gt_chunk: Targets in the chunk.
+            mask_chunk: 1 for real windows, 0 for padding.
+
+        Returns:
+            Masked sum of MSE and the number of real windows.
+        """
+        def _single(c: jax.Array, g: jax.Array) -> jax.Array:
+            """Return the MSE of one window.
+
+            Args:
+                c: Context window.
+                g: Ground-truth target.
+
+            Returns:
+                Scalar MSE.
+            """
             return jnp.mean((model(c) - g) ** 2)
 
         per_window = jax.vmap(_single)(context_chunk, x_gt_chunk)
@@ -99,7 +194,7 @@ def test_chunked_weighted_mean_empty_returns_nan(script_module) -> None:
     assert np.isnan(got)
 
 
-def test_chunked_val_mse_ignores_padded_rows(script_module) -> None:
+def test_chunked_val_mse_ignores_padded_rows(script_module: ModuleType) -> None:
     """Padding rows are zero-filled and masked to weight 0; a model producing non-finite output
     on the zero-padded rows must not corrupt the real windows' contribution (this would be a
     silent-NaN-poisoning bug if masking were applied before, not after, the model call)."""
@@ -107,6 +202,14 @@ def test_chunked_val_mse_ignores_padded_rows(script_module) -> None:
 
     class _NanOnZero(eqx.Module):
         def __call__(self, c: jax.Array) -> jax.Array:
+            """Scale the input.
+
+            Args:
+                c: Input window.
+
+            Returns:
+                Scaled window.
+            """
             # Zero rows (the padding) map to a finite value here on purpose -- this test only
             # needs the arithmetic to be correct when padding IS finite; a truly NaN-producing
             # padding row would poison the sum even with masking (mask multiplies, doesn't
@@ -123,8 +226,33 @@ def test_chunked_val_mse_ignores_padded_rows(script_module) -> None:
     expected = _unchunked_mse(model, context, x_gt)
 
     @eqx.filter_jit
-    def _chunk_stats(model, context_chunk, x_gt_chunk, mask_chunk):
-        def _single(c, g):
+    def _chunk_stats(
+        model: eqx.Module,
+        context_chunk: jax.Array,
+        x_gt_chunk: jax.Array,
+        mask_chunk: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        """Return the masked MSE sum and the mask sum for one chunk.
+
+        Args:
+            model: Predictor model.
+            context_chunk: Context windows in the chunk.
+            x_gt_chunk: Targets in the chunk.
+            mask_chunk: 1 for real windows, 0 for padding.
+
+        Returns:
+            Masked sum of MSE and the number of real windows.
+        """
+        def _single(c: jax.Array, g: jax.Array) -> jax.Array:
+            """Return the MSE of one window.
+
+            Args:
+                c: Context window.
+                g: Ground-truth target.
+
+            Returns:
+                Scalar MSE.
+            """
             return jnp.mean((model(c) - g) ** 2)
 
         per_window = jax.vmap(_single)(context_chunk, x_gt_chunk)

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Process-wide JAX configuration for MaDE.
 
 Call ``configure()`` before creating any JAX array or importing anything that
@@ -12,5 +22,6 @@ import jax
 
 
 def configure() -> None:
+    """Enable float64 and pin ``jax_threefry_partitionable`` to ``True``."""
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_threefry_partitionable", True)

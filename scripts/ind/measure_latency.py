@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Latency-only harness: timing rows for raw / clamp / smoother / made_pnp on the
 trained predictors and MaDE checkpoints.
 
@@ -26,6 +36,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -58,15 +72,29 @@ from scripts.common.run_guard import claim_output, require_idle_devices  # noqa:
 
 
 
-def _machine_state(idle_scope) -> dict:
+def _machine_state(idle_scope: tuple[int, ...] | None) -> dict:
     """Record what was on the cards when the measurement started (not just a pass/fail flag).
 
     Captures compute processes, their cards, and each card's sustained utilisation, so a
     reader can judge the figure rather than trust an idle-check boolean.
+
+    Args:
+        idle_scope: Device indices the idle check covered, or None for the blanket check.
+
+    Returns:
+        Dict with the check scope, compute processes at start, bus ids and utilisation samples.
     """
     import subprocess
 
     def _q(query: str) -> list[str]:
+        """Run one ``nvidia-smi`` query.
+
+        Args:
+            query: Query string after ``--query-``.
+
+        Returns:
+            The output lines, or a single ``(unavailable: ...)`` line on failure.
+        """
         try:
             return subprocess.run(["nvidia-smi", f"--query-{query}", "--format=csv,noheader"],
                                   capture_output=True, text=True, timeout=30).stdout.strip().splitlines()
@@ -92,7 +120,16 @@ def _machine_state(idle_scope) -> dict:
     }
 
 
-def _load_module(name: str, path: Path):
+def _load_module(name: str, path: Path) -> "ModuleType":
+    """Import a Python file as a module registered under ``name``.
+
+    Args:
+        name: Module name to register in ``sys.modules``.
+        path: Path of the source file.
+
+    Returns:
+        The loaded module.
+    """
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -101,6 +138,14 @@ def _load_module(name: str, path: Path):
 
 
 def _display(p: Path) -> str:
+    """Format a path relative to the repository root when possible.
+
+    Args:
+        p: Path to format.
+
+    Returns:
+        The root-relative path, or the path unchanged when outside the root.
+    """
     try:
         return str(p.relative_to(ROOT))
     except ValueError:
@@ -108,6 +153,11 @@ def _display(p: Path) -> str:
 
 
 def _git_sha() -> str:
+    """Current git commit hash.
+
+    Returns:
+        The ``HEAD`` sha, or ``unknown`` when git fails.
+    """
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT),
                               capture_output=True, text=True, check=True).stdout.strip()
@@ -116,6 +166,11 @@ def _git_sha() -> str:
 
 
 def main() -> None:
+    """Measure per-trajectory latency of every row and write the JSON report.
+
+    Raises:
+        SystemExit: If a precondition for a valid measurement is not met.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--families", default=",".join(FAMILIES))
     ap.add_argument("--pred-seeds", default=",".join(str(s) for s in PRED_SEEDS))
@@ -143,6 +198,14 @@ def main() -> None:
     data_dir = Path(args.data_dir)
     predictor_root = ROOT / args.predictor_root
     def made_checkpoints(seed: int) -> Path:
+        """Checkpoint directory for a MaDE seed.
+
+        Args:
+            seed: MaDE seed.
+
+        Returns:
+            The checkpoint directory under the repository root.
+        """
         return ROOT / args.made_root.format(ms=seed)
 
     families = [f.strip() for f in args.families.split(",") if f.strip()]
@@ -251,7 +314,20 @@ def main() -> None:
                 made_model = MaDEModel.from_checkpoint(str(made_checkpoints(mseed)))
 
                 # Same three lines the full pass closes over.
-                def _made_pnp_pipeline(ctx, meta, x0, _m=made_model):
+                def _made_pnp_pipeline(
+                    ctx: jax.Array, meta: jax.Array, x0: jax.Array, _m: Any = made_model
+                ) -> jax.Array:
+                    """Predict one window and apply the frozen MaDE correction.
+
+                    Args:
+                        ctx: Assembled context for the window.
+                        meta: Window metadata.
+                        x0: Seed state.
+                        _m: Bound MaDE model.
+
+                    Returns:
+                        The corrected future states.
+                    """
                     x_pred = predictor(ctx)
                     params = _m.params_from_metadata(meta)
                     x_corr, _u = E._made_pnp_single(_m.cell, x_pred, params, x0, dt)
@@ -269,6 +345,15 @@ def main() -> None:
             print(f"  {family}/pseed{pseed} done ({time.time()-started:.0f}s)", flush=True)
 
     def _agg(row: str, key: str) -> dict:
+        """Summarise one latency key over the cells of a row.
+
+        Args:
+            row: Row name.
+            key: Latency field to aggregate.
+
+        Returns:
+            Dict with count, mean, population std, median, min and max.
+        """
         vals = [r[key] for r in rows if r["row"] == row]
         return {
             "n": len(vals),

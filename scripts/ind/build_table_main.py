@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Render the main inD results table (`tab_e05_ind`) from the filtered evaluation panel
 produced by `scripts/ind/evaluate.py`.
 
@@ -52,6 +62,14 @@ DIST_METRICS = ("ade", "fde")
 
 
 def _display(p: Path) -> str:
+    """Format a path relative to the repository root when possible.
+
+    Args:
+        p: Path to format.
+
+    Returns:
+        The root-relative path as a string, or the path unchanged when outside the root.
+    """
     try:
         return str(p.relative_to(ROOT))
     except ValueError:
@@ -59,18 +77,43 @@ def _display(p: Path) -> str:
 
 
 def _population_std(values: list[float]) -> float:
+    """Population standard deviation (divides by n).
+
+    Args:
+        values: Non-empty sequence of values.
+
+    Returns:
+        The population standard deviation.
+    """
     n = len(values)
     mean = sum(values) / n
     return math.sqrt(sum((v - mean) ** 2 for v in values) / n)
 
 
 def _agg(values: list[float]) -> dict | None:
+    """Summarise values as mean, population std and count.
+
+    Args:
+        values: Per-cell values.
+
+    Returns:
+        Dict with ``mean``, ``std`` and ``n``, or None when ``values`` is empty.
+    """
     if not values:
         return None
     return {"mean": sum(values) / len(values), "std": _population_std(values), "n": len(values)}
 
 
 def _grid(cells: list[dict], rows: tuple[str, ...]) -> tuple[dict, dict]:
+    """Aggregate cells per (family, row) for the metrics and the distance medians.
+
+    Args:
+        cells: Evaluation cells from the source artifact.
+        rows: Table rows to include.
+
+    Returns:
+        The metric aggregates and the per-cell p50 aggregates, both keyed by (family, row).
+    """
     acc: dict = {(f, r): {k: [] for _, k in METRICS} for f in PREDICTORS for r in rows}
     med: dict = {(f, r): {k: [] for k in DIST_METRICS} for f in PREDICTORS for r in rows}
     for cell in cells:
@@ -93,6 +136,13 @@ def _grid(cells: list[dict], rows: tuple[str, ...]) -> tuple[dict, dict]:
 def _emphasis(grid: dict, rows: tuple[str, ...]) -> dict:
     """Emphasis runs along each metric row, across the arms, within one predictor family: the
     best cell in a (family, metric) row is bold, the second-best is underlined.
+
+    Args:
+        grid: Metric aggregates keyed by (family, row).
+        rows: Table rows compared against each other.
+
+    Returns:
+        Mapping metric -> (family, row) -> ``best``, ``second`` or None.
     """
     out: dict = {}
     for f in PREDICTORS:
@@ -112,6 +162,16 @@ def _emphasis(grid: dict, rows: tuple[str, ...]) -> dict:
 
 
 def _fmt(cell: dict | None, rank: str | None, tex: bool) -> str:
+    """Format one table cell as mean plus-minus std, with optional emphasis.
+
+    Args:
+        cell: Aggregate record, or None for a missing cell.
+        rank: ``best``, ``second`` or None.
+        tex: Emit LaTeX when True, markdown otherwise.
+
+    Returns:
+        The formatted cell string (``--`` when missing).
+    """
     if cell is None:
         return "--"
     if tex:
@@ -133,6 +193,7 @@ TEXTWIDTH_PT_LITERAL = 458.74
 
 
 def main() -> None:
+    """Render the table from the source artifact and write the outputs."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", default=str(SOURCE))
     ap.add_argument("--out-dir", default=str(OUT_DIR))

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Trajectory generation utilities for feasible-data simulation."""
 
 from __future__ import annotations
@@ -13,6 +23,14 @@ from made.physics.base import ConstraintSet, PhysicsModel
 def _sampling_bounds(
     constraints: ConstraintSet,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Return the constraint set's sampling bounds.
+
+    Args:
+        constraints: Constraint set exposing state and control bounds.
+
+    Returns:
+        Tuple ``(state_min, state_max, control_min, control_max)``.
+    """
     return (
         constraints.state_min,
         constraints.state_max,
@@ -22,6 +40,14 @@ def _sampling_bounds(
 
 
 def _uses_dynamic_bicycle_layout(physics: PhysicsModel) -> bool:
+    """Whether ``physics`` has the dynamic-bicycle 6D state, 2D control, 6 parameter layout.
+
+    Args:
+        physics: Physics model to inspect.
+
+    Returns:
+        True when the layout matches.
+    """
     return physics.state_dim == 6 and physics.control_dim == 2 and physics.param_dim == 6
 
 
@@ -32,6 +58,20 @@ def _sample_initial_state(
     control_profile: str = "iid_uniform",
     min_speed: float | None = None,
 ) -> jax.Array:
+    """Draw an initial state uniformly from the constraint box.
+
+    For the dynamic-bicycle layout the box is narrowed so trajectories start in a calm regime.
+
+    Args:
+        physics: Physics model.
+        constraints: Constraint set providing the sampling box.
+        key: PRNG key.
+        control_profile: ``"iid_uniform"`` or ``"smooth_ou"``.
+        min_speed: Optional speed floor for the initial longitudinal speed.
+
+    Returns:
+        Initial state vector.
+    """
     state_min, state_max, _, _ = _sampling_bounds(constraints)
     if _uses_dynamic_bicycle_layout(physics):
         # v0 floor: pre-existing 2.0 clamp, raised to `min_speed` when set, else the
@@ -77,6 +117,17 @@ def _control_sampling_bounds(
     on disk are untouched; only regeneration from config would differ.
 
     Called from both `_sample_control_sequence` and `_sample_control_sequence_ou`.
+
+    Args:
+        constraints: Constraint set providing the default box.
+        control_sample_min: Optional lower bound overriding the constraint set.
+        control_sample_max: Optional upper bound overriding the constraint set.
+
+    Returns:
+        Tuple ``(lower, upper)``.
+
+    Raises:
+        ValueError: If ``control_sample_min`` has the wrong number of dimensions.
     """
     _, _, control_min, control_max = _sampling_bounds(constraints)
     if control_sample_min is not None and control_sample_max is not None:
@@ -98,6 +149,18 @@ def _sample_control_sequence(
     control_sample_min: tuple[float, ...] | None = None,
     control_sample_max: tuple[float, ...] | None = None,
 ) -> jax.Array:
+    """Sample i.i.d. uniform controls from the sampling box.
+
+    Args:
+        constraints: Constraint set providing the default box.
+        length: Number of control steps.
+        key: PRNG key.
+        control_sample_min: Optional lower bound overriding the constraint set.
+        control_sample_max: Optional upper bound overriding the constraint set.
+
+    Returns:
+        Controls of shape ``(length, control_dim)``.
+    """
     control_min, control_max = _control_sampling_bounds(
         constraints, control_sample_min, control_sample_max)
     shape = (length, control_min.shape[0])
@@ -119,6 +182,18 @@ def _sample_control_sequence_ou(
     eps_t ~ N(0, 1), clipped to the box after every step. Stationary std is set to half the
     box half-width so ~2 std spans the box (few clips), pinning sigma via the continuous-time
     OU relation stationary_var = sigma^2 * tau / 2.
+
+    Args:
+        constraints: Constraint set providing the default box.
+        length: Number of control steps.
+        dt: Step length.
+        tau: OU time constant.
+        key: PRNG key.
+        control_sample_min: Optional lower bound overriding the constraint set.
+        control_sample_max: Optional upper bound overriding the constraint set.
+
+    Returns:
+        Controls of shape ``(length, control_dim)``.
     """
     control_min, control_max = _control_sampling_bounds(
         constraints, control_sample_min, control_sample_max)
@@ -137,6 +212,15 @@ def _sample_control_sequence_ou(
     noise = jax.random.normal(noise_key, (length - 1, control_dim))
 
     def _ou_step(x_t: jax.Array, eps_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+        """One clipped OU step.
+
+        Args:
+            x_t: Current control.
+            eps_t: Standard-normal noise for this step.
+
+        Returns:
+            The next control twice (scan carry and output).
+        """
         x_next = x_t + (dt / tau) * (0.0 - x_t) + sigma * jnp.sqrt(dt) * eps_t
         x_next = jnp.clip(x_next, control_min, control_max)
         return x_next, x_next
@@ -161,6 +245,23 @@ def _sample_controls(
     "iid_uniform" calls `_sample_control_sequence` with `key` unmodified, so its key
     consumption (and generated data) stays byte-identical to before this dispatcher existed.
     "smooth_ou" splits its own keys internally.
+
+    Args:
+        physics: Physics model (unused by the samplers; kept for a uniform signature).
+        constraints: Constraint set providing the default box.
+        length: Number of control steps.
+        dt: Step length.
+        key: PRNG key.
+        control_profile: ``"iid_uniform"`` or ``"smooth_ou"``.
+        control_tau: OU time constant for ``"smooth_ou"``.
+        control_sample_min: Optional lower bound overriding the constraint set.
+        control_sample_max: Optional upper bound overriding the constraint set.
+
+    Returns:
+        Controls of shape ``(length, control_dim)``.
+
+    Raises:
+        ValueError: If ``control_profile`` is unsupported.
     """
     if control_profile == "iid_uniform":
         return _sample_control_sequence(
@@ -179,6 +280,18 @@ def _integrate_step(
     params: jax.Array,
     dt: float,
 ) -> tuple[jax.Array, jax.Array]:
+    """Integrate the physics over one step with Tsit5 and an adaptive controller.
+
+    Args:
+        physics: Physics model.
+        x_prev: State at the start of the step.
+        control: Control vector.
+        params: Physical parameters.
+        dt: Step length.
+
+    Returns:
+        Tuple ``(next_state, solve_ok)``.
+    """
     term = diffrax.ODETerm(
         lambda t, y, args: physics.vector_field(y, args["control"], args["params"], t)
     )
@@ -210,6 +323,24 @@ def _generate_single_trajectory(
     control_sample_min: tuple[float, ...] | None = None,
     control_sample_max: tuple[float, ...] | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Simulate one trajectory under sampled controls.
+
+    Args:
+        physics: Physics model.
+        constraints: Constraint set providing the sampling box.
+        trajectory_length: Number of states.
+        dt: Step length.
+        key: PRNG key.
+        true_params: Physical parameters of the simulated system.
+        control_profile: ``"iid_uniform"`` or ``"smooth_ou"``.
+        control_tau: OU time constant for ``"smooth_ou"``.
+        min_speed: Optional speed floor for the initial state.
+        control_sample_min: Optional lower control-sampling bound.
+        control_sample_max: Optional upper control-sampling bound.
+
+    Returns:
+        Tuple ``(states, controls, solve_ok)``.
+    """
     init_key, control_key = jax.random.split(key)
     initial_state = _sample_initial_state(
         physics, constraints, init_key, control_profile, min_speed
@@ -226,7 +357,18 @@ def _generate_single_trajectory(
         control_sample_max,
     )
 
-    def _scan_step(carry: tuple[jax.Array, jax.Array], control: jax.Array):
+    def _scan_step(
+        carry: tuple[jax.Array, jax.Array], control: jax.Array
+    ) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+        """Advance one step and track solver success.
+
+        Args:
+            carry: ``(state, previous_ok)``.
+            control: Control for this step.
+
+        Returns:
+            New carry and the per-step ``(next_state, ok)`` output.
+        """
         state, previous_ok = carry
         next_state, step_ok = _integrate_step(physics, state, control, true_params, dt)
         current_ok = previous_ok & step_ok & jnp.all(jnp.isfinite(next_state))
@@ -246,6 +388,16 @@ def _trajectory_feasible(
     states: jax.Array,
     controls: jax.Array,
 ) -> jax.Array:
+    """Whether every state-control pair of a trajectory satisfies the constraints.
+
+    Args:
+        constraints: Constraint set.
+        states: States of shape ``(T, state_dim)``.
+        controls: Controls of shape ``(T - 1, control_dim)``.
+
+    Returns:
+        Boolean scalar.
+    """
     aligned_controls = jnp.concatenate([controls, controls[-1:]], axis=0)
     violations = jax.vmap(constraints.violation)(states, aligned_controls)
     return jnp.all(violations <= 0.0)
@@ -274,6 +426,27 @@ def generate_trajectories(
     never drops below the floor at any timestep. Meaningful only for the dynamic-bicycle 6D
     layout (tire-slip terms are singular at standstill there); rejected outright for any
     other system. `min_speed=None` (default) reproduces legacy generation byte-for-byte.
+
+    Args:
+        physics: Physics model.
+        constraints: Constraint set providing the sampling box and feasibility check.
+        num_trajectories: Number of trajectories to return.
+        trajectory_length: Number of states per trajectory.
+        dt: Step length.
+        key: PRNG key.
+        true_params: Physical parameters of the simulated system.
+        control_profile: ``"iid_uniform"`` or ``"smooth_ou"``.
+        control_tau: OU time constant for ``"smooth_ou"``.
+        min_speed: Optional minimum longitudinal speed (dynamic-bicycle layout only).
+        control_sample_min: Optional lower control-sampling bound.
+        control_sample_max: Optional upper control-sampling bound.
+
+    Returns:
+        Tuple ``(states, controls)`` with leading dimension ``num_trajectories``.
+
+    Raises:
+        ValueError: If ``min_speed`` is set for a non dynamic-bicycle layout.
+        RuntimeError: If too few feasible trajectories can be generated.
     """
     if min_speed is not None and not _uses_dynamic_bicycle_layout(physics):
         raise ValueError(

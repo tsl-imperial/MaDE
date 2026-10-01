@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests that `generate_and_save` actually threads `control_sample_min/max` through to the
 simulator.
 
@@ -19,9 +29,11 @@ jax.config.update("jax_enable_x64", True)
 
 from made.data.simulation_data import generate_and_save, load_split
 from made.utils.config import DataConfig, PhysicsConfig
+from pathlib import Path
 
 
-def test_generate_and_save_respects_control_sample_bounds(tmp_path):
+def test_generate_and_save_respects_control_sample_bounds(tmp_path: Path) -> None:
+    """Checks generate and save respects control sample bounds."""
     physics_config = PhysicsConfig(true_system="dynamic_bicycle", dt=0.1, true_params={})
     control_sample_min = (-0.2, -1.5)
     control_sample_max = (0.2, 1.5)
@@ -46,9 +58,10 @@ def test_generate_and_save_respects_control_sample_bounds(tmp_path):
             assert controls_np[..., dim].max() <= hi
 
 
-def test_generate_and_save_without_override_can_exceed_narrow_box(tmp_path):
+def test_generate_and_save_without_override_can_exceed_narrow_box(tmp_path: Path) -> None:
     # Without control_sample_min/max, dynamic-bicycle steering is drawn from the constraint
     # set's own (wider) bounds, so it must be able to exceed the narrow +-0.2 box above.
+    """Checks generate and save without override can exceed narrow box."""
     physics_config = PhysicsConfig(true_system="dynamic_bicycle", dt=0.1, true_params={})
     data_config = DataConfig(
         num_trajectories_train=32,

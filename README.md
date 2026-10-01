@@ -27,12 +27,13 @@ reduction.
 ## Installation
 
 ```bash
-conda create -n made python=3.11
-conda activate made
-pip install -e . --constraint constraints/mac.txt           # macOS / CPU
-pip install -e . "jax[cuda12]" --constraint constraints/linux-cuda12.txt  # or: Linux, CUDA 12 (versions used for the paper)
-pip install -e ".[test]" && pytest                          # optional: test suite
+git clone https://github.com/tsl-imperial/MaDE.git && cd MaDE
+bash setup.sh                     # needs uv; macOS / CPU
+uv sync --frozen --extra cuda12   # or: Linux, CUDA 12 (versions used for the paper)
+uv run pytest                     # smoke test: fast CPU tier; `uv run pytest -m slow` for end-to-end
 ```
+
+Prefix the commands below with `uv run`, or activate `.venv` first.
 
 MaDE runs in float64 only. Every entry-point script sets
 `jax.config.update("jax_enable_x64", True)` at startup. Do the same in your own code.
@@ -42,8 +43,8 @@ MaDE runs in float64 only. Every entry-point script sets
 From the repository root, train a MaDE model, here on the kinematic bicycle:
 
 ```bash
-python scripts/sim/generate_data.py --system kinematic_bicycle --seed 0
-python scripts/sim/run_matrix.py --systems kinematic_bicycle --variants made --seeds 0
+uv run python scripts/sim/generate_data.py --system kinematic_bicycle --seed 0
+uv run python scripts/sim/run_matrix.py --systems kinematic_bicycle --variants made --seeds 0
 ```
 
 Then correct a predicted trajectory with the frozen model:
@@ -88,7 +89,7 @@ https://levelxdata.com/ind-dataset/. The dataset is licensed for non-commercial 
 Place the contents of the dataset's `data/` directory in `data/inD-raw/`, then run:
 
 ```bash
-python scripts/ind/preprocess.py --raw-dir data/inD-raw --output-dir data/inD-preprocessed
+uv run python scripts/ind/preprocess.py --raw-dir data/inD-raw --output-dir data/inD-preprocessed
 ```
 
 This writes `data/inD-preprocessed/v1`, which every inD command reads.
@@ -100,8 +101,8 @@ scoring, then tables. The inD preprocessing step is commented out in `scripts/in
 because it needs your raw data.
 
 ```bash
-bash scripts/sim/run_all.sh   # simulated systems, CPU
-bash scripts/ind/run_all.sh   # inD, GPU
+uv run bash scripts/sim/run_all.sh   # simulated systems, CPU
+uv run bash scripts/ind/run_all.sh   # inD, GPU
 ```
 
 | Paper item | Produced by | Output |
@@ -127,10 +128,10 @@ evaluation that `run_matrix.py` writes next to each checkpoint. To rebuild the t
 existing scores:
 
 ```bash
-python scripts/sim/build_tables.py
-python scripts/ind/build_table_main.py
-python scripts/ind/build_table_breakdown.py
-python scripts/ind/build_table_completion_only.py
+uv run python scripts/sim/build_tables.py
+uv run python scripts/ind/build_table_main.py
+uv run python scripts/ind/build_table_breakdown.py
+uv run python scripts/ind/build_table_completion_only.py
 ```
 
 ## Citation

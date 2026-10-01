@@ -1,11 +1,28 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 import jax.numpy as jnp
 
 from made.models import MetadataEncoder
 from made.models.inverse_dynamics import InverseDynamics
 from made.physics import DynamicBicycle
 
+from typing import TYPE_CHECKING
 
-def test_inverse_dynamics_shape(small_cell):
+if TYPE_CHECKING:
+    from made.models import MaDECell
+    import jax
+
+
+def test_inverse_dynamics_shape(small_cell: "MaDECell") -> None:
+    """Check that inverse dynamics shape."""
     control = small_cell.inverse_dynamics(
         jnp.zeros((4,)),
         jnp.ones((4,)),
@@ -14,7 +31,8 @@ def test_inverse_dynamics_shape(small_cell):
     assert control.shape == (2,)
 
 
-def test_augmented_vector_field_additive(small_cell):
+def test_augmented_vector_field_additive(small_cell: "MaDECell") -> None:
+    """Check that augmented vector field additive."""
     state = jnp.zeros((4,))
     control = jnp.zeros((2,))
     params = jnp.zeros((0,))
@@ -24,7 +42,8 @@ def test_augmented_vector_field_additive(small_cell):
     assert jnp.allclose(total, physics_value + residual_value)
 
 
-def test_metadata_encoder_bounds(small_key):
+def test_metadata_encoder_bounds(small_key: "jax.Array") -> None:
+    """Check that metadata encoder bounds."""
     encoder = MetadataEncoder(10, 1, (16, 16), jnp.array([5.0]), key=small_key)
     output = encoder(jnp.ones((10,)))
     assert output.shape == (1,)
@@ -32,7 +51,7 @@ def test_metadata_encoder_bounds(small_key):
     assert jnp.all(output <= 5.0)
 
 
-def test_learned_component_uses_normalized_params(small_key):
+def test_learned_component_uses_normalized_params(small_key: "jax.Array") -> None:
     """InverseDynamics.learned_component divides params by param_scales before the MLP."""
     physics = DynamicBicycle()
     inv = InverseDynamics(
@@ -58,7 +77,7 @@ def test_learned_component_uses_normalized_params(small_key):
     assert jnp.all(jnp.isfinite(delta_i))
 
 
-def test_normalized_params_are_order_one(small_key):
+def test_normalized_params_are_order_one(small_key: "jax.Array") -> None:
     """params / param_scales should be O(1) for default raw params (the bug-fix invariant)."""
     del small_key
     from made.physics import resolve_params

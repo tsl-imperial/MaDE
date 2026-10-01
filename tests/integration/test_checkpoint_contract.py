@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Checkpoint contract integration test.
 
 Verifies:
@@ -9,6 +19,7 @@ Uses synthetic data only — no real inD dataset required.
 """
 
 # ruff: noqa: E402
+from pathlib import Path
 import os
 
 os.environ["JAX_PLATFORMS"] = "cpu"
@@ -31,7 +42,14 @@ from made.utils.config import CorrectorConfig, ModelConfig
 
 
 def _make_made_model(key: jax.Array) -> MaDEModel:
-    """Small MaDEModel with inD metadata schema (metadata_dim=5, num_locations=4)."""
+    """Small MaDEModel with inD metadata schema (metadata_dim=5, num_locations=4).
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Small MaDEModel.
+    """
     physics = KinematicBicycle()
     constraints = kinematic_bicycle_constraints()
     model_cfg = ModelConfig(
@@ -55,6 +73,14 @@ def _make_made_model(key: jax.Array) -> MaDEModel:
 
 
 def _make_fab(key: jax.Array) -> FABBaseline:
+    """Build a tiny FABBaseline for tests.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Small FABBaseline.
+    """
     return FABBaseline(
         state_dim=4,
         latent_dim=8,
@@ -68,7 +94,7 @@ def _make_fab(key: jax.Array) -> FABBaseline:
 # Tests
 
 
-def test_made_model_from_checkpoint_roundtrip(tmp_path):
+def test_made_model_from_checkpoint_roundtrip(tmp_path: Path) -> None:
     """MaDEModel.from_checkpoint loads saved model and produces finite forward output."""
     model = _make_made_model(jax.random.key(0))
     state = TrainState(
@@ -114,7 +140,7 @@ def test_made_model_from_checkpoint_roundtrip(tmp_path):
     assert jnp.all(jnp.isfinite(corrected_x)), "MaDEModel forward produced NaN/Inf"
 
 
-def test_made_model_corrector_reduces_known_violation(tmp_path):
+def test_made_model_corrector_reduces_known_violation(tmp_path: Path) -> None:
     """Restored MaDEModel must actually shrink a known constraint violation.
 
     A passing ``isfinite`` assertion is too weak — a
@@ -162,7 +188,7 @@ def test_made_model_corrector_reduces_known_violation(tmp_path):
     )
 
 
-def test_fab_from_checkpoint_roundtrip(tmp_path):
+def test_fab_from_checkpoint_roundtrip(tmp_path: Path) -> None:
     """FABBaseline.from_checkpoint loads saved model and produces finite forward output."""
     model = _make_fab(jax.random.key(2))
     save_fab_checkpoint(model, str(tmp_path / "fab_checkpoint"))
@@ -181,19 +207,19 @@ def test_fab_from_checkpoint_roundtrip(tmp_path):
     assert jnp.all(jnp.isfinite(pred_curr)), "FABBaseline forward produced NaN"
 
 
-def test_made_model_from_checkpoint_raises_on_missing(tmp_path):
+def test_made_model_from_checkpoint_raises_on_missing(tmp_path: Path) -> None:
     """MaDEModel.from_checkpoint raises FileNotFoundError when no checkpoint exists."""
     with pytest.raises(FileNotFoundError):
         MaDEModel.from_checkpoint(str(tmp_path / "no_such_dir"))
 
 
-def test_fab_from_checkpoint_raises_on_missing(tmp_path):
+def test_fab_from_checkpoint_raises_on_missing(tmp_path: Path) -> None:
     """FABBaseline.from_checkpoint raises FileNotFoundError when no checkpoint exists."""
     with pytest.raises(FileNotFoundError):
         FABBaseline.from_checkpoint(str(tmp_path / "no_such_dir"))
 
 
-def test_made_model_leaves_preserved_after_checkpoint(tmp_path):
+def test_made_model_leaves_preserved_after_checkpoint(tmp_path: Path) -> None:
     """MaDEModel leaves are identical before and after checkpoint round-trip."""
     model = _make_made_model(jax.random.key(3))
     state = TrainState(

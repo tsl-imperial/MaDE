@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """LSTM upstream trajectory predictor for the inD real-data experiment."""
 
 from __future__ import annotations
@@ -61,7 +71,23 @@ class LSTMPredictor(UpstreamPredictor):
         embedding_dim: int = 4,
         location_id_index: int = 4,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the LSTM encoder and delta decoder.
+
+        Args:
+            horizon: Number of future steps to predict.
+            state_mean: Train-split state mean, shape (4,).
+            state_std: Train-split state std, shape (4,).
+            hidden_size: LSTM hidden size.
+            decoder_width: Hidden width of the delta decoder.
+            decoder_depth: Hidden depth of the delta decoder.
+            state_dim: State dimension.
+            metadata_dim: Metadata width.
+            num_locations: Number of location ids.
+            embedding_dim: Location embedding size.
+            location_id_index: Metadata column holding the location id.
+            key: PRNG key.
+        """
         cell_key, decoder_key, embed_key, init_key = jax.random.split(key, 4)
         self.cell = eqx.nn.LSTMCell(WINDOW_FEATURE_DIM, hidden_size, key=cell_key)
         embedding = eqx.nn.Embedding(num_locations, embedding_dim, key=embed_key)
@@ -104,6 +130,13 @@ class LSTMPredictor(UpstreamPredictor):
         self._state_dim = state_dim
 
     def __call__(self, context: jax.Array) -> jax.Array:
+        """Predict future states from a context window.
+
+        Args:
+            context: Context window, shape (H, 4).
+        Returns:
+            Predicted states, shape (horizon, 4).
+        """
         states = context[:, : self._state_dim]
         meta = context[0, self._state_dim :]
         features = canonicalise_window(states, self.state_mean, self.state_std)
@@ -115,7 +148,17 @@ class LSTMPredictor(UpstreamPredictor):
             init_flat[self.hidden_size :],
         )
 
-        def _step(carry, x):
+        def _step(
+            carry: tuple[jax.Array, jax.Array], x: jax.Array
+        ) -> tuple[tuple[jax.Array, jax.Array], None]:
+            """One LSTM step over the context features.
+
+            Args:
+                carry: LSTM (hidden, cell) state.
+                x: Feature row for this step.
+            Returns:
+                Tuple (new carry, None).
+            """
             return self.cell(x, carry), None
 
         (h_final, _), _ = jax.lax.scan(_step, init, features)
@@ -125,4 +168,9 @@ class LSTMPredictor(UpstreamPredictor):
 
     @property
     def state_dim(self) -> int:
+        """State dimension of the predictions.
+
+        Returns:
+            State dimension.
+        """
         return self._state_dim

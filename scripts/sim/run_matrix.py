@@ -1,4 +1,14 @@
-"""In-process runner for the E01 single-agent experiment matrix."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""In-process runner for the simulated single-agent experiment matrix."""
 
 from __future__ import annotations
 
@@ -35,12 +45,34 @@ _VARIANTS = (
 
 
 def _csv_or_default(value: str | None, default: tuple[str, ...] | list[str]) -> list[str]:
+    """Parse a comma-separated option, with ``all`` or None meaning the default.
+
+    Args:
+        value: The option value.
+        default: Names used when ``value`` is None or ``all``.
+
+    Returns:
+        The list of names.
+    """
     if value is None or value == "all":
         return list(default)
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _config_paths(config_dir: Path, systems: list[str], variants: list[str]) -> list[Path]:
+    """Config file paths for every system and variant combination.
+
+    Args:
+        config_dir: Directory of the config JSON files.
+        systems: System names.
+        variants: Variant names.
+
+    Returns:
+        The config paths in system, prefix, variant order.
+
+    Raises:
+        ValueError: If a system or variant is unknown.
+    """
     paths: list[Path] = []
     for system in systems:
         if system not in _SYSTEM_CONFIG_PREFIXES:
@@ -55,6 +87,17 @@ def _config_paths(config_dir: Path, systems: list[str], variants: list[str]) -> 
 
 
 def _wandb_run_name(system: str, condition: str, variant: str, seed: int) -> str:
+    """Run name used for experiment tracking.
+
+    Args:
+        system: System name.
+        condition: Condition name.
+        variant: Variant name.
+        seed: Random seed.
+
+    Returns:
+        The run name.
+    """
     return f"e01-{system}-{condition}-{variant}-{seed}"
 
 
@@ -67,6 +110,13 @@ def _resolve_pretrained_phase1_path(path: str | None, seed: int) -> str | None:
     If the path does not contain ``seed0`` (e.g. a user-supplied absolute path with
     no seed marker), the path is returned unchanged — a multi-seed sweep sharing a
     single source checkpoint is arguably intentional in that case.
+
+    Args:
+        path: The configured Phase-1 checkpoint path, or None.
+        seed: Seed whose checkpoint to use.
+
+    Returns:
+        The path for this seed, or None when ``path`` is None.
     """
     if path is None:
         return None
@@ -76,7 +126,8 @@ def _resolve_pretrained_phase1_path(path: str | None, seed: int) -> str | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the E01 matrix in-process.")
+    """Run the simulated-experiment matrix in-process."""
+    parser = argparse.ArgumentParser(description="Run the simulated-experiment matrix in-process.")
     parser.add_argument("--config-dir", default=str(ROOT / "configs" / "sim"))
     parser.add_argument("--data-dir", default=str(ROOT / "data" / "generated"))
     parser.add_argument("--output-root", default=str(ROOT / "outputs" / "sim" / "runs"))

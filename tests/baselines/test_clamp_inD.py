@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Clamp baseline smoke tests for the inD pipeline.
 
 Mirrors test_mlp_inD.py: exercises ClampBaseline with kinematic-bicycle box
@@ -21,15 +31,28 @@ from made.physics.constraints import drop_position_bounds, kinematic_bicycle_con
 
 
 def _kb_clamp() -> ClampBaseline:
+    """Build a ClampBaseline with kinematic-bicycle bounds and unbounded x, y.
+
+    Returns:
+        ClampBaseline with position bounds dropped.
+    """
     return ClampBaseline(constraints=drop_position_bounds(kinematic_bicycle_constraints()))
 
 
 def _ind_metadata(loc_id: int = 1) -> jax.Array:
-    """Return a single inD-shaped metadata vector [length, width, car=1, truck=0, loc_id]."""
+    """Return a single inD-shaped metadata vector [length, width, car=1, truck=0, loc_id].
+
+    Args:
+        loc_id: Location id stored in the last column.
+
+    Returns:
+        Metadata vector of shape (5,).
+    """
     return jnp.array([4.5, 1.8, 1.0, 0.0, float(loc_id)], dtype=jnp.float64)
 
 
-def test_clamp_output_shape():
+def test_clamp_output_shape() -> None:
+    """Verify clamp output shape."""
     model = _kb_clamp()
     x_prev = jnp.zeros(IND_STATE_DIM, dtype=jnp.float64)
     x_curr = jnp.ones(IND_STATE_DIM, dtype=jnp.float64) * 0.1
@@ -38,7 +61,8 @@ def test_clamp_output_shape():
     assert out_curr.shape == (IND_STATE_DIM,)
 
 
-def test_clamp_output_finite():
+def test_clamp_output_finite() -> None:
+    """Verify clamp output finite."""
     model = _kb_clamp()
     x_prev = jnp.zeros(IND_STATE_DIM, dtype=jnp.float64)
     x_curr = jnp.ones(IND_STATE_DIM, dtype=jnp.float64) * 0.1
@@ -47,7 +71,7 @@ def test_clamp_output_finite():
     assert jnp.all(jnp.isfinite(out_curr))
 
 
-def test_clamp_enforces_state_bounds():
+def test_clamp_enforces_state_bounds() -> None:
     """Output states must lie within [state_min, state_max]."""
     constraints = kinematic_bicycle_constraints()
     model = ClampBaseline(constraints=constraints)
@@ -60,7 +84,7 @@ def test_clamp_enforces_state_bounds():
     assert jnp.all(out_curr <= constraints.state_max)
 
 
-def test_clamp_in_bounds_input_unchanged():
+def test_clamp_in_bounds_input_unchanged() -> None:
     """States already within bounds must pass through unmodified."""
     model = _kb_clamp()
     x_in = jnp.array([1.0, 2.0, 0.5, 5.0], dtype=jnp.float64)
@@ -69,7 +93,7 @@ def test_clamp_in_bounds_input_unchanged():
     assert jnp.allclose(out_curr, x_in)
 
 
-def test_clamp_metadata_ignored():
+def test_clamp_metadata_ignored() -> None:
     """ClampBaseline must produce the same result regardless of metadata."""
     model = _kb_clamp()
     x = jnp.array([1.0, 2.0, 0.5, 5.0], dtype=jnp.float64)
@@ -79,7 +103,7 @@ def test_clamp_metadata_ignored():
     assert jnp.allclose(out1[1], out2[1])
 
 
-def test_clamp_xy_unchanged_after_correct_pair():
+def test_clamp_xy_unchanged_after_correct_pair() -> None:
     """x,y components must pass through unchanged when bounds are ±inf (drop_position_bounds)."""
     model = _kb_clamp()
     # Deliberately out-of-position-range x,y values — must NOT be clamped

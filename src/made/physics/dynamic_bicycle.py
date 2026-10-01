@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Dynamic bicycle dynamics."""
 
 from __future__ import annotations
@@ -36,18 +46,38 @@ class DynamicBicycle(PhysicsModel):
 
     @property
     def state_dim(self) -> int:
+        """State dimension.
+
+        Returns:
+            6.
+        """
         return 6
 
     @property
     def control_dim(self) -> int:
+        """Control dimension.
+
+        Returns:
+            2.
+        """
         return 2
 
     @property
     def param_dim(self) -> int:
+        """Parameter dimension.
+
+        Returns:
+            6.
+        """
         return 6
 
     @property
     def param_scales(self) -> jax.Array:
+        """Characteristic scales of ``(C_f, C_r, m, I_z, l_f, l_r)``.
+
+        Returns:
+            Parameter scales.
+        """
         # C_f, C_r [N/rad], m [kg], I_z [kg·m²], l_f [m], l_r [m]
         return jnp.array([20000.0, 20000.0, 1500.0, 3000.0, 2.0, 2.0])
 
@@ -58,6 +88,17 @@ class DynamicBicycle(PhysicsModel):
         params: jax.Array,
         t: float,
     ) -> jax.Array:
+        """Return the dynamic-bicycle derivative with linear tire forces.
+
+        Args:
+            state: State vector ``(x, y, theta, vx, vy, yaw_rate)``.
+            control: Control vector ``(delta, accel)``.
+            params: Physical parameters ``(C_f, C_r, m, I_z, l_f, l_r)``.
+            t: Time (unused).
+
+        Returns:
+            State derivative.
+        """
         del t
         theta = state[2]
         vx = state[3]
@@ -112,6 +153,15 @@ class DynamicBicycle(PhysicsModel):
 
         JIT-clean (Python-static loop counts), vmap-compatible, gradient-stable.
         safe_vx epsilon must match vector_field's _SAFE_VX_EPS.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            params: Physical parameters ``(C_f, C_r, m, I_z, l_f, l_r)``.
+            dt: Step length.
+
+        Returns:
+            Control estimate ``(delta, accel)``.
         """
         c_f, c_r, mass, inertia_z, l_f, l_r = params
 
@@ -171,6 +221,14 @@ class DynamicBicycle(PhysicsModel):
         det_floor = jnp.asarray(1e-12, dtype=x_prev.dtype)
 
         def _heun_residual(u_in: jax.Array) -> jax.Array:
+            """Vx and yaw-rate mismatch after one Heun step under control ``u_in``.
+
+            Args:
+                u_in: Control ``(delta, accel)``.
+
+            Returns:
+                Two-element residual.
+            """
             k1 = self.vector_field(x_prev, u_in, params, 0.0)
             k2 = self.vector_field(x_prev + dt * k1, u_in, params, dt)
             x_next = x_prev + 0.5 * dt * (k1 + k2)

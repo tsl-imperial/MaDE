@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Y1 — the inequality term must not reach the forward model when isolation is on.
 
 The defect this guards: `phase2_t_loss` calls `stop_i_side`, which freezes the INVERSE
@@ -23,13 +33,31 @@ import pytest
 
 from made.training.losses import phase2_t_loss
 from made.utils.config import TrainingConfig
+from made.models import MaDECell
 
 
-def _t_side_grad(cell, batch, cfg):
-    """d(phase2_t_loss)/d(augmented_dynamics.residual), as the trainer takes it."""
+def _t_side_grad(cell: MaDECell, batch: tuple, cfg: TrainingConfig) -> list[jax.Array]:
+    """d(phase2_t_loss)/d(augmented_dynamics.residual), as the trainer takes it.
+
+    Args:
+        cell: Cell to differentiate.
+        batch: Tuple (x_prev, x_curr, params, u_sampled, dt).
+        cfg: Training config.
+
+    Returns:
+        Residual gradient leaves.
+    """
     x_prev, x_curr, params, u_sampled, dt = batch
 
-    def _loss(c):
+    def _loss(c: MaDECell) -> jax.Array:
+        """Phase 2 T-side loss for a cell.
+
+        Args:
+            c: Cell to evaluate.
+
+        Returns:
+            Scalar loss.
+        """
         total, _ = phase2_t_loss(c, x_prev, x_curr, params, dt, u_sampled, cfg)
         return total
 
@@ -42,7 +70,11 @@ def _t_side_grad(cell, batch, cfg):
 
 
 @pytest.mark.parametrize("isolate,expect_identical", [(True, True), (False, False)])
-def test_ineq_gradient_reaches_t_side_only_when_not_isolated(isolate, expect_identical):
+def test_ineq_gradient_reaches_t_side_only_when_not_isolated(
+    isolate: bool,
+    expect_identical: bool,
+) -> None:
+    """Checks ineq gradient reaches t side only when not isolated."""
     from made.models.made_cell import MaDECell
     from made.physics.constraints import kinematic_bicycle_constraints
     from made.physics.kinematic_bicycle import KinematicBicycle
@@ -88,6 +120,6 @@ def test_ineq_gradient_reaches_t_side_only_when_not_isolated(isolate, expect_ide
         )
 
 
-def test_default_preserves_published_behaviour():
+def test_default_preserves_published_behaviour() -> None:
     """The published results were produced with the gradient REACHING T_theta."""
     assert TrainingConfig().isolate_ineq_gradient is False

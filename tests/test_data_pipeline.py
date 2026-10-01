@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for InMemoryDataLoader noise injection."""
 
 # ruff: noqa: E402
@@ -37,13 +47,21 @@ def synthetic_samples() -> list[dict]:
 
 
 def _collect_batches(loader: InMemoryDataLoader) -> list[dict]:
+    """Materialise every batch from a loader.
+
+    Args:
+        loader: Loader to iterate.
+
+    Returns:
+        List of batches.
+    """
     return list(loader)
 
 
 # Zero noise: byte-identical to pre-noise behavior
 
 
-def test_loader_zero_noise_byte_identical(synthetic_samples):
+def test_loader_zero_noise_byte_identical(synthetic_samples: list[dict]) -> None:
     """noise_scale=0.0 must produce element-wise identical batches to default (no kwarg)."""
     baseline = InMemoryDataLoader(
         synthetic_samples, batch_size=8, shuffle=False, seed=42
@@ -61,7 +79,7 @@ def test_loader_zero_noise_byte_identical(synthetic_samples):
 # Nonzero noise: batches differ from clean
 
 
-def test_loader_nonzero_noise_changes_batches(synthetic_samples):
+def test_loader_nonzero_noise_changes_batches(synthetic_samples: list[dict]) -> None:
     """noise_scale=0.1 must produce different x_prev/x_curr from noise_scale=0.0."""
     clean = InMemoryDataLoader(
         synthetic_samples, batch_size=8, shuffle=False, seed=42, noise_scale=0.0
@@ -80,7 +98,7 @@ def test_loader_nonzero_noise_changes_batches(synthetic_samples):
 # Empirical std check
 
 
-def test_loader_noise_empirical_std(synthetic_samples):
+def test_loader_noise_empirical_std(synthetic_samples: list[dict]) -> None:
     """Empirical std of (noisy - clean) per state component is within ±15% of noise_scale."""
     noise_scale = 0.1
     clean_loader = InMemoryDataLoader(
@@ -104,7 +122,7 @@ def test_loader_noise_empirical_std(synthetic_samples):
 # Determinism: same (seed, noise_scale) → identical sequences across epochs
 
 
-def test_loader_noise_determinism(synthetic_samples):
+def test_loader_noise_determinism(synthetic_samples: list[dict]) -> None:
     """Two loaders with identical (seed, noise_scale) produce identical batches across 3 epochs."""
     kwargs = dict(batch_size=8, shuffle=True, seed=99, noise_scale=0.05)
     loader_a = InMemoryDataLoader(synthetic_samples, **kwargs)
@@ -123,7 +141,7 @@ def test_loader_noise_determinism(synthetic_samples):
 # Per-epoch variation: different noise per epoch
 
 
-def test_loader_noise_distinct_per_epoch(synthetic_samples):
+def test_loader_noise_distinct_per_epoch(synthetic_samples: list[dict]) -> None:
     """One loader iterated for 2 epochs produces different x_prev in epoch 0 vs epoch 1."""
     loader = InMemoryDataLoader(
         synthetic_samples, batch_size=8, shuffle=False, seed=42, noise_scale=0.1
@@ -141,7 +159,7 @@ def test_loader_noise_distinct_per_epoch(synthetic_samples):
 # State-only noise: params and u_gt untouched
 
 
-def test_loader_noise_does_not_perturb_params_or_controls(synthetic_samples):
+def test_loader_noise_does_not_perturb_params_or_controls(synthetic_samples: list[dict]) -> None:
     """With noise_scale=0.1, params and u_gt must be bit-identical to noise_scale=0.0."""
     clean = InMemoryDataLoader(
         synthetic_samples, batch_size=8, shuffle=False, seed=42, noise_scale=0.0

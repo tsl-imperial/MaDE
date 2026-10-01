@@ -1,7 +1,17 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Regression tests: corrector finiteness near the δ-singularity neighborhood.
 
-Covers Layer 1 (kinematic_bicycle vector_field δ-clamp) and Layer 2 (corrector
-in-loop box projection) working together to keep corrections finite when the
+Covers the kinematic_bicycle vector_field δ-clamp and the corrector
+in-loop box projection working together to keep corrections finite when the
 inverse-dynamics I-output δ is near the constraint box edge (0.49 rad, where
 the box limit is 0.5 rad and tan(δ) starts climbing sharply).
 """
@@ -18,7 +28,14 @@ from made.utils import CorrectorConfig, ModelConfig
 
 
 def _build_db_underspecified_cell(key: jax.Array) -> MaDECell:
-    """Small MaDECell with KinematicBicycleAsDynamicState and DB constraints."""
+    """Small MaDECell with KinematicBicycleAsDynamicState and DB constraints.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Initialised cell.
+    """
     physics = KinematicBicycleAsDynamicState()
     constraints = dynamic_bicycle_constraints()
     return MaDECell.from_config(
@@ -42,25 +59,41 @@ def _patch_inverse_to_delta_near_edge(cell: MaDECell) -> MaDECell:
     """Monkey-patch inverse_dynamics so it always returns u=(0.49, 0.5) for any input.
 
     This places δ=0.49 rad right at the box edge (δ_max=0.5), exercising the
-    Layer-1 clamp and Layer-2 projection without random initialization noise.
+    vector_field clamp and box projection without random initialization noise.
+
+    Args:
+        cell: Cell whose inverse dynamics is replaced.
+
+    Returns:
+        Cell with the fixed inverse dynamics.
     """
 
     class _FixedInverse(eqx.Module):
         def __call__(self, x_prev: jax.Array, x_curr: jax.Array, params: jax.Array) -> jax.Array:
+            """Return the fixed control, ignoring inputs.
+
+            Args:
+                x_prev: Ignored.
+                x_curr: Ignored.
+                params: Ignored.
+
+            Returns:
+                Fixed control (0.49, 0.5).
+            """
             del x_prev, x_curr, params
             return jnp.array([0.49, 0.5])
 
     return eqx.tree_at(lambda c: c.inverse_dynamics, cell, _FixedInverse())
 
 
-def test_correct_train_finite_at_singularity_neighborhood():
-    """Layer 1 + Layer 2: _correct_train stays finite with δ near the box edge.
+def test_correct_train_finite_at_singularity_neighborhood() -> None:
+    """_correct_train stays finite with δ near the box edge.
 
     With 50 GD steps at step_size=0.01 starting from u=(0.49, 0.5), both the
-    clamp in vector_field (Layer 1) and the per-step box projection in the
-    corrector body (Layer 2) must prevent NaN/Inf from tan(δ) singularity.
+    clamp in vector_field and the per-step box projection in the
+    corrector body must prevent NaN/Inf from tan(δ) singularity.
     The post-projection bound asserts the tighter box limit (0.5+1e-6), NOT
-    the legacy 1.4 rad ceiling — this pins a Layer-2 regression specifically.
+    the legacy 1.4 rad ceiling — this pins a box-projection regression specifically.
     """
     key = jax.random.key(0)
     cell = _build_db_underspecified_cell(key)
@@ -86,14 +119,14 @@ def test_correct_train_finite_at_singularity_neighborhood():
 
     assert jnp.isfinite(x_final).all(), f"x_final has non-finite values: {x_final}"
     assert jnp.isfinite(u_final).all(), f"u_final has non-finite values: {u_final}"
-    # Post-projection box assertion (Layer 2) — tighter than 1.4 ceiling
+    # Post-projection box assertion — tighter than 1.4 ceiling
     assert jnp.abs(u_final[0]) <= 0.5 + 1e-6, (
-        f"u_final[0]={u_final[0]} exceeds box bound 0.5; Layer-2 projection may be missing"
+        f"u_final[0]={u_final[0]} exceeds box bound 0.5; in-loop box projection may be missing"
     )
 
 
-def test_correct_eval_finite_at_singularity_neighborhood():
-    """Layer 1 + Layer 2: _correct_eval stays finite with δ near the box edge.
+def test_correct_eval_finite_at_singularity_neighborhood() -> None:
+    """_correct_eval stays finite with δ near the box edge.
 
     Same setup as the train-mode test but uses the while_loop-based eval path.
     Also calls cell.__call__(training=False) end-to-end to exercise the full
@@ -121,7 +154,7 @@ def test_correct_eval_finite_at_singularity_neighborhood():
     assert jnp.isfinite(x_final).all(), f"x_final has non-finite values: {x_final}"
     assert jnp.isfinite(u_final).all(), f"u_final has non-finite values: {u_final}"
     assert jnp.abs(u_final[0]) <= 0.5 + 1e-6, (
-        f"u_final[0]={u_final[0]} exceeds box bound 0.5; Layer-2 projection may be missing"
+        f"u_final[0]={u_final[0]} exceeds box bound 0.5; in-loop box projection may be missing"
     )
 
     # Full pipeline eval: cell.__call__(training=False)

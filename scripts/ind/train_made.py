@@ -1,4 +1,14 @@
-"""Entry point for MaDE / baseline training on the inD dataset (Experiment 2).
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Entry point for MaDE / baseline training on the inD dataset.
 
 Usage
 -----
@@ -104,13 +114,34 @@ def _build_data_loaders(
     Returns (train_loader, val_loader, train_states, train_lengths).
     train_states / train_lengths are the raw trajectory arrays needed for
     empirical-envelope estimation; they are NOT passed to the JAX training loop.
+
+    Args:
+        data_dir: Preprocessed inD root.
+        config: Experiment configuration.
+        use_stub: Use stub data instead of the real dataset.
+        num_devices: Number of devices to shard batches over.
+        seed: Random seed.
+        stationary_filter_m: Minimum track displacement in metres, or None for the default.
+
+    Returns:
+        Train loader, validation loader, train states and train lengths.
     """
     from made.data.window_dataset import filter_stationary_tracks
 
     window_transform = TrajectoryWindowTransform(window_size=2)
     attach_transform = MetadataAttachTransform()
 
-    def _make_samples(states, metadata, lengths):
+    def _make_samples(states: Any, metadata: Any, lengths: Any) -> list:
+        """Turn trajectories into per-window training samples.
+
+        Args:
+            states: Trajectory states, shape ``[N, T, D]``.
+            metadata: Per-trajectory metadata.
+            lengths: Valid length of each trajectory.
+
+        Returns:
+            The list of window samples.
+        """
         samples = []
 
         for idx in range(states.shape[0]):
@@ -201,6 +232,15 @@ def _compute_or_load_envelope(
 
     Computed once from ``train_states`` / ``train_lengths`` and cached to ``cache_path`` as
     JSON; later calls load from the cache to avoid redundant quantile computation across seeds.
+
+    Args:
+        train_states: Training trajectory states.
+        train_lengths: Valid length of each trajectory.
+        cache_path: JSON cache location.
+        dt: Time step in seconds.
+
+    Returns:
+        The empirical envelope.
     """
     if cache_path.exists():
         data = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -230,8 +270,8 @@ _MADE_VARIANT_NAMES = frozenset({"made_phase1", "made_phase2", "made_no_residual
 
 def _train_made(
     config: ExperimentConfig,
-    train_loader,
-    val_loader,
+    train_loader: list,
+    val_loader: list,
     output_dir: Path,
     seed: int,
     *,
@@ -246,6 +286,17 @@ def _train_made(
     When ``envelope`` is given (inD real-world data), it replaces
     ``kinematic_bicycle_constraints()`` so Phase-2 inequality penalties match the dataset's
     actual coordinate range.
+
+    Args:
+        config: Experiment configuration.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        output_dir: Run output directory.
+        seed: Random seed.
+        envelope: Empirical envelope replacing the default constraints, or None.
+
+    Returns:
+        The trained model and the number of steps run.
     """
     config = replace(config, training=replace(config.training, is_field_data=True))
     os.environ.setdefault("MADE_DEBUG_ASSERT_XY", "1")
@@ -277,12 +328,23 @@ def _train_made(
 
 def _train_fab(
     config: ExperimentConfig,
-    train_loader,
-    val_loader,
+    train_loader: list,
+    val_loader: list,
     output_dir: Path,
     seed: int,
 ) -> tuple[object, int]:
-    """FAB latent-projection baseline."""
+    """FAB latent-projection baseline.
+
+    Args:
+        config: Experiment configuration.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        output_dir: Run output directory.
+        seed: Random seed.
+
+    Returns:
+        The trained model and the number of steps run.
+    """
     from made.baselines.fab_baseline import FABBaseline, save_fab_checkpoint, train_fab_baseline
 
     init_key, train_key = jax.random.split(jax.random.key(seed + 1001), 2)
@@ -306,12 +368,23 @@ def _train_fab(
 
 def _train_mlp(
     config: ExperimentConfig,
-    train_loader,
-    val_loader,
+    train_loader: list,
+    val_loader: list,
     output_dir: Path,
     seed: int,
 ) -> tuple[object, int]:
-    """Per-step MLP baseline."""
+    """Per-step MLP baseline.
+
+    Args:
+        config: Experiment configuration.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        output_dir: Run output directory.
+        seed: Random seed.
+
+    Returns:
+        The trained model and the number of steps run.
+    """
     from made.baselines.mlp_baseline import MLPBaseline, train_mlp_baseline
 
     init_key, train_key = jax.random.split(jax.random.key(seed + 2001), 2)
@@ -340,12 +413,23 @@ def _train_mlp(
 
 def _train_clamp(
     config: ExperimentConfig,
-    train_loader,
-    val_loader,
+    train_loader: list,
+    val_loader: list,
     output_dir: Path,
     seed: int,
 ) -> tuple[None, int]:
-    """Clamp baseline is parameterless; write a marker so the cell sentinel exists."""
+    """Clamp baseline is parameterless; write a marker so the cell sentinel exists.
+
+    Args:
+        config: Experiment configuration.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        output_dir: Run output directory.
+        seed: Random seed.
+
+    Returns:
+        ``None`` (no model) and 0 steps.
+    """
     del config, train_loader, val_loader, seed
     ckpt_dir = output_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -353,11 +437,19 @@ def _train_clamp(
     return None, 0
 
 
-def _final_loss_for(variant: str, trained_model, val_loader) -> float:
+def _final_loss_for(variant: str, trained_model: Any, val_loader: list) -> float:
     """Re-evaluate one val batch post-training to capture a final loss snapshot.
 
     Cheap (~0.5 s; one batch through one filter_jit'd loss). Returns 0.0 for the
     parameterless clamp variant.
+
+    Args:
+        variant: Variant name.
+        trained_model: The trained model, or None for the clamp variant.
+        val_loader: Validation batches.
+
+    Returns:
+        The loss on one validation batch (NaN when the loader is empty or the variant unknown).
     """
     if variant == "clamp" or trained_model is None:
         return 0.0
@@ -374,8 +466,31 @@ def _final_loss_for(variant: str, trained_model, val_loader) -> float:
         metadata = batch.get("metadata")
 
         @eqx.filter_jit
-        def _eval(model, x_prev, x_curr, metadata):
-            def _per_sample(xp, xc, md):
+        def _eval(
+            model: Any, x_prev: jax.Array, x_curr: jax.Array, metadata: jax.Array | None
+        ) -> jax.Array:
+            """Mean squared error of the corrected states over the batch.
+
+            Args:
+                model: The trained MaDE cell.
+                x_prev: Previous states.
+                x_curr: Current states.
+                metadata: Per-sample metadata, or None.
+
+            Returns:
+                The scalar mean squared error.
+            """
+            def _per_sample(xp: jax.Array, xc: jax.Array, md: jax.Array | None) -> jax.Array:
+                """Mean squared error of the corrected state for one sample.
+
+                Args:
+                    xp: Previous state.
+                    xc: Current state.
+                    md: Sample metadata, or None.
+
+                Returns:
+                    The scalar mean squared error.
+                """
                 x_corr, _u = model(xp, xc, params=None, dt=0.2, metadata=md)
                 return jnp.mean((x_corr - xc) ** 2)
 
@@ -400,6 +515,13 @@ def _early_stopping_summary(output_dir: Path) -> dict:
     `termination_reason`, read from the last checkpoint's `train_meta.json` rather than
     threaded through the training loop, so the summary cannot disagree with the checkpoint
     it describes.
+
+    Args:
+        output_dir: Run output directory.
+
+    Returns:
+        Dict with the per-phase summary and all termination reasons, or a note when there is
+        no checkpoint directory.
     """
     ck = output_dir / "checkpoints"
     if not ck.is_dir():
@@ -441,8 +563,8 @@ def _early_stopping_summary(output_dir: Path) -> dict:
 def _write_training_summary(
     output_dir: Path,
     variant: str,
-    trained_model,
-    val_loader,
+    trained_model: Any,
+    val_loader: list,
     num_steps: int,
 ) -> None:
     """Write ``training_summary.json``.
@@ -450,6 +572,13 @@ def _write_training_summary(
     Downstream smoke tests assert ``math.isfinite(summary["final_loss"])``, so a
     NaN-from-step-1 run fails here. Includes the per-phase early-stopping block
     (`epochs_run`, `best_epoch_in_phase`, `termination_reason`).
+
+    Args:
+        output_dir: Run output directory.
+        variant: Variant name.
+        trained_model: The trained model, or None for the clamp variant.
+        val_loader: Validation batches.
+        num_steps: Number of training steps run.
     """
     final_loss = _final_loss_for(variant, trained_model, val_loader)
     summary = {
@@ -475,8 +604,8 @@ _VARIANT_TRAINERS = {
 
 def _train_variant(
     config: ExperimentConfig,
-    train_loader,
-    val_loader,
+    train_loader: list,
+    val_loader: list,
     output_dir: Path,
     seed: int,
     *,
@@ -485,6 +614,17 @@ def _train_variant(
     """Dispatch to the per-variant trainer based on ``config.variant``.
 
     Always writes ``training_summary.json`` so every variant has a uniform artefact.
+
+    Args:
+        config: Experiment configuration.
+        train_loader: Training batches.
+        val_loader: Validation batches.
+        output_dir: Run output directory.
+        seed: Random seed.
+        envelope: Empirical envelope for the MaDE variants, or None.
+
+    Raises:
+        ValueError: If ``config.variant`` is not a legal variant.
     """
     variant = config.variant
     if variant not in _LEGAL_VARIANTS:
@@ -506,7 +646,8 @@ def _train_variant(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train MaDE / baseline on inD (E02).")
+    """Parse the command line and train one MaDE or baseline variant on inD."""
+    parser = argparse.ArgumentParser(description="Train MaDE / baseline on inD.")
     parser.add_argument("--config", default=None, help="Path to JSON experiment config.")
     parser.add_argument(
         "--data-dir",

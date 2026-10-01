@@ -9,7 +9,6 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
-.python-version
 .venv/
 venv/
 env/
@@ -45,3 +44,6 @@ wandb/
 # machine state, never results, and committing one would make a stale lock look authoritative
 # to the next checkout.
 *.json.lock
+
+# Local agent tooling
+.claude/

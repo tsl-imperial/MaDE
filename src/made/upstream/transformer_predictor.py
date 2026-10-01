@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Transformer upstream trajectory predictor for the inD real-data experiment.
 
 Design reference: Giuliari et al. 2020, "Transformer Networks for Trajectory
@@ -35,6 +45,12 @@ def _sinusoidal_positional_encoding(seq_len: int, d_model: int) -> jax.Array:
     increasing wavelengths — the original Transformer (Vaswani et al. 2017)
     scheme also used by Giuliari et al. 2020's encoder. Handles odd
     ``d_model`` by truncating the trailing ``cos`` column.
+
+    Args:
+        seq_len: Sequence length.
+        d_model: Model width.
+    Returns:
+        Encoding, shape (seq_len, d_model).
     """
     positions = jnp.arange(seq_len, dtype=jnp.float64)[:, None]
     div_term = jnp.exp(
@@ -57,7 +73,17 @@ class _EncoderLayer(eqx.Module):
     norm2: eqx.nn.LayerNorm
     ffn: eqx.nn.MLP
 
-    def __init__(self, *, d_model: int, num_heads: int, ff_width: int, key: jax.Array):
+    def __init__(
+        self, *, d_model: int, num_heads: int, ff_width: int, key: jax.Array
+    ) -> None:
+        """Build one encoder layer.
+
+        Args:
+            d_model: Model width.
+            num_heads: Attention heads per layer.
+            ff_width: Feed-forward width.
+            key: PRNG key.
+        """
         attn_key, ffn_key = jax.random.split(key, 2)
         self.norm1 = eqx.nn.LayerNorm(d_model)
         self.self_attn = eqx.nn.MultiheadAttention(num_heads, d_model, key=attn_key)
@@ -72,6 +98,13 @@ class _EncoderLayer(eqx.Module):
         )
 
     def __call__(self, x_seq: jax.Array) -> jax.Array:
+        """Apply self-attention and the feed-forward block.
+
+        Args:
+            x_seq: Sequence, shape (T, d_model).
+        Returns:
+            Sequence of the same shape.
+        """
         normed = jax.vmap(self.norm1)(x_seq)
         attn_out = self.self_attn(normed, normed, normed)
         x = x_seq + attn_out
@@ -138,9 +171,28 @@ class TransformerPredictor(UpstreamPredictor):
         embedding_dim: int = 4,
         location_id_index: int = 4,
         key: jax.Array,
-    ):
+    ) -> None:
         # Two independent splits (rather than one `num_layers + N` split) so the
         # named-key count and the layer-key count can never drift out of sync.
+        """Build the Transformer encoder and delta decoder.
+
+        Args:
+            horizon: Number of future steps to predict.
+            state_mean: Train-split state mean, shape (4,).
+            state_std: Train-split state std, shape (4,).
+            d_model: Model width.
+            num_layers: Number of encoder layers.
+            num_heads: Attention heads per layer.
+            ff_width: Feed-forward width.
+            decoder_width: Hidden width of the delta decoder.
+            decoder_depth: Hidden depth of the delta decoder.
+            state_dim: State dimension.
+            metadata_dim: Metadata width.
+            num_locations: Number of location ids.
+            embedding_dim: Location embedding size.
+            location_id_index: Metadata column holding the location id.
+            key: PRNG key.
+        """
         named_key, layers_key = jax.random.split(key, 2)
         input_key, embed_key, query_key, query_cond_key, cross_key, head_key = jax.random.split(
             named_key, 6
@@ -192,6 +244,13 @@ class TransformerPredictor(UpstreamPredictor):
         self._state_dim = state_dim
 
     def __call__(self, context: jax.Array) -> jax.Array:
+        """Predict future states from a context window.
+
+        Args:
+            context: Context window, shape (H, 4).
+        Returns:
+            Predicted states, shape (horizon, 4).
+        """
         states = context[:, : self._state_dim]
         meta = context[0, self._state_dim :]
         features = canonicalise_window(states, self.state_mean, self.state_std)
@@ -212,4 +271,9 @@ class TransformerPredictor(UpstreamPredictor):
 
     @property
     def state_dim(self) -> int:
+        """State dimension of the predictions.
+
+        Returns:
+            State dimension.
+        """
         return self._state_dim

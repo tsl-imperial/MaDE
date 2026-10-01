@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Constraint definitions for each supported system."""
 
 from __future__ import annotations
@@ -21,6 +31,15 @@ class BoxConstraints(ConstraintSet):
     control_max: jax.Array
 
     def __call__(self, state: jax.Array, control: jax.Array) -> jax.Array:
+        """Return the raw box inequality values, feasible when all are <= 0.
+
+        Args:
+            state: State vector.
+            control: Control vector.
+
+        Returns:
+            Concatenated state-max, state-min, control-max, control-min residuals.
+        """
         return jnp.concatenate(
             [
                 state - self.state_max,
@@ -39,21 +58,62 @@ class SpeedNormConstraint(ConstraintSet):
 
     @property
     def state_min(self) -> jax.Array:
+        """Not defined for this constraint.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            AttributeError: Always; this constraint defines no sampling bounds.
+        """
         raise AttributeError("SpeedNormConstraint does not define sampling bounds.")
 
     @property
     def state_max(self) -> jax.Array:
+        """Not defined for this constraint.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            AttributeError: Always; this constraint defines no sampling bounds.
+        """
         raise AttributeError("SpeedNormConstraint does not define sampling bounds.")
 
     @property
     def control_min(self) -> jax.Array:
+        """Not defined for this constraint.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            AttributeError: Always; this constraint defines no sampling bounds.
+        """
         raise AttributeError("SpeedNormConstraint does not define sampling bounds.")
 
     @property
     def control_max(self) -> jax.Array:
+        """Not defined for this constraint.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            AttributeError: Always; this constraint defines no sampling bounds.
+        """
         raise AttributeError("SpeedNormConstraint does not define sampling bounds.")
 
     def __call__(self, state: jax.Array, control: jax.Array) -> jax.Array:
+        """Return the speed-norm inequality value, feasible when <= 0.
+
+        Args:
+            state: State vector.
+            control: Control vector (unused).
+
+        Returns:
+            One-element array ``||v|| - v_max``.
+        """
         del control
         velocity = jnp.take(state, jnp.asarray(self.velocity_indices))
         return jnp.array([jnp.linalg.norm(velocity) - self.v_max], dtype=state.dtype)
@@ -66,28 +126,65 @@ class CompositeConstraints(ConstraintSet):
 
     @property
     def state_min(self) -> jax.Array:
+        """Lower state bound of the first constraint.
+
+        Returns:
+            The bound array.
+        """
         return self.constraints[0].state_min
 
     @property
     def state_max(self) -> jax.Array:
+        """Upper state bound of the first constraint.
+
+        Returns:
+            The bound array.
+        """
         return self.constraints[0].state_max
 
     @property
     def control_min(self) -> jax.Array:
+        """Lower control bound of the first constraint.
+
+        Returns:
+            The bound array.
+        """
         return self.constraints[0].control_min
 
     @property
     def control_max(self) -> jax.Array:
+        """Upper control bound of the first constraint.
+
+        Returns:
+            The bound array.
+        """
         return self.constraints[0].control_max
 
     def __call__(self, state: jax.Array, control: jax.Array) -> jax.Array:
+        """Return the concatenated inequality values of all member constraints.
+
+        Args:
+            state: State vector.
+            control: Control vector.
+
+        Returns:
+            Concatenated constraint values.
+        """
         return jnp.concatenate(
             [constraint(state, control) for constraint in self.constraints]
         )
 
 
 def double_integrator_constraints(v_max: float = 5.0, a_max: float = 2.0) -> ConstraintSet:
-    """Default constraints for the double-integrator system."""
+    """Default constraints for the double-integrator system.
+
+    Args:
+        v_max: Speed bound.
+        a_max: Acceleration bound.
+
+    Returns:
+        Box plus speed-norm constraints.
+    """
     box = BoxConstraints(
         state_min=jnp.array([-10.0, -10.0, -v_max, -v_max]),
         state_max=jnp.array([10.0, 10.0, v_max, v_max]),
@@ -102,7 +199,16 @@ def unicycle_constraints(
     delta_max: float = 1.0,
     a_max: float = 2.0,
 ) -> BoxConstraints:
-    """Default constraints for the unicycle system."""
+    """Default constraints for the unicycle system.
+
+    Args:
+        v_max: Speed bound.
+        delta_max: Turn-rate bound.
+        a_max: Acceleration bound.
+
+    Returns:
+        Box constraints.
+    """
     return BoxConstraints(
         state_min=jnp.array([-20.0, -20.0, -jnp.pi, 0.0]),
         state_max=jnp.array([20.0, 20.0, jnp.pi, v_max]),
@@ -116,7 +222,16 @@ def kinematic_bicycle_constraints(
     delta_max: float = 0.5,
     a_max: float = 3.0,
 ) -> BoxConstraints:
-    """Default constraints for the kinematic bicycle system."""
+    """Default constraints for the kinematic bicycle system.
+
+    Args:
+        v_max: Speed bound.
+        delta_max: Steering-angle bound.
+        a_max: Acceleration bound.
+
+    Returns:
+        Box constraints.
+    """
     return BoxConstraints(
         state_min=jnp.array([-50.0, -50.0, -jnp.pi, 0.0]),
         state_max=jnp.array([50.0, 50.0, jnp.pi, v_max]),
@@ -131,7 +246,17 @@ def dynamic_bicycle_constraints(
     a_max: float = 3.0,
     yaw_rate_max: float = 1.0,
 ) -> BoxConstraints:
-    """Default constraints for the dynamic bicycle system."""
+    """Default constraints for the dynamic bicycle system.
+
+    Args:
+        v_max: Speed bound.
+        delta_max: Steering-angle bound.
+        a_max: Acceleration bound.
+        yaw_rate_max: Yaw-rate bound.
+
+    Returns:
+        Box constraints.
+    """
     lateral_v_max = 5.0
     return BoxConstraints(
         state_min=jnp.array([-50.0, -50.0, -jnp.pi, 0.0, -lateral_v_max, -yaw_rate_max]),
@@ -150,9 +275,16 @@ def drop_position_bounds(
 
     The four supported physics models carry positional coordinates at state
     indices 0 and 1. Use the result only for INEQUALITY computations on the
-    inD/field-data path — pass the original box to E01 samplers, clamp
+    inD/field-data path — pass the original box to the simulated-experiment samplers, clamp
     baselines, and bound_violation perturbations that need a finite
     positional range.
+
+    Args:
+        box: Box constraints to copy.
+        position_indices: State indices of the positional coordinates.
+
+    Returns:
+        Box with the positional bounds set to +/-inf.
     """
     inf = jnp.asarray(jnp.inf, dtype=box.state_min.dtype)
     idx = jnp.asarray(position_indices)
@@ -173,8 +305,15 @@ def _assert_xy_unbounded(
 ) -> None:
     """Raise ValueError if positional rows of *constraints* are finite.
 
-    Guard for the inD/field-data construction surface. E01 paths must NOT
+    Guard for the inD/field-data construction surface. Simulated-experiment paths must NOT
     call this — their factories return finite positional bounds by design.
+
+    Args:
+        constraints: Box constraints to check.
+        position_indices: State indices of the positional coordinates.
+
+    Raises:
+        ValueError: If any positional bound is finite.
     """
     idx = list(position_indices)
     if not (
@@ -199,8 +338,16 @@ def _maybe_assert_xy_zero(
     """Optionally runtime-check that positional violation rows are zero.
 
     No-op when ``MADE_DEBUG_ASSERT_XY`` env var is unset. Returns the input
-    unchanged. False-positive-free for E01: in-box samples produce zero at
-    positional rows regardless of finite vs infinite bounds.
+    unchanged. False-positive-free for the simulated experiments: in-box samples produce zero
+    at positional rows regardless of finite vs infinite bounds.
+
+    Args:
+        violation: Constraint-violation vector.
+        position_indices: State indices of the positional coordinates.
+        state_dim: State dimension; defaults to half the violation length.
+
+    Returns:
+        ``violation``, unchanged.
     """
     if not _ASSERT_XY_FLAG_ENABLED:
         return violation
@@ -229,6 +376,15 @@ def inD_physical_constraints(
     x, y are positional and intentionally UNBOUNDED. Remaining bounds reflect
     typical-vehicle physical limits, NOT the inD camera FOV or the empirical
     envelope's noise-dominated quantiles.
+
+    Args:
+        v_max: Speed upper bound.
+        delta_max: Steering-angle bound.
+        a_min: Minimum acceleration.
+        a_max: Maximum acceleration.
+
+    Returns:
+        Box constraints with unbounded position.
     """
     inf = jnp.inf
     return BoxConstraints(
@@ -263,6 +419,15 @@ def inD_empirical_constraints(
 
     One object passed to both clamp projection and metric, so they can't disagree (earlier
     candidate boxes had clamp project onto 13.9 m/s while the metric scored against 22.0).
+
+    Args:
+        v_max: Empirical speed upper bound.
+        delta_max: Steering-angle bound.
+        a_min: Minimum acceleration.
+        a_max: Maximum acceleration.
+
+    Returns:
+        Box constraints with unbounded position.
     """
     inf = jnp.inf
     return BoxConstraints(
@@ -281,7 +446,19 @@ def inD_physical_constraints_db(
     a_min: float = -8.0,
     a_max: float = 4.0,
 ) -> BoxConstraints:
-    """Feasibility constraints for inD (dynamic-bicycle, 6D state)."""
+    """Feasibility constraints for inD (dynamic-bicycle, 6D state).
+
+    Args:
+        v_max: Speed upper bound.
+        vy_max: Lateral-speed bound.
+        yaw_rate_max: Yaw-rate bound.
+        delta_max: Steering-angle bound.
+        a_min: Minimum acceleration.
+        a_max: Maximum acceleration.
+
+    Returns:
+        Box constraints with unbounded position.
+    """
     inf = jnp.inf
     return BoxConstraints(
         state_min=jnp.array([-inf, -inf, -jnp.pi, 0.0, -vy_max, -yaw_rate_max]),

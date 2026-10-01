@@ -1,4 +1,14 @@
-"""Phase 3 acceptance tests for made.data.ind.splits.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Tests for made.data.ind.splits.
 
 Covers:
 - assign_splits() returns pairwise-disjoint train/val/test.
@@ -18,6 +28,7 @@ from made.data.ind.splits import (
 
 
 def test_splits_pairwise_disjoint() -> None:
+    """Checks splits pairwise disjoint."""
     assignment = assign_splits()
     by_split: dict[str, set[int]] = {s: set() for s in SPLIT_NAMES}
     for rec_id, split in assignment.items():
@@ -29,18 +40,21 @@ def test_splits_pairwise_disjoint() -> None:
 
 
 def test_canonical_p10_train() -> None:
+    """Checks canonical p10 train."""
     assignment = assign_splits()
     train_ids = frozenset(rec for rec, s in assignment.items() if s == "train")
     assert train_ids == frozenset(_DEFAULT_TRAIN)
 
 
 def test_canonical_p10_val() -> None:
+    """Checks canonical p10 val."""
     assignment = assign_splits()
     val_ids = frozenset(rec for rec, s in assignment.items() if s == "val")
     assert val_ids == frozenset(_DEFAULT_VAL)
 
 
 def test_canonical_p10_test() -> None:
+    """Checks canonical p10 test."""
     assignment = assign_splits()
     test_ids = frozenset(rec for rec, s in assignment.items() if s == "test")
     assert test_ids == frozenset(_DEFAULT_TEST)
@@ -54,7 +68,11 @@ def test_seed_is_decorative_for_default_table() -> None:
 
 
 def _mini_location_table() -> dict[int, dict]:
-    """One location with 6 recordings — enough to get val+test holdouts."""
+    """One location with 6 recordings — enough to get val+test holdouts.
+
+    Returns:
+        Location table keyed by location id.
+    """
     return {99: {"name": "test_loc", "recordings": [10, 11, 12, 13, 14, 15]}}
 
 
@@ -84,6 +102,7 @@ def test_override_table_all_recordings_assigned() -> None:
 
 
 def test_override_table_splits_disjoint() -> None:
+    """Checks override table splits disjoint."""
     table = _mini_location_table()
     assignment = assign_splits(location_table=table, seed=7)
     by_split: dict[str, set[int]] = {"train": set(), "val": set(), "test": set()}

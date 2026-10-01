@@ -1,15 +1,23 @@
-"""E1 metric invariance — bitwise snapshot regression.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
 
-Phase 0 of ralplan-real-data-metrics-v1 (R14).
+"""Simulated-experiment metric invariance — bitwise snapshot regression.
 
 Goals:
-  - Pin every E1-relied metric (`fidelity`, `dynamics_violation_known`,
+  - Pin every metric the simulated experiments rely on (`fidelity`, `dynamics_violation_known`,
     `dynamics_violation_learned`, `dynamics_violation_true`, `compute_metrics`)
     to a pre-change snapshot so adding the new real-data helpers cannot
-    accidentally shift E1 paper numbers.
+    accidentally shift the simulated-experiment paper numbers.
   - Inputs include edge cases (empty trajectory, length-1, tan(δ) near ±π/2,
     batched N=2 + unbatched).
-  - Initial comparison is bitwise float equality. If a clean E1-untouched
+  - Initial comparison is bitwise float equality. If a clean
     diff ever fails, see `tests/data/e1_metrics_snapshot_README.md` for
     the allclose downgrade procedure.
 
@@ -41,7 +49,11 @@ _SNAPSHOT = _HERE / "data" / "e1_metrics_snapshot.json"
 
 
 def _build_inputs() -> dict[str, dict]:
-    """Build a deterministic suite of inputs covering the regression surface."""
+    """Build a deterministic suite of inputs covering the regression surface.
+
+    Returns:
+        Dict of named input cases plus a ``_shared`` entry.
+    """
     physics = KinematicBicycle()
     params = jnp.array([2.7])
     constraints = kinematic_bicycle_constraints()
@@ -150,7 +162,11 @@ def _build_inputs() -> dict[str, dict]:
 
 
 def _compute_snapshot() -> dict:
-    """Compute the metric values for every input case."""
+    """Compute the metric values for every input case.
+
+    Returns:
+        Nested dict of metric values per case.
+    """
     bundle = _build_inputs()
     shared = bundle.pop("_shared")
     physics = shared["physics"]
@@ -216,6 +232,11 @@ def _compute_snapshot() -> dict:
 
 
 def _write_snapshot(snapshot: dict) -> None:
+    """Write the metric snapshot to disk as JSON.
+
+    Args:
+        snapshot: Snapshot to serialise.
+    """
     _SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
     _SNAPSHOT.write_text(json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -226,6 +247,13 @@ def _bitwise_equal(a: float, b: float) -> bool:
     Uses a tight relative tolerance (1e-12) rather than exact `==` so this
     snapshot test is robust to the last 1-2 bits of float64 drift observed
     across hardware/BLAS builds, without masking genuine metric changes.
+
+    Args:
+        a: First value.
+        b: Second value.
+
+    Returns:
+        True when the values match.
     """
     if math.isnan(a) and math.isnan(b):
         return True
@@ -233,11 +261,11 @@ def _bitwise_equal(a: float, b: float) -> bool:
 
 
 def test_e1_compute_metrics_snapshot() -> None:
-    """E1 metric outputs must match the frozen pre-change snapshot bitwise.
+    """Simulated-experiment metric outputs must match the frozen snapshot bitwise.
 
     On first run (when the snapshot file does not exist), the computed
     values are written and the test passes. Any subsequent run that
-    diverges fails — guarding E1 paper numbers against silent drift.
+    diverges fails — guarding Table 1 numbers against silent drift.
 
     To regenerate intentionally (e.g. after a deliberate metric refactor),
     delete `tests/data/e1_metrics_snapshot.json` and rerun the test.

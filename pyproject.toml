@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
 authors = [
-  { name = "Kevin Yu", email = "k.qu23@imperial.ac.uk" },
+  { name = "Kevin Yu" },
   { name = "Tao Guo" },
   { name = "Constantinos Antoniou" },
   { name = "Panagiotis Angeloudis" },
@@ -28,12 +28,35 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
+cuda12 = [
+  "jax[cuda12]>=0.4.30; platform_system == 'Linux'",
+]
+
+[dependency-groups]
+dev = [
   "pytest>=8.0",
   "ruff>=0.6",
 ]
-cuda12 = [
-  "jax[cuda12]>=0.4.30; platform_system == 'Linux'",
+
+[tool.uv]
+environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
+# Linux: versions used to produce the paper's results (CUDA 12, RTX 3090).
+# macOS: versions the test suite was validated with on CPU. Random streams match across both,
+# because made.utils.jax_setup.configure() fixes jax_threefry_partitionable=True.
+constraint-dependencies = [
+  "jax==0.10.0; sys_platform == 'linux'",
+  "jaxlib==0.10.0; sys_platform == 'linux'",
+  "jax-cuda12-plugin==0.10.0; sys_platform == 'linux'",
+  "jax-cuda12-pjrt==0.10.0; sys_platform == 'linux'",
+  "equinox==0.13.7; sys_platform == 'linux'",
+  "diffrax==0.7.2",
+  "optax==0.2.5",
+  "orbax-checkpoint==0.11.5",
+  "numpy==2.4.4; sys_platform == 'linux'",
+  "jax==0.4.38; sys_platform == 'darwin'",
+  "jaxlib==0.4.38; sys_platform == 'darwin'",
+  "equinox==0.13.6; sys_platform == 'darwin'",
+  "numpy==2.4.3; sys_platform == 'darwin'",
 ]
 
 [tool.hatch.build.targets.wheel]

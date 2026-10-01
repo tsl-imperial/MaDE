@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Metadata encoder for system parameters.
 
 Location-aware mode: when ``num_locations > 0``, the encoder expects a metadata vector of
@@ -45,7 +55,21 @@ class MetadataEncoder(eqx.Module):
         unbounded_scale: bool = False,
         lref_residual: bool = False,
         key: jax.Array,
-    ):
+    ) -> None:
+        """Build the encoder MLP and optional location embedding.
+
+        Args:
+            metadata_dim: Length of the metadata vector.
+            param_dim: Number of physics parameters produced.
+            hidden: Hidden layer widths.
+            param_scales: Per-parameter upper bounds.
+            num_locations: Number of location IDs; 0 disables the embedding.
+            embedding_dim: Location embedding width.
+            location_id_index: Metadata column holding the location ID.
+            unbounded_scale: Use a softplus output without ``param_scales``.
+            lref_residual: Output ``L_REF + raw`` instead of a bounded value.
+            key: PRNG key for weight initialisation.
+        """
         self.unbounded_scale = unbounded_scale
         self.lref_residual = lref_residual
         self.metadata_dim = metadata_dim
@@ -81,6 +105,14 @@ class MetadataEncoder(eqx.Module):
         self.param_scales = param_scales
 
     def __call__(self, metadata: jax.Array) -> jax.Array:
+        """Map a metadata vector to physics parameters.
+
+        Args:
+            metadata: Metadata vector of shape ``[metadata_dim]``.
+
+        Returns:
+            Physics parameter vector.
+        """
         if self.embedding is not None:
             # Slice off the location-id integer column at location_id_index.
             # Use jnp.concatenate on float slices to keep the operation traceable.

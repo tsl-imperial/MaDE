@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """FAB baseline, phase 2: train the phase-1 model, then continue with the phase-2
 structuring loss on top of the same weights.
 
@@ -12,6 +22,10 @@ import sys
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -50,18 +64,32 @@ PREFIX: dict[str, str] = {
 }
 
 
-def true_state_dim(cfg) -> int:
-    """State dimension of the condition's TRUE system, for validating a per-dim override."""
+def true_state_dim(cfg: Any) -> int:
+    """State dimension of the condition's TRUE system, for validating a per-dim override.
+
+    Args:
+        cfg: The experiment configuration.
+
+    Returns:
+        The state dimension of ``cfg.physics.true_system``.
+    """
     from made.physics import build_system
     physics, _ = build_system(cfg.physics.true_system)
     return int(physics.state_dim)
 
 
-def _condition(cfg) -> dict:
+def _condition(cfg: Any) -> dict:
     """True system, known system and eval regime, all read from the config.
 
     Only the dynamic-bicycle condition is underspecified; on the other three the known model
     is the data-generating model, so they are fully specified.
+
+    Args:
+        cfg: The experiment configuration.
+
+    Returns:
+        Dict with the true system, known system, whether it is underspecified and the eval
+        regime.
     """
     true_system = cfg.physics.true_system
     known_system = getattr(cfg.model, "known_system", None)
@@ -89,32 +117,70 @@ LATENT_DIM = 8  # six free state dimensions plus two of control.
 GENERATORS = ("box_violating", "off_manifold", "wrong_control", "ambient")
 
 
-def _box(constraints):
+def _box(constraints: Any) -> Any:
+    """The box constraint, unwrapping a composite when needed.
+
+    Args:
+        constraints: A box constraint or a ``CompositeConstraints``.
+
+    Returns:
+        The first constraint of a composite, or ``constraints`` itself.
+    """
     return constraints.constraints[0] if isinstance(constraints, CompositeConstraints) else constraints
 
 
-def _true_step_fn(dt: float, true_params: jax.Array, true_system: str):
+def _true_step_fn(
+    dt: float, true_params: jax.Array, true_system: str
+) -> Callable[[jax.Array, jax.Array], jax.Array]:
     """One step of the true system, the manifold generator 3 moves along.
 
     On the underspecified dynamic bicycle the true model is denied to the model, so using it
     to synthesise negatives is a disclosure. On the three fully-specified conditions the true
     model is the known model, so there is no asymmetry. `_condition` decides which case applies.
+
+    Args:
+        dt: Time step.
+        true_params: Parameters of the true system.
+        true_system: Name of the true system.
+
+    Returns:
+        A function mapping a state and control to the next state.
     """
     true_physics, _ = build_system(true_system)
     dynamics = AugmentedDynamics(true_physics, ZeroResidual(true_physics.state_dim))
 
     def step(x_prev: jax.Array, u: jax.Array) -> jax.Array:
+        """Advance the true system by one step.
+
+        Args:
+            x_prev: Previous state.
+            u: Control.
+
+        Returns:
+            The next state.
+        """
         return dynamics.integrate(x_prev, u, true_params, dt)
 
     return step
 
 
-def _make_infeasible_batch(generators, key, x_prev, x_curr):
+def _make_infeasible_batch(
+    generators: dict[str, Any], key: jax.Array, x_prev: jax.Array, x_curr: jax.Array
+) -> tuple[jax.Array, dict[str, jax.Array]]:
     """Equal shares of the four generators over one feasible batch.
 
     Returns `(pairs, per_generator)` where `per_generator` keeps each generator's own slice
     so accuracy can be broken down by generator rather than only in aggregate — a high
     aggregate driven by generators 1 and 4 would mean the manifold was never learned.
+
+    Args:
+        generators: Infeasible-pair generators by name.
+        key: PRNG key.
+        x_prev: Feasible previous states.
+        x_curr: Feasible current states.
+
+    Returns:
+        The concatenated infeasible pairs and each generator's own slice.
     """
     n = x_prev.shape[0]
     share = n // len(GENERATORS)
@@ -137,7 +203,7 @@ def _train_phase2(
     model: FABBaseline,
     discriminator: Discriminator,
     batches: list[dict],
-    generators,
+    generators: dict[str, Any],
     *,
     epochs: int,
     lr_ae: float,
@@ -145,9 +211,24 @@ def _train_phase2(
     n_latent_samples: int,
     key: jax.Array,
     normalise: tuple[jax.Array, jax.Array] | None = None,
-):
+) -> tuple[FABBaseline, Discriminator, list[dict], dict[str, float]]:
     """The two sides alternate with distinct objectives: not a minimax loss -- the
     discriminator's gradient never reaches the autoencoder's parameters, nor the reverse.
+
+    Args:
+        model: The FAB autoencoder.
+        discriminator: The discriminator.
+        batches: Feasible training batches.
+        generators: Infeasible-pair generators by name.
+        epochs: Number of epochs.
+        lr_ae: Autoencoder learning rate.
+        lr_disc: Discriminator learning rate.
+        n_latent_samples: Latent samples drawn per batch.
+        key: PRNG key.
+        normalise: Unused; accepted for call compatibility.
+
+    Returns:
+        The trained model and discriminator, the per-epoch history and the converged loss terms.
     """
     d_opt = optax.adam(lr_disc)
     m_opt = optax.adam(lr_ae)
@@ -155,14 +236,57 @@ def _train_phase2(
     m_state = m_opt.init(eqx.filter(model, eqx.is_array))
 
     @eqx.filter_jit
-    def _d_step(disc, state, pairs, labels):
+    def _d_step(
+        disc: Discriminator, state: Any, pairs: jax.Array, labels: jax.Array
+    ) -> tuple[Discriminator, Any, jax.Array]:
+        """One discriminator update.
+
+        Args:
+            disc: The discriminator.
+            state: Optimiser state.
+            pairs: Feasible and infeasible pairs.
+            labels: 1 for feasible, 0 for infeasible.
+
+        Returns:
+            The updated discriminator, optimiser state and loss.
+        """
         loss, grads = eqx.filter_value_and_grad(discriminator_loss)(disc, pairs, labels)
         updates, state = d_opt.update(grads, state)
         return eqx.apply_updates(disc, updates), state, loss
 
     @eqx.filter_jit
-    def _m_step(mdl, state, disc, pairs, labels, feasible, z):
-        def _loss(m):
+    def _m_step(
+        mdl: FABBaseline,
+        state: Any,
+        disc: Discriminator,
+        pairs: jax.Array,
+        labels: jax.Array,
+        feasible: jax.Array,
+        z: jax.Array,
+    ) -> tuple[FABBaseline, Any, jax.Array]:
+        """One autoencoder update.
+
+        Args:
+            mdl: The FAB autoencoder.
+            state: Optimiser state.
+            disc: The discriminator.
+            pairs: Feasible and infeasible pairs.
+            labels: 1 for feasible, 0 for infeasible.
+            feasible: Feasible pairs.
+            z: Latent samples.
+
+        Returns:
+            The updated model, optimiser state and structuring loss.
+        """
+        def _loss(m: FABBaseline) -> jax.Array:
+            """Total structuring loss for the model.
+
+            Args:
+                m: The FAB autoencoder.
+
+            Returns:
+                The scalar total loss.
+            """
             return structuring_loss(m, disc, pairs, labels, feasible, z).total
 
         loss, grads = eqx.filter_value_and_grad(_loss)(mdl)
@@ -170,7 +294,27 @@ def _train_phase2(
         return eqx.apply_updates(mdl, updates), state, loss
 
     @eqx.filter_jit
-    def _terms(mdl, disc, pairs, labels, feasible, z):
+    def _terms(
+        mdl: FABBaseline,
+        disc: Discriminator,
+        pairs: jax.Array,
+        labels: jax.Array,
+        feasible: jax.Array,
+        z: jax.Array,
+    ) -> Any:
+        """The structuring loss terms.
+
+        Args:
+            mdl: The FAB autoencoder.
+            disc: The discriminator.
+            pairs: Feasible and infeasible pairs.
+            labels: 1 for feasible, 0 for infeasible.
+            feasible: Feasible pairs.
+            z: Latent samples.
+
+        Returns:
+            The structuring loss terms.
+        """
         return structuring_loss(mdl, disc, pairs, labels, feasible, z)
 
     history: list[dict] = []
@@ -227,7 +371,17 @@ def _train_phase2(
     return model, discriminator, history, converged
 
 
-def _save(model, out_dir: Path, key) -> str:
+def _save(model: FABBaseline, out_dir: Path, key: jax.Array) -> str:
+    """Save the model as a checkpoint under ``out_dir``.
+
+    Args:
+        model: The trained model.
+        out_dir: Run output directory.
+        key: PRNG key stored in the checkpoint.
+
+    Returns:
+        The checkpoint directory.
+    """
     ckpt = out_dir / "checkpoints"
     CheckpointManager(str(ckpt)).save(
         TrainState(model=model, opt_state_I=None, opt_state_T=None, key=key, step=1), 1
@@ -236,6 +390,14 @@ def _save(model, out_dir: Path, key) -> str:
 
 
 def main() -> int:
+    """Train the FAB baseline (phase 1 then phase 2) for one system and seed.
+
+    Returns:
+        Process exit code (0 on success).
+
+    Raises:
+        SystemExit: If a precondition for the run is not met.
+    """
     ap = argparse.ArgumentParser(description="Train the FAB baseline (phase 1 then phase 2).")
     ap.add_argument(
         "--system",

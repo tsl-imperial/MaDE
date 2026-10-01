@@ -1,7 +1,7 @@
-# E1 metrics snapshot
+# Simulated-experiment metrics snapshot
 
 `e1_metrics_snapshot.json` is a bitwise-frozen snapshot of every metric
-helper that Experiment 1 paper tables depend on:
+helper that the simulated-experiment paper tables depend on:
 
 - `fidelity`
 - `dynamics_violation_known`
@@ -9,9 +9,8 @@ helper that Experiment 1 paper tables depend on:
 - `dynamics_violation_true`
 - `compute_metrics`
 
-It guards against silent drift introduced when the real-data metrics for
-Experiment 2 / Experiment 3 are added as siblings in
-`src/made/evaluation/metrics.py` (ralplan-real-data-metrics-v1, R14 / Phase 0).
+It guards against silent drift introduced when the inD metrics are
+added as siblings in `src/made/evaluation/metrics.py`.
 
 The test in `tests/test_e1_metrics_unchanged.py` evaluates the helpers on a
 fixed input suite (standard batched, unbatched, length-1, empty, and a
@@ -24,8 +23,8 @@ If a diff that does not touch `metrics.py` fails the snapshot, that is a
 bug — investigate the actual cause (XLA flag drift, JAX upgrade, dtype
 regression, etc.) before regenerating.
 
-If a diff intentionally changes E1 metric definitions (rare; should
-require explicit ADR sign-off), regenerate by:
+If a diff intentionally changes the simulated-experiment metric definitions
+(rare; should require explicit sign-off), regenerate by:
 
 ```bash
 MADE_E1_SNAPSHOT_REFRESH=1 JAX_PLATFORMS=cpu pytest tests/test_e1_metrics_unchanged.py -x

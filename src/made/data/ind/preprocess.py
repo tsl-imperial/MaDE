@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """inD preprocessing orchestrator.
 
 Entry point: preprocess_ind(raw_dir, output_dir, ...) -> dict
@@ -44,7 +54,11 @@ from made.data.ind.transform import process_recording_tracks
 
 
 def _git_sha() -> str:
-    """Return the current git HEAD SHA, or 'unknown' if unavailable."""
+    """Return the current git HEAD SHA, or 'unknown' if unavailable.
+
+    Returns:
+        The SHA, or "unknown".
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -66,6 +80,11 @@ def _resolve_lanelet_paths(raw_dir: Path) -> dict[str, str]:
     When a key has a registered fallback (``LANELET_MAP_PATHS_FALLBACK``) and the primary
     path doesn't exist, the fallback is substituted — handles the vendor typo
     ``constuction`` vs ``construction``.
+
+    Args:
+        raw_dir: inD raw data/ directory.
+    Returns:
+        Mapping from map key to relative path.
     """
     dataset_root = raw_dir.parent  # raw_dir is the data/ subdir
     resolved: dict[str, str] = {}
@@ -80,7 +99,13 @@ def _resolve_lanelet_paths(raw_dir: Path) -> dict[str, str]:
 def _pad_and_stack(
     traj_list: list[np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Zero-pad a list of [Ti, 4] arrays to [N, T_max, 4] and return lengths."""
+    """Zero-pad a list of [Ti, 4] arrays to [N, T_max, 4] and return lengths.
+
+    Args:
+        traj_list: Trajectories of shape [Ti, 4].
+    Returns:
+        Tuple (states [N, T_max, 4], lengths [N]).
+    """
     if not traj_list:
         return np.zeros((0, 0, 4), dtype=np.float64), np.zeros(0, dtype=np.int32)
     lengths = np.asarray([t.shape[0] for t in traj_list], dtype=np.int32)
@@ -98,6 +123,12 @@ def _write_split_artefacts(
     """Write trajectories.npz, metadata.npy, index.csv for one split.
 
     Returns the number of trajectories written.
+
+    Args:
+        split_dir: Output directory of the split.
+        records: Trajectory records.
+    Returns:
+        Number of trajectories written.
     """
     split_dir.mkdir(parents=True, exist_ok=True)
     n = len(records)
@@ -146,7 +177,12 @@ def _write_split_artefacts(
 
 
 def _write_index_csv(path: Path, records: list[dict]) -> None:
-    """Write a lightweight CSV index for per-trajectory filtering."""
+    """Write a lightweight CSV index for per-trajectory filtering.
+
+    Args:
+        path: Output CSV path.
+        records: Trajectory records.
+    """
     fieldnames = [
         "traj_idx",
         "recording_id",
@@ -188,28 +224,19 @@ def preprocess_ind(
 ) -> dict:
     """Preprocess all inD recordings into versioned NPZ artefacts.
 
-    Parameters
-    ----------
-    raw_dir:
-        Path to the inD ``data/`` directory containing ``XX_tracks.csv`` etc.
-    output_dir:
-        Root output directory. Artefacts written under ``output_dir/version/``.
-    version:
-        Version tag (e.g. ``"v1"``). A new tag makes a fresh tree; an existing tag
-        requires ``force=True``.
-    split_seed:
-        Seed passed to :func:`assign_splits`.
-    min_frames:
-        Minimum trajectory length (5 Hz frames) after downsampling.
-    force:
-        Overwrite an existing versioned output directory.
-    _location_table, _split_assignment, _recording_ids, _construction_recordings:
-        Internal test overrides; module-level defaults used when None.
+    Args:
+        raw_dir: Path to the inD ``data/`` directory containing ``XX_tracks.csv`` etc.
+        output_dir: Root output directory. Artefacts written under ``output_dir/version/``.
+        version: Version tag (e.g. ``"v1"``). A new tag makes a fresh tree; an existing tag requires
+            ``force=True``.
+        split_seed: Seed passed to :func:`assign_splits`.
+        min_frames: Minimum trajectory length (5 Hz frames) after downsampling.
+        force: Overwrite an existing versioned output directory.
+        _location_table, _split_assignment, _recording_ids, _construction_recordings: Internal test
+            overrides; module-level defaults used when None.
 
-    Returns
-    -------
-    dict
-        Summary / manifest dict (same content written to ``manifest.json``).
+    Returns:
+        dict: Summary / manifest dict (same content written to ``manifest.json``).
     """
     raw_path = Path(raw_dir)
     out_root = Path(output_dir) / version
@@ -313,7 +340,13 @@ def preprocess_ind(
 
 
 def _compute_stats(records: list[dict]) -> dict:
-    """Compute per-state-dim mean/std from train records, and per-class counts."""
+    """Compute per-state-dim mean/std from train records, and per-class counts.
+
+    Args:
+        records: Training trajectory records.
+    Returns:
+        Dict with state_mean, state_std and class_counts.
+    """
     if not records:
         return {"state_mean": [0.0, 0.0, 0.0, 0.0], "state_std": [1.0, 1.0, 1.0, 1.0]}
 
@@ -338,6 +371,7 @@ def _compute_stats(records: list[dict]) -> dict:
 
 # CLI entry point: python -m made.data.ind.preprocess
 def _cli() -> None:
+    """Command-line entry point."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Preprocess inD dataset")

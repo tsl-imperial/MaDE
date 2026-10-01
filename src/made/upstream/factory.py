@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Construction / serialisation factory for upstream predictors.
 
 ``make_predictor`` is the single dispatch point from a string ``kind`` to a
@@ -89,6 +99,11 @@ def save_predictor(
     ``stride``, ``dt``) that are not constructor kwargs — those are written
     through unchanged but ignored by :func:`load_predictor` when rebuilding
     the template.
+
+    Args:
+        directory: Output directory; created if missing.
+        model: Trained predictor.
+        config_dict: Constructor configuration, see above.
     """
     directory = Path(directory).expanduser().resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -108,6 +123,12 @@ def load_predictor(directory: str | Path) -> tuple[UpstreamPredictor, dict[str, 
     :func:`make_predictor`, using a throwaway key — the real parameters are
     overwritten by ``eqx.tree_deserialise_leaves`` immediately after), then
     deserialises the trained leaves from ``predictor.eqx`` into it.
+
+    Args:
+        directory: Directory written by `save_predictor`.
+
+    Returns:
+        Tuple (model, config_dict).
     """
     directory = Path(directory).expanduser().resolve()
     config = json.loads((directory / "predictor_config.json").read_text())

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Data pipeline.
 
 Two per-recording iterators exist, kept out of this namespace to avoid ambiguity:
@@ -16,6 +26,8 @@ Adding a JAX-side public symbol requires listing it in the submodule's ``__all__
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 # JAX-free at module load (load_ind_split lazily imports jax.numpy at call time).
 from made.data.ind import (
@@ -47,8 +59,16 @@ _LAZY_ATTRS: dict[str, str] = {
 }
 
 
-def __getattr__(name: str):
-    """Resolve JAX-side names lazily to keep the package importable JAX-free."""
+def __getattr__(name: str) -> Any:
+    """Resolve JAX-side names lazily to keep the package importable JAX-free.
+
+    Args:
+        name: Attribute name requested from the package.
+    Returns:
+        The resolved attribute.
+    Raises:
+        AttributeError: If `name` is not a known lazy attribute.
+    """
     if name in _LAZY_ATTRS:
         import importlib
 

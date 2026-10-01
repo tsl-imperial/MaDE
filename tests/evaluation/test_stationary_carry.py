@@ -1,4 +1,14 @@
-"""Unit tests for stationary-carry logic in evaluate_stepwise_feasible_split (§3.2).
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Unit tests for stationary-carry logic in evaluate_stepwise_feasible_split.
 
 Synthetic trajectories: v_prev ∈ {0.1, 0.4, 1.0} × m ∈ {0.5, 1.0, 2.0} → 9 cases.
 
@@ -28,6 +38,14 @@ from made.physics import inD_physical_constraints
 # Helpers
 
 def _make_env(range_v: float = 20.0) -> EmpiricalEnvelope:
+    """Build an EmpiricalEnvelope over the inD state and control ranges.
+
+    Args:
+        range_v: Upper bound on speed.
+
+    Returns:
+        Envelope with the given speed range.
+    """
     return EmpiricalEnvelope(
         state_min=jnp.array([0.0, 0.0, -jnp.pi, 0.0]),
         state_max=jnp.array([10.0, 10.0, jnp.pi, range_v]),
@@ -37,7 +55,11 @@ def _make_env(range_v: float = 20.0) -> EmpiricalEnvelope:
 
 
 def _build_cases() -> list[tuple[float, float]]:
-    """Return all (v_prev, m) combinations."""
+    """Return all (v_prev, m) combinations.
+
+    Returns:
+        List of (v_prev, m) pairs.
+    """
     v_prevs = [0.1, 0.4, 1.0]
     multipliers = [0.5, 1.0, 2.0]
     return list(itertools.product(v_prevs, multipliers))
@@ -53,6 +75,14 @@ def _build_flat_inputs(
     We set x_curr_gt = x_prev_gt (trivial GT), so fidelity = ||x_corrected - x_prev_gt||.
     x_corrected = x_curr_gt (perfect correction) for simplicity — fidelity = 0.
     x_perturbed = x_prev + m * base * sign (sign = +1, all dims).
+
+    Args:
+        v_prev: Previous-step speed.
+        m: Perturbation multiplier.
+        env: Empirical envelope.
+
+    Returns:
+        The four flat arrays.
     """
     base_vec = _perturb_base_vector(env)
     x_prev = jnp.array([5.0, 5.0, 0.0, v_prev])
@@ -72,7 +102,7 @@ def _build_flat_inputs(
 # Tests
 
 @pytest.mark.parametrize("v_prev,m", _build_cases())
-def test_stationary_flag_matches_v_avg(v_prev: float, m: float):
+def test_stationary_flag_matches_v_avg(v_prev: float, m: float) -> None:
     """is_stationary should fire iff |v_avg_post_perturb| < 0.5."""
     env = _make_env(range_v=20.0)
     constraints = inD_physical_constraints()
@@ -104,7 +134,7 @@ def test_stationary_flag_matches_v_avg(v_prev: float, m: float):
 
 
 @pytest.mark.parametrize("v_prev,m", _build_cases())
-def test_bucket_disjointness(v_prev: float, m: float):
+def test_bucket_disjointness(v_prev: float, m: float) -> None:
     """fraction_infeasible + fraction_stationary_carry + frac_feasible == 1.0."""
     env = _make_env(range_v=20.0)
     constraints = inD_physical_constraints()
@@ -132,7 +162,7 @@ def test_bucket_disjointness(v_prev: float, m: float):
     )
 
 
-def test_stationary_excluded_from_infeasible_bucket():
+def test_stationary_excluded_from_infeasible_bucket() -> None:
     """Stationary steps must not appear in the infeasible bucket.
 
     Build a case where v_prev is very small (definitely stationary) but the
@@ -160,7 +190,7 @@ def test_stationary_excluded_from_infeasible_bucket():
     assert float(result["fraction_infeasible"]) == pytest.approx(0.0, abs=1e-12)
 
 
-def test_non_stationary_infeasible_counted():
+def test_non_stationary_infeasible_counted() -> None:
     """Non-stationary steps that violate bounds appear in infeasible bucket."""
     constraints = inD_physical_constraints()
     # v_prev=5.0, v_perturbed=5.0: |v_avg|=5.0 → not stationary

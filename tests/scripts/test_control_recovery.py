@@ -1,7 +1,19 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for scripts/sim/control_recovery.py: render format, smoke run, missing checkpoint."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
 import json
 
 import jax
@@ -13,10 +25,27 @@ from made.models import MaDECell
 from scripts.sim import control_recovery
 
 
-def test_render_matches_published_format():
+def test_render_matches_published_format() -> None:
+    """Verify render matches published format."""
     NAN = float("nan")
 
-    def _pub(nm, ns, bm=(NAN, NAN), bs=(NAN, NAN)):
+    def _pub(
+        nm: Sequence[float],
+        ns: Sequence[float],
+        bm: Sequence[float] = (NAN, NAN),
+        bs: Sequence[float] = (NAN, NAN),
+    ) -> dict[str, list[float]]:
+        """Build one published-summary entry.
+
+        Args:
+            nm: Mean nRMSE per dimension.
+            ns: nRMSE standard deviation per dimension.
+            bm: Mean bias per dimension.
+            bs: Bias standard deviation per dimension.
+
+        Returns:
+            Summary entry dict.
+        """
         return {"nrmse_per_dim_mean": list(nm), "nrmse_per_dim_std": list(ns),
                 "bias_per_dim_mean": list(bm), "bias_per_dim_std": list(bs)}
 
@@ -60,7 +89,12 @@ DB (underspec.) & $a$ (bias) & $-0.1594$ & $-0.1569\,{\scriptscriptstyle\pm}\,0.
     assert control_recovery.render_tex(PUBLISHED) == PUBLISHED_TEX
 
 
-def _write_di_data(data_dir):
+def _write_di_data(data_dir: Path) -> None:
+    """Write a small random double-integrator test split to disk.
+
+    Args:
+        data_dir: Root directory of the data.
+    """
     rng = np.random.default_rng(0)
     states = rng.normal(size=(4, 6, 4))
     controls = rng.normal(size=(4, 5, 2))
@@ -70,7 +104,12 @@ def _write_di_data(data_dir):
     np.save(split_dir / "controls.npy", controls.astype(np.float64))
 
 
-def _make_di_checkpoint(ckpt_dir):
+def _make_di_checkpoint(ckpt_dir: Path) -> None:
+    """Save an untrained double-integrator MaDE checkpoint.
+
+    Args:
+        ckpt_dir: Checkpoint directory.
+    """
     cfg = load_config("configs/sim/di_made.json")
     known_physics, known_constraints, _ = control_recovery._resolve_cell_physics(cfg)
     cell = MaDECell.from_config(
@@ -86,7 +125,8 @@ def _make_di_checkpoint(ckpt_dir):
     CheckpointManager(str(ckpt_dir)).save(state, 0)
 
 
-def test_prior_and_checkpoint_smoke(tmp_path):
+def test_prior_and_checkpoint_smoke(tmp_path: Path) -> None:
+    """Verify prior and checkpoint smoke."""
     data_dir = tmp_path / "data"
     _write_di_data(data_dir)
     runs_root = tmp_path / "runs"
@@ -125,7 +165,8 @@ def test_prior_and_checkpoint_smoke(tmp_path):
     assert all(line.endswith(r"\\") for line in body)
 
 
-def test_missing_checkpoint_exits_nonzero(tmp_path):
+def test_missing_checkpoint_exits_nonzero(tmp_path: Path) -> None:
+    """Verify missing checkpoint exits nonzero."""
     data_dir = tmp_path / "data"
     _write_di_data(data_dir)
     runs_root = tmp_path / "runs"

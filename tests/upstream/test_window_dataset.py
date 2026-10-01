@@ -1,4 +1,14 @@
-"""Tests for E05 history→future windowing (leakage-safe, boundary-exact)."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Tests for inD history→future windowing (leakage-safe, boundary-exact)."""
 
 import jax.numpy as jnp
 import numpy as np
@@ -14,7 +24,11 @@ H, F, D, M = 4, 3, 4, 5
 
 
 def _padded_data() -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Two trajectories, lengths 12 and 7, padded to 12 with NaN sentinels."""
+    """Two trajectories, lengths 12 and 7, padded to 12 with NaN sentinels.
+
+    Returns:
+        States, metadata and lengths.
+    """
     rng = np.random.default_rng(0)
     states = rng.standard_normal((2, 12, D))
     states[1, 7:] = np.nan  # padding must never leak into any window
@@ -29,6 +43,7 @@ def _padded_data() -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
 
 
 def test_window_counts_and_boundary_safety() -> None:
+    """Verify window counts and boundary safety."""
     states, metadata, lengths = _padded_data()
     windows = make_prediction_windows(
         states, lengths, metadata, history=H, horizon=F, stride=2
@@ -44,6 +59,7 @@ def test_window_counts_and_boundary_safety() -> None:
 
 
 def test_window_values_match_slices() -> None:
+    """Verify window values match slices."""
     states, metadata, lengths = _padded_data()
     windows = make_prediction_windows(
         states, lengths, metadata, history=H, horizon=F, stride=2
@@ -56,6 +72,7 @@ def test_window_values_match_slices() -> None:
 
 
 def test_too_short_trajectory_contributes_nothing() -> None:
+    """Verify too short trajectory contributes nothing."""
     states = jnp.zeros((1, 10, D))
     metadata = jnp.zeros((1, M))
     lengths = jnp.asarray([H + F - 1], dtype=jnp.int32)
@@ -68,6 +85,7 @@ def test_too_short_trajectory_contributes_nothing() -> None:
 
 @pytest.mark.parametrize("bad", [{"history": 0}, {"horizon": 0}, {"stride": 0}])
 def test_invalid_arguments_raise(bad: dict) -> None:
+    """Verify invalid arguments raise."""
     states, metadata, lengths = _padded_data()
     kwargs = {"history": H, "horizon": F, "stride": 1, **bad}
     with pytest.raises(ValueError):
@@ -75,6 +93,7 @@ def test_invalid_arguments_raise(bad: dict) -> None:
 
 
 def test_norm_stats_values_and_floor() -> None:
+    """Verify norm stats values and floor."""
     context = jnp.asarray(
         np.stack(
             [
@@ -90,6 +109,7 @@ def test_norm_stats_values_and_floor() -> None:
 
 
 def test_assemble_context_layout() -> None:
+    """Verify assemble context layout."""
     context = jnp.arange(H * D, dtype=jnp.float64).reshape(H, D)
     metadata = jnp.asarray([4.5, 2.0, 1.0, 0.0, 2.0])
     combined = assemble_context(context, metadata)

@@ -1,10 +1,36 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from made.models.encoder import MetadataEncoder
 
 # The unbounded output map, behind a flag that defaults off.
 
 
 def _encoder(unbounded: bool, *, lref_residual: bool = False, param_dim: int = 1,
-             seed: int = 0):
+             seed: int = 0) -> MetadataEncoder:
+    """Build a small MetadataEncoder.
+
+    Args:
+        unbounded: Whether the scale is unbounded.
+        lref_residual: Whether to use the L_REF residual.
+        param_dim: Number of parameters.
+        seed: PRNG seed.
+
+    Returns:
+        Initialised encoder.
+    """
     import jax
     import jax.numpy as jnp
 
@@ -24,11 +50,12 @@ def _encoder(unbounded: bool, *, lref_residual: bool = False, param_dim: int = 1
     )
 
 
-def test_encoder_unbounded_flag_off_is_bit_identical_to_the_published_map():
+def test_encoder_unbounded_flag_off_is_bit_identical_to_the_published_map() -> None:
     """Flag OFF must reproduce `sigmoid(mlp(...)) * param_scales` exactly.
 
-    Every existing checkpoint -- E01 (encoder off everywhere) and the canonical inD models --
-    was trained under that map, so a change here would silently rescore them.
+    Every existing checkpoint -- the simulated experiments (encoder off everywhere) and the
+    canonical inD models -- was trained under that map, so a change here would silently
+    rescore them.
     """
     import jax
     import jax.numpy as jnp
@@ -46,7 +73,7 @@ def test_encoder_unbounded_flag_off_is_bit_identical_to_the_published_map():
     assert float(got[0]) < 1.0  # measured bound on the published map
 
 
-def test_encoder_unbounded_flag_on_can_exceed_one():
+def test_encoder_unbounded_flag_on_can_exceed_one() -> None:
     """Flag ON must be able to emit a wheelbase above 1.0 m, which the sigmoid map never can.
 
     Asserted on the MAP rather than on a trained model: a random init need not exceed 1.0, but
@@ -70,7 +97,7 @@ def test_encoder_unbounded_flag_on_can_exceed_one():
 # L = L_REF + signed residual, replacing the earlier softplus head.
 
 
-def test_lref_residual_equals_l_ref_when_the_mlp_outputs_zero():
+def test_lref_residual_equals_l_ref_when_the_mlp_outputs_zero() -> None:
     """With a zero MLP output the encoder must return exactly L_REF, the scorers' own constant.
 
     This is what makes the design a RESIDUAL: day one is the known model, not a guess near it.
@@ -93,7 +120,7 @@ def test_lref_residual_equals_l_ref_when_the_mlp_outputs_zero():
     assert float(enc(meta)[0]) == L_REF
 
 
-def test_lref_residual_can_go_below_and_above_l_ref():
+def test_lref_residual_can_go_below_and_above_l_ref() -> None:
     """The residual is SIGNED and unbounded: a negative MLP output must lower L below L_REF.
 
     Asserted by driving the final layer's bias, because a random init need not straddle L_REF.
@@ -108,7 +135,15 @@ def test_lref_residual_can_go_below_and_above_l_ref():
     base = _encoder(False, lref_residual=True)
     meta = jnp.asarray([5.0, 2.0, 1.0, 0.0, 3.0])
 
-    def with_bias(value: float):
+    def with_bias(value: float) -> MetadataEncoder:
+        """Return the encoder with its final-layer bias set.
+
+        Args:
+            value: Constant bias value.
+
+        Returns:
+            Updated encoder with zero final-layer weights.
+        """
         last = base.mlp.layers[-1]
         return eqx.tree_at(
             lambda e: (e.mlp.layers[-1].weight, e.mlp.layers[-1].bias),

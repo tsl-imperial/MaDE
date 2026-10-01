@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for eval-time corrector iteration-count diagnostics.
 
 `Corrector._correct_eval` / `Corrector.__call__` can optionally report a
@@ -19,6 +29,9 @@ from made.models.augmented_dynamics import AugmentedDynamics, ZeroResidual
 from made.models.corrector import Corrector, CorrectorDiagnostics
 from made.physics import KinematicBicycleAsDynamicState, dynamic_bicycle_constraints
 from made.utils import CorrectorConfig
+from made.models import MaDECell
+from made.physics import ConstraintSet
+from made.physics import DoubleIntegrator
 
 # Scenario reused from tests/test_corrector_box_projection.py: a control that
 # starts outside the box (delta=0.6 vs delta_max=0.5), so the corrector loop
@@ -32,13 +45,18 @@ _DT = 0.1
 
 
 def _db_dynamics_and_constraints() -> tuple[AugmentedDynamics, object]:
+    """Build zero-residual dynamics and constraints for the dynamic-state bicycle.
+
+    Returns:
+        Tuple of (dynamics, constraints).
+    """
     physics = KinematicBicycleAsDynamicState()
     constraints = dynamic_bicycle_constraints()
     dynamics = AugmentedDynamics(physics=physics, residual=ZeroResidual(physics.state_dim))
     return dynamics, constraints
 
 
-def test_correct_eval_diagnostics_reports_exact_iteration_count():
+def test_correct_eval_diagnostics_reports_exact_iteration_count() -> None:
     """diag.n_iterations exactly matches the number of `_body` applications.
 
     The reference count is derived, not hard-coded: run `_correct_train` for
@@ -80,7 +98,7 @@ def test_correct_eval_diagnostics_reports_exact_iteration_count():
     assert jnp.allclose(u_final, u1, rtol=1e-12, atol=1e-12)
 
 
-def test_correct_eval_diagnostics_flags_cap_hit():
+def test_correct_eval_diagnostics_flags_cap_hit() -> None:
     """eval_tol=-1e9 keeps `max(constraints(x, u)) > eval_tol` permanently true,
     so the loop must run every one of `eval_max_steps` iterations. Per the
     spec, a cap hit is `step == eval_max_steps` AND the residual violation is
@@ -109,7 +127,7 @@ def test_correct_eval_diagnostics_flags_cap_hit():
     assert bool(diag.cap_hit) is True
 
 
-def test_correct_eval_default_signature_unchanged():
+def test_correct_eval_default_signature_unchanged() -> None:
     """Callers that never pass `return_diagnostics` (every current call site)
     keep the plain `(x, u)` 2-tuple return -- the opt-in contract."""
     dynamics, constraints = _db_dynamics_and_constraints()
@@ -123,7 +141,7 @@ def test_correct_eval_default_signature_unchanged():
     assert u_final.shape == _U0.shape
 
 
-def test_call_return_diagnostics_matches_correct_eval_direct():
+def test_call_return_diagnostics_matches_correct_eval_direct() -> None:
     """`Corrector.__call__(mode="eval_adaptive", return_diagnostics=True)` is a
     thin forward to `_correct_eval` and must return an identical 3-tuple."""
     dynamics, constraints = _db_dynamics_and_constraints()
@@ -159,7 +177,7 @@ def test_call_return_diagnostics_matches_correct_eval_direct():
     assert bool(diag_call.cap_hit) == bool(diag_direct.cap_hit)
 
 
-def test_return_diagnostics_rejected_outside_eval_adaptive():
+def test_return_diagnostics_rejected_outside_eval_adaptive() -> None:
     """`return_diagnostics=True` is only meaningful for the adaptive eval loop;
     requesting it under `train_fixed` (or any other mode) must fail loudly
     instead of silently returning a 2-tuple or bogus diagnostics."""
@@ -179,7 +197,7 @@ def test_return_diagnostics_rejected_outside_eval_adaptive():
         )
 
 
-def test_correct_train_untouched_by_diagnostics_plumbing():
+def test_correct_train_untouched_by_diagnostics_plumbing() -> None:
     """The training path (`_correct_train`, `mode="train_fixed"`) gained no new
     parameter and no new behaviour: it still returns a plain 2-tuple and does
     not accept `return_diagnostics` at all."""
@@ -222,7 +240,10 @@ def test_correct_train_untouched_by_diagnostics_plumbing():
     assert jnp.array_equal(u_direct, u_call)
 
 
-def test_made_cell_default_calls_unaffected(small_cell, double_integrator):
+def test_made_cell_default_calls_unaffected(
+    small_cell: MaDECell,
+    double_integrator: tuple[DoubleIntegrator, ConstraintSet],
+) -> None:
     """End-to-end regression: the full `MaDECell.__call__` path (as used by
     the trainer and every evaluation script) never passes
     `return_diagnostics` and must keep returning a plain `(x, u)` 2-tuple in

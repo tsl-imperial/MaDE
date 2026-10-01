@@ -1,4 +1,14 @@
-"""Score the E01 ladder's inequality and dynamics metrics. No retrain.
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Score the simulated-experiment ladder's inequality and dynamics metrics. No retrain.
 
 Each cell's checkpoint is evaluated with the control routing described in
 `scripts/sim/evaluate.py::main_programmatic`:
@@ -19,6 +29,10 @@ import sys
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -38,8 +52,19 @@ PREFIX = {"double_integrator": "di", "unicycle": "unicycle",
           "kinematic_bicycle": "kinbicycle", "dynamic_bicycle": "dynbicycle_underspecified"}
 
 
-def _cells(systems, variants, seeds):
-    """The fixed E01 scoring matrix: 4 systems x 8 variants, plus made-prior-only for DB only."""
+def _cells(
+    systems: set[str], variants: set[str], seeds: list[int]
+) -> Iterator[tuple[str, str, int]]:
+    """The fixed scoring matrix: 4 systems x 8 variants, plus made-prior-only for DB only.
+
+    Args:
+        systems: Systems to include.
+        variants: Variants to include.
+        seeds: Seeds to include.
+
+    Yields:
+        ``(system, variant, seed)`` triples.
+    """
     for system in SYSTEMS:
         if system not in systems:
             continue
@@ -54,6 +79,11 @@ def _cells(systems, variants, seeds):
 
 
 def main() -> int:
+    """Score every requested run cell and write the per-cell metrics.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--systems", default=None, help="Comma-separated systems (default: all)")
     ap.add_argument("--variants", default=None, help="Comma-separated variants (default: all)")

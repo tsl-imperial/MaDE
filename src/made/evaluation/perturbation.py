@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Perturbation helpers for robustness evaluation."""
 
 from __future__ import annotations
@@ -65,7 +75,15 @@ def perturb_trajectories(
 
 
 def add_observation_noise(states: jax.Array, noise_scale: float, key: jax.Array) -> jax.Array:
-    """Add zero-mean Gaussian observation noise."""
+    """Add zero-mean Gaussian observation noise.
+
+    Args:
+        states: States to perturb.
+        noise_scale: Standard deviation of the noise.
+        key: PRNG key.
+    Returns:
+        Noisy states.
+    """
     if noise_scale == 0.0:
         return states
     return states + noise_scale * jax.random.normal(key, states.shape)

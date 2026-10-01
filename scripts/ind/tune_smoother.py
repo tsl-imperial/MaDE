@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tune the EKF/RTS smoother's process and measurement covariances. TRAINING SPLIT ONLY.
 
 Process and measurement noise covariances are tuned on the training split only, never on
@@ -75,6 +85,15 @@ SEEDS = (0, 1, 2, 3, 4)
 
 
 def _panels(data_dir: str, predictor_root: str) -> dict[str, dict[str, Any]]:
+    """Describe the evaluation panels.
+
+    Args:
+        data_dir: Directory of the preprocessed inD data.
+        predictor_root: Directory holding the trained predictors.
+
+    Returns:
+        Mapping from panel name to its data directory, predictor root and time step.
+    """
     return {
         "ind": {
             "data_dir": data_dir,
@@ -84,14 +103,25 @@ def _panels(data_dir: str, predictor_root: str) -> dict[str, dict[str, Any]]:
     }
 
 
-def _physics(panel: str):
-    """The kinematic bicycle known model."""
+def _physics(panel: str) -> KinematicBicycle:
+    """The kinematic bicycle known model.
+
+    Args:
+        panel: Panel name (unused; kept for a uniform signature).
+
+    Returns:
+        The kinematic bicycle model.
+    """
     del panel
     return KinematicBicycle()
 
 
 def _params() -> jax.Array:
-    """`L_REF`, the reference wheelbase the metric stencil scores every row against."""
+    """`L_REF`, the reference wheelbase the metric stencil scores every row against.
+
+    Returns:
+        Parameter array holding ``L_REF``.
+    """
     return jnp.asarray([L_REF], dtype=jnp.float64)
 
 
@@ -101,7 +131,20 @@ def _params() -> jax.Array:
 
 
 def _train_windows(panel: str, cfg: dict, spec: dict, cap: int) -> dict[str, jax.Array]:
-    """Build TRAIN-split windows; the split name is hardcoded, no flag to change it."""
+    """Build TRAIN-split windows; the split name is hardcoded, no flag to change it.
+
+    Args:
+        panel: Panel name.
+        cfg: Panel configuration (data directory, ...).
+        spec: Window spec with history, horizon and stride.
+        cap: Maximum number of windows to keep.
+
+    Returns:
+        The window dict.
+
+    Raises:
+        ValueError: If the split yields no windows.
+    """
     states, metadata, lengths = create_ind_data_source(cfg["data_dir"], "train")
     w = make_prediction_windows(
         states, lengths, metadata,
@@ -119,11 +162,30 @@ def _train_windows(panel: str, cfg: dict, spec: dict, cap: int) -> dict[str, jax
 
 
 def _context(panel: str, w: dict[str, jax.Array]) -> jax.Array:
+    """Assemble the predictor input for each window.
+
+    Args:
+        panel: Panel name (unused).
+        w: Window dict with ``context`` and ``metadata``.
+
+    Returns:
+        The assembled context batch.
+    """
     del panel
     return jax.vmap(assemble_context)(w["context"], w["metadata"])
 
 
-def _forward(predictor, context: jax.Array, chunk: int) -> jax.Array:
+def _forward(predictor: Any, context: jax.Array, chunk: int) -> jax.Array:
+    """Run the predictor over all windows in chunks.
+
+    Args:
+        predictor: The trained predictor.
+        context: Assembled contexts.
+        chunk: Windows per forward call.
+
+    Returns:
+        Predicted futures for all windows.
+    """
     out = [jax.vmap(predictor)(context[i:i + chunk]) for i in range(0, context.shape[0], chunk)]
     return jnp.concatenate(out, axis=0)
 
@@ -133,21 +195,51 @@ def _forward(predictor, context: jax.Array, chunk: int) -> jax.Array:
 # ---------------------------------------------------------------------------
 
 
-def _known_step(physics, x: jax.Array, u: jax.Array, params: jax.Array, dt: float) -> jax.Array:
-    """One Heun step of the known model, the same step the filter propagates with."""
+def _known_step(
+    physics: KinematicBicycle, x: jax.Array, u: jax.Array, params: jax.Array, dt: float
+) -> jax.Array:
+    """One Heun step of the known model, the same step the filter propagates with.
+
+    Args:
+        physics: The known model.
+        x: State.
+        u: Control.
+        params: Physics parameters.
+        dt: Time step in seconds.
+
+    Returns:
+        The next state.
+    """
     k1 = physics.vector_field(x, u, params, 0.0)
     k2 = physics.vector_field(x + dt * k1, u, params, 0.0)
     return x + 0.5 * dt * (k1 + k2)
 
 
-def _model_mismatch(physics, gt: jax.Array, params: jax.Array, dt: float
+def _model_mismatch(physics: KinematicBicycle, gt: jax.Array, params: jax.Array, dt: float
                     ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Per-channel one-step known-model residual, control increments, and control variance.
 
     Measured on ground-truth training trajectories under the known model's own analytic
     control inverse, the same inverse the filter initialises from.
+
+    Args:
+        physics: The known model.
+        gt: Ground-truth trajectories, shape ``[N, T, D]``.
+        params: Physics parameters.
+        dt: Time step in seconds.
+
+    Returns:
+        Per-channel state residual, control-increment and control-variance estimates.
     """
-    def per_window(x: jax.Array):
+    def per_window(x: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Residuals, control increments and controls for one trajectory.
+
+        Args:
+            x: Ground-truth trajectory.
+
+        Returns:
+            Squared residual, squared control increment and the recovered controls.
+        """
         u = jax.vmap(physics.known_control_prior, in_axes=(0, 0, None, None))(
             x[:-1], x[1:], params, dt)
         x_next = jax.vmap(_known_step, in_axes=(None, 0, 0, None, None))(
@@ -166,18 +258,44 @@ def _model_mismatch(physics, gt: jax.Array, params: jax.Array, dt: float
 
 
 def _ade(x: jax.Array, gt: jax.Array) -> float:
+    """Mean position error (ADE) over all windows and steps.
+
+    Args:
+        x: Predicted trajectories.
+        gt: Ground-truth trajectories.
+
+    Returns:
+        The mean position error.
+    """
     return float(jnp.mean(jnp.linalg.norm(x[..., :2] - gt[..., :2], axis=-1)))
 
 
-def _known_residual(physics, x: jax.Array, params: jax.Array, dt: float) -> float:
+def _known_residual(physics: KinematicBicycle, x: jax.Array, params: jax.Array, dt: float) -> float:
     """Mean one-step known-model residual of a trajectory batch, under the model's own inverse.
 
     Dyn.-K in the shape the smoother targets, recorded alongside the ADE curve but not used
     to select. Selection criterion is ADE; the smoother is then reported on Dyn.-K and the
     inequality metrics, so recording both shows whether the ADE-optimal covariance is far
     from the Dyn.-K-optimal one.
+
+    Args:
+        physics: The known model.
+        x: Trajectory batch.
+        params: Physics parameters.
+        dt: Time step in seconds.
+
+    Returns:
+        The mean one-step residual.
     """
     def per_window(t: jax.Array) -> jax.Array:
+        """Per-step residual norms for one trajectory.
+
+        Args:
+            t: Trajectory.
+
+        Returns:
+            Residual norm at each step.
+        """
         u = jax.vmap(physics.known_control_prior, in_axes=(0, 0, None, None))(
             t[:-1], t[1:], params, dt)
         nxt = jax.vmap(_known_step, in_axes=(None, 0, 0, None, None))(
@@ -187,7 +305,29 @@ def _known_residual(physics, x: jax.Array, params: jax.Array, dt: float) -> floa
     return float(jnp.mean(jax.vmap(per_window)(x)))
 
 
-def _build(physics, params, dt, q_state, q_ctrl, r, p0) -> KinodynamicSmoother:
+def _build(
+    physics: KinematicBicycle,
+    params: jax.Array,
+    dt: float,
+    q_state: jax.Array,
+    q_ctrl: jax.Array,
+    r: jax.Array,
+    p0: jax.Array,
+) -> KinodynamicSmoother:
+    """Build the smoother from the base diagonals.
+
+    Args:
+        physics: The known model.
+        params: Physics parameters.
+        dt: Time step in seconds.
+        q_state: Process noise diagonal for the state block.
+        q_ctrl: Process noise diagonal for the control block.
+        r: Measurement noise diagonal.
+        p0: Initial covariance diagonal.
+
+    Returns:
+        The configured smoother.
+    """
     return KinodynamicSmoother(
         physics=physics, params=params, dt=dt,
         q_diag=jnp.concatenate([q_state, q_ctrl]), r_diag=r, p0_diag=p0)
@@ -198,12 +338,37 @@ def _floor(v: jax.Array) -> jax.Array:
 
     Positive-definiteness guard on a covariance diagonal; fires only on a channel with no
     measured variation.
+
+    Args:
+        v: Channel variances.
+
+    Returns:
+        The variances with a floor of 1e-12.
     """
     return jnp.maximum(v, 1e-12)
 
 
 def _tune_family(panel: str, cfg: dict, family: str, grid: jax.Array,
                  cap: int, chunk: int, verbose: bool) -> dict:
+    """Sweep the noise scale on the training split for one predictor family.
+
+    Args:
+        panel: Panel name.
+        cfg: Panel configuration.
+        family: Predictor family name.
+        grid: Candidate noise scales.
+        cap: Maximum windows per seed.
+        chunk: Windows per predictor forward call.
+        verbose: Print progress when True.
+
+    Returns:
+        The tuning record: base diagonals, the sweep curve and the selected scale.
+
+    Raises:
+        FileNotFoundError: If a predictor checkpoint is missing.
+        ValueError: If predictors disagree on the window spec.
+        RuntimeError: If every grid point gives a non-finite ADE.
+    """
     physics, params, dt = _physics(panel), _params(), float(cfg["dt"])
     root = Path(cfg["predictor_root"])
 
@@ -308,6 +473,11 @@ def _tune_family(panel: str, cfg: dict, family: str, grid: jax.Array,
 
 
 def main() -> int:
+    """Tune the smoother covariances on the training split and write the artifact.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data-dir", default=str(ROOT / "data" / "inD-preprocessed" / "v1"))
     ap.add_argument("--predictor-root", default=str(ROOT / "outputs" / "ind" / "predictors"))

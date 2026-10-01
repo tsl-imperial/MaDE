@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Track-level stationary filter.
 
 The filter that defines "filtered" for MaDE training. MaDE trains on transition pairs over
@@ -7,6 +17,7 @@ used. These tests pin the contract, not the implementation.
 """
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -14,8 +25,12 @@ import pytest
 from made.data.window_dataset import filter_stationary_tracks
 
 
-def _tracks():
-    """Four tracks: moving, parked, short-hop below threshold, and a 1-sample degenerate."""
+def _tracks() -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Four tracks: moving, parked, short-hop below threshold, and a 1-sample degenerate.
+
+    Returns:
+        The `(states, lengths, metadata)` arrays.
+    """
     states = np.zeros((4, 6, 4), dtype=np.float64)
     states[0, :, 0] = np.linspace(0.0, 10.0, 6)      # moving: 10 m
     states[1, :, 0] = 3.0                             # parked: exactly 0 m
@@ -26,7 +41,8 @@ def _tracks():
     return jnp.asarray(states), jnp.asarray(lengths), jnp.asarray(metadata)
 
 
-def test_keeps_moving_drops_parked_and_below_threshold():
+def test_keeps_moving_drops_parked_and_below_threshold() -> None:
+    """Check that keeps moving drops parked and below threshold."""
     s, l, m = _tracks()
     st, ln, mt, kept = filter_stationary_tracks(s, l, m, min_displacement_m=0.5)
     assert kept.tolist() == [0], "only the 10 m track should survive a 0.5 m criterion"
@@ -34,7 +50,7 @@ def test_keeps_moving_drops_parked_and_below_threshold():
     np.testing.assert_allclose(np.asarray(mt[0]), [0.0, 1.0])
 
 
-def test_threshold_is_strict_greater_than():
+def test_threshold_is_strict_greater_than() -> None:
     """A track displacing EXACTLY the threshold is dropped, matching the window-level
     filter's `<= min_displacement_m: continue`."""
     s, l, m = _tracks()
@@ -44,7 +60,7 @@ def test_threshold_is_strict_greater_than():
     assert 2 in kept.tolist(), "0.3 m track must survive a 0.29 m threshold"
 
 
-def test_short_tracks_dropped_regardless():
+def test_short_tracks_dropped_regardless() -> None:
     """A 1-sample track yields no transition pair, so it is dropped even though its
     displacement is undefined rather than small."""
     s, l, m = _tracks()
@@ -52,7 +68,7 @@ def test_short_tracks_dropped_regardless():
     assert 3 not in kept.tolist()
 
 
-def test_displacement_is_end_to_end_not_path_length():
+def test_displacement_is_end_to_end_not_path_length() -> None:
     """A track that loops back to its origin has large path length and zero net
     displacement, and must be dropped. This is what makes the criterion match the
     horizon-level one rather than a speed test."""
@@ -64,7 +80,8 @@ def test_displacement_is_end_to_end_not_path_length():
     assert kept.tolist() == []
 
 
-def test_metadata_and_lengths_stay_aligned_with_states():
+def test_metadata_and_lengths_stay_aligned_with_states() -> None:
+    """Check that metadata and lengths stay aligned with states."""
     s, l, m = _tracks()
     st, ln, mt, kept = filter_stationary_tracks(s, l, m, min_displacement_m=0.0)
     for out_row, src_row in enumerate(kept.tolist()):
@@ -73,7 +90,8 @@ def test_metadata_and_lengths_stay_aligned_with_states():
         assert int(ln[out_row]) == int(l[src_row])
 
 
-def test_empty_result_is_well_formed_not_a_crash():
+def test_empty_result_is_well_formed_not_a_crash() -> None:
+    """Check that empty result is well formed not a crash."""
     s, l, m = _tracks()
     st, ln, mt, kept = filter_stationary_tracks(s, l, m, min_displacement_m=1e9)
     assert st.shape[0] == 0 and ln.shape[0] == 0 and mt.shape[0] == 0
@@ -82,7 +100,11 @@ def test_empty_result_is_well_formed_not_a_crash():
 
 
 @pytest.mark.parametrize("split,exp_tracks_pct,exp_pairs_pct", [("train", 4.4, 79.9)])
-def test_matches_the_measured_inD_figures(split, exp_tracks_pct, exp_pairs_pct):
+def test_matches_the_measured_inD_figures(
+    split: str,
+    exp_tracks_pct: float,
+    exp_pairs_pct: float,
+) -> None:
     """Regression pin on the measured numbers: track-level filtering removes ~79.9% of
     train transition pairs while removing only ~4.4% of tracks. If this drifts, the
     reasoning behind the filter no longer holds and it must be re-examined."""

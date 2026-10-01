@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """inD evaluation library: real-predictor integration on inD (no synthetic perturbation).
 
 Loads a trained upstream predictor and evaluates it on the inD test split
@@ -54,7 +64,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import jax
 
@@ -112,6 +125,11 @@ _ROWS_REQUIRING_MADE: frozenset[str] = frozenset({"made_pnp"})
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the evaluation.
+
+    Returns:
+        The configured argument parser.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", default=str(_REPO_ROOT / "data" / "inD-preprocessed" / "v1"))
     parser.add_argument(
@@ -182,6 +200,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _parse_rows(rows_arg: str) -> list[str]:
+    """Split the ``--rows`` argument and check each name.
+
+    Args:
+        rows_arg: Comma-separated row names.
+
+    Returns:
+        The list of row names.
+
+    Raises:
+        ValueError: If a row name is not one of the known rows.
+    """
     rows = [r.strip() for r in rows_arg.split(",") if r.strip()]
     unknown = [r for r in rows if r not in _ALL_ROWS]
     if unknown:
@@ -190,7 +219,17 @@ def _parse_rows(rows_arg: str) -> list[str]:
 
 
 def _validate_args(args: argparse.Namespace) -> list[str]:
-    """CLI-boundary validation, fired before any data loading / JAX work."""
+    """CLI-boundary validation, fired before any data loading / JAX work.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        The validated list of row names.
+
+    Raises:
+        ValueError: If a MaDE row is requested without a checkpoint or smoke flag.
+    """
     rows = _parse_rows(args.rows)
     needs_made = any(r in _ROWS_REQUIRING_MADE for r in rows)
     if needs_made and args.made_checkpoint is None and not args.smoke_random_made:
@@ -208,6 +247,9 @@ def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
     Renders fine under the queue's ``script -e -q -f -c`` pty wrapping (a pty
     reports ``isatty() == True``); falls back to ``/dev/tty`` only when stderr
     itself is redirected (e.g. piped to a file with no controlling terminal).
+
+    Returns:
+        The output stream, whether progress output is disabled, and the opened tty (or None).
     """
     if sys.stderr.isatty():
         return sys.stderr, False, None
@@ -222,6 +264,11 @@ def _progress_output() -> tuple[TextIO, bool, TextIO | None]:
 
 
 def _git_sha() -> str:
+    """Current git commit hash.
+
+    Returns:
+        The ``HEAD`` sha, or ``unknown`` when git fails.
+    """
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=_REPO_ROOT,
@@ -233,6 +280,11 @@ def _git_sha() -> str:
 
 
 def _hardware_string() -> str:
+    """Describe the host and JAX devices for provenance.
+
+    Returns:
+        A one-line hardware description.
+    """
     devices = ", ".join(str(d) for d in jax.devices())
     return (
         f"{platform.system()} {platform.release()} | {platform.machine()} | "
@@ -249,7 +301,7 @@ def _load_frozen_made(
     seed: int,
     *,
     select: str = "best",
-):
+) -> Any:
     """Restore a frozen trained MaDE checkpoint for evaluation.
 
     Stale deserialised constraints are a known trap: the checkpoint's
@@ -258,6 +310,19 @@ def _load_frozen_made(
 
     Returns a ``MaDEModel`` (cell + metadata encoder) so per-vehicle physics
     params can be resolved from the window's own metadata.
+
+    Args:
+        made_checkpoint: Checkpoint directory, or None with ``smoke_random_made``.
+        smoke_random_made: Build an untrained random MaDE instead (test-only).
+        seed: PRNG seed for the random MaDE.
+        select: Which checkpoint to restore.
+
+    Returns:
+        The frozen ``MaDEModel``.
+
+    Raises:
+        ValueError: If neither a checkpoint nor the smoke flag is given, or the checkpoint has
+            no metadata encoder.
     """
     if made_checkpoint is not None:
         from made.models.made_model import MaDEModel
@@ -323,13 +388,29 @@ def _load_frozen_made(
 _SMOOTHER_CRITERION = {"smoother": "ade", "smoother_dyn": "dynk"}
 
 
-def _load_smoother(path, family: str, panel: str, dt: float, criterion: str):
+def _load_smoother(
+    path: str | None, family: str, panel: str, dt: float, criterion: str
+) -> tuple[Any, dict[str, Any]]:
     """Build one smoother arm from the TRAIN-SPLIT tuning artifact. Nothing is tuned here.
 
     The evaluation reads the selected covariances and applies them. A missing file, a missing
     record for this (panel, family), or a record whose minimum landed on a grid edge raises
     rather than falling back to a default -- an untuned smoother reported as a tuned baseline is
     worse than no baseline at all.
+
+    Args:
+        path: Tuning artifact path.
+        family: Predictor family name.
+        panel: Evaluation panel name.
+        dt: Time step in seconds.
+        criterion: ``ade`` or ``dynk``, the tuned operating point to use.
+
+    Returns:
+        The smoother and a dict with the criterion, q scale and tuning record.
+
+    Raises:
+        ValueError: If the artifact is missing, lacks a record, sits on a grid edge, or the
+            criterion is unknown.
     """
     import json as _json
 
@@ -380,8 +461,21 @@ def _load_smoother(path, family: str, panel: str, dt: float, criterion: str):
     return smoother, {"criterion": criterion, "q_scale": q, "tuning_record": rec}
 
 
-def _load_smoother_arms(path, family: str, panel: str, dt: float, rows) -> dict:
-    """Build only the arms actually requested, keyed by row name."""
+def _load_smoother_arms(
+    path: str | None, family: str, panel: str, dt: float, rows: list[str]
+) -> dict:
+    """Build only the arms actually requested, keyed by row name.
+
+    Args:
+        path: Tuning artifact path.
+        family: Predictor family name.
+        panel: Evaluation panel name.
+        dt: Time step in seconds.
+        rows: Requested row names.
+
+    Returns:
+        Mapping from smoother row name to the ``_load_smoother`` result.
+    """
     return {
         r: _load_smoother(path, family, panel, dt, _SMOOTHER_CRITERION[r])
         for r in _SMOOTHER_CRITERION
@@ -389,7 +483,9 @@ def _load_smoother_arms(path, family: str, panel: str, dt: float, rows) -> dict:
     }
 
 
-def _smoother_trajectory(smoother, x0: jax.Array, x_pred: jax.Array):
+def _smoother_trajectory(
+    smoother: Any, x0: jax.Array, x_pred: jax.Array
+) -> tuple[jax.Array, jax.Array]:
     """Smooth one window and return the FUTURE block and ITS CONTROLS, `([F, D], [F, C])`.
 
     The anchor `x0` is prepended before smoothing, so the smoother sees the same feasible seed
@@ -400,20 +496,51 @@ def _smoother_trajectory(smoother, x0: jax.Array, x_pred: jax.Array):
     in its augmented state and its RTS pass produces a smoothed estimate of them, so it IS a row
     that emits controls and is scored on its own controls rather than on pseudo-controls
     recovered by the panel's inverse.
+
+    Args:
+        smoother: The ``KinodynamicSmoother``.
+        x0: Seed state, shape ``[D]``.
+        x_pred: Predicted future states, shape ``[F, D]``.
+
+    Returns:
+        Smoothed future states ``[F, D]`` and controls ``[F, C]``.
     """
     meas = jnp.concatenate([x0[None, :], x_pred], axis=0)
     x_s, u_s = smoother.smooth_trajectory(meas)
     return x_s[1:], u_s[1:]
 
 
-def _smoother_rows(smoother, x0_all: jax.Array, x_pred_all: jax.Array):
-    """`[K, F, D] -> ([K, F, D], [K, F, C])`, vmapped over the K windows."""
+def _smoother_rows(
+    smoother: Any, x0_all: jax.Array, x_pred_all: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    """`[K, F, D] -> ([K, F, D], [K, F, C])`, vmapped over the K windows.
+
+    Args:
+        smoother: The ``KinodynamicSmoother``.
+        x0_all: Seed states, shape ``[K, D]``.
+        x_pred_all: Predicted futures, shape ``[K, F, D]``.
+
+    Returns:
+        Smoothed states ``[K, F, D]`` and controls ``[K, F, C]``.
+    """
     return jax.vmap(_smoother_trajectory, in_axes=(None, 0, 0))(smoother, x0_all, x_pred_all)
 
 
 def _load_test_windows(
     args: argparse.Namespace, window_spec: dict[str, Any]
 ) -> dict[str, jax.Array]:
+    """Load the inD test split and cut it into prediction windows.
+
+    Args:
+        args: Parsed command-line arguments.
+        window_spec: History, horizon and stride of the windows.
+
+    Returns:
+        The window dict (context, future, metadata, ...).
+
+    Raises:
+        ValueError: If no windows are produced.
+    """
     states, metadata, lengths = create_ind_data_source(
         args.data_dir,
         "test",
@@ -440,15 +567,33 @@ def _load_test_windows(
 
 
 def _assemble_batch_context(context_states: jax.Array, metadata: jax.Array) -> jax.Array:
+    """Assemble the predictor input for each window.
+
+    Args:
+        context_states: Context states, shape ``[K, H, D]``.
+        metadata: Per-window metadata, shape ``[K, M]``.
+
+    Returns:
+        The assembled context batch.
+    """
     return jax.vmap(assemble_context)(context_states, metadata)
 
 
-def _predictor_forward_chunk(predictor, context_chunk: jax.Array) -> jax.Array:
+def _predictor_forward_chunk(predictor: Any, context_chunk: jax.Array) -> jax.Array:
+    """Run the predictor over one chunk of windows.
+
+    Args:
+        predictor: The trained predictor.
+        context_chunk: Assembled contexts for the chunk.
+
+    Returns:
+        Predicted futures for the chunk.
+    """
     return jax.vmap(predictor)(context_chunk)
 
 
 def _chunked_predictor_forward(
-    predictor,
+    predictor: Any,
     context_all: jax.Array,
     chunk_size: int,
 ) -> jax.Array:
@@ -466,6 +611,14 @@ def _chunked_predictor_forward(
     The last chunk is zero-padded up to a full chunk of ``chunk_size`` (so every
     ``eqx.filter_jit``'d call traces the same shape once, rather than recompiling per
     chunk) and the padding is sliced off the concatenated result before returning.
+
+    Args:
+        predictor: The trained predictor.
+        context_all: Assembled contexts for all windows.
+        chunk_size: Maximum windows per forward call.
+
+    Returns:
+        Predicted futures for all windows.
     """
     n = int(context_all.shape[0])
     if n == 0:
@@ -496,42 +649,87 @@ def _clamp_state(clamp_model: ClampBaseline, state: jax.Array) -> jax.Array:
     correct_pair(x_prev, x_curr) clips both endpoints independently (no
     dynamics dependency between them), so passing the same state twice and
     keeping the x_curr half reuses the class's exact clip logic per state.
+
+    Args:
+        clamp_model: The clamp baseline.
+        state: One predicted state.
+
+    Returns:
+        The clamped state.
     """
     _, clamped = clamp_model.correct_pair(state, state)
     return clamped
 
 
 def _clamp_trajectory(clamp_model: ClampBaseline, traj: jax.Array) -> jax.Array:
-    """``[F, D] -> [F, D]``, vmap over the trajectory's F states."""
+    """``[F, D] -> [F, D]``, vmap over the trajectory's F states.
+
+    Args:
+        clamp_model: The clamp baseline.
+        traj: Predicted trajectory.
+
+    Returns:
+        The clamped trajectory.
+    """
     return jax.vmap(_clamp_state, in_axes=(None, 0))(clamp_model, traj)
 
 
 def _clamp_rows(clamp_model: ClampBaseline, x_pred_all: jax.Array) -> jax.Array:
-    """``[K, F, D] -> [K, F, D]``, vmap over the K windows."""
+    """``[K, F, D] -> [K, F, D]``, vmap over the K windows.
+
+    Args:
+        clamp_model: The clamp baseline.
+        x_pred_all: Predicted futures for all windows.
+
+    Returns:
+        The clamped futures.
+    """
     return jax.vmap(_clamp_trajectory, in_axes=(None, 0))(clamp_model, x_pred_all)
 
 
 def _made_pnp_single(
-    made_cell,
+    made_cell: Any,
     x_pred: jax.Array,
     params: jax.Array,
     x0: jax.Array,
     dt: float,
 ) -> tuple[jax.Array, jax.Array]:
-    """Single-window frozen-MaDE plug-and-play application."""
+    """Single-window frozen-MaDE plug-and-play application.
+
+    Args:
+        made_cell: The frozen MaDE cell.
+        x_pred: Predicted future states.
+        params: Physics parameters for this window.
+        x0: Seed state.
+        dt: Time step in seconds.
+
+    Returns:
+        Corrected states and the emitted controls.
+    """
     return apply_made_trajectory_with_controls(
         made_cell, x_pred, params, dt, correction_mode="eval_adaptive", x0=x0
     )
 
 
 def _made_pnp_rows(
-    made_model,
+    made_model: Any,
     x_pred_all: jax.Array,
     metadata: jax.Array,
     x0_all: jax.Array,
     dt: float,
 ) -> tuple[jax.Array, jax.Array]:
-    """``[K, F, D] -> ([K, F, D], [K, F, U])`` — corrected states and controls."""
+    """``[K, F, D] -> ([K, F, D], [K, F, U])`` — corrected states and controls.
+
+    Args:
+        made_model: The frozen ``MaDEModel``.
+        x_pred_all: Predicted futures for all windows.
+        metadata: Per-window metadata.
+        x0_all: Seed states for all windows.
+        dt: Time step in seconds.
+
+    Returns:
+        Corrected states and the emitted controls for all windows.
+    """
     params_all = made_model.params_from_metadata(metadata)  # [K, param_dim]
     x_corr_all, u_corr_all = jax.vmap(
         lambda x_pred, params, x0: _made_pnp_single(made_model.cell, x_pred, params, x0, dt)
@@ -550,6 +748,13 @@ def _full_sequence(x0_all: jax.Array, x_row: jax.Array) -> jax.Array:
     The row's own F predicted/corrected states have no predecessor of their
     own, so x0 (the last *observed* context state) supplies the T-th state
     and the first of the F transitions.
+
+    Args:
+        x0_all: Seed states, shape ``[K, D]``.
+        x_row: Row states, shape ``[K, F, D]``.
+
+    Returns:
+        States with the seed prepended, shape ``[K, F+1, D]``.
     """
     return jnp.concatenate([x0_all[:, None, :], x_row], axis=1)
 
@@ -560,6 +765,13 @@ def _derive_dynamics_controls(x_full: jax.Array, dt: float) -> jax.Array:
     Used only for rows that do not produce their own controls (raw, clamp);
     ``gt_normalised_dynamics_residual`` has no ``u=None`` mode, so a control
     signal consistent with the row's own state trajectory is required.
+
+    Args:
+        x_full: Full state sequence including the seed state.
+        dt: Time step in seconds.
+
+    Returns:
+        The recovered controls.
     """
     controls, _aux = kinematic_bicycle_inverse_controls(x_full, dt, wheelbase=L_REF)
     return controls  # [K, F, 2]
@@ -572,7 +784,7 @@ def _row_metrics(
     x_full: jax.Array,
     u_for_dyn: jax.Array,
     envelope: EmpiricalEnvelope,
-    physical_constraints,
+    physical_constraints: Any,
     gt_residual: float,
     dt: float,
     u_dyn_kb: jax.Array | None = None,
@@ -599,6 +811,22 @@ def _row_metrics(
     default) is the ``e05-v3`` full-state definition that ``METRIC_VERSION``
     locks — it must not change. True is the position-only (x, y) inD
     definition, used by ``evaluate.py`` and ``evaluate_completion_only.py``.
+
+    Args:
+        x_row: Row states, shape ``[K, F, D]``.
+        x_gt: Ground-truth futures.
+        u_for_ineq: Controls for the inequality metric, or None.
+        x_full: Row states with the seed state prepended.
+        u_for_dyn: Controls used for the dynamics residual.
+        envelope: Empirical envelope for the inequality metric.
+        physical_constraints: inD physical constraints.
+        gt_residual: Ground-truth reference residual.
+        dt: Time step in seconds.
+        u_dyn_kb: KB-recovered controls for the made row, or None.
+        position_displacement: Use position-only ADE/FDE.
+
+    Returns:
+        Metric name to value.
     """
     kb_physics = KinematicBicycle()
     kb_params = jnp.asarray([L_REF], dtype=jnp.float64)
@@ -632,7 +860,7 @@ def _row_metrics(
 
 
 def _time_pipeline(
-    fn,
+    fn: Callable[..., Any],
     single_args: tuple[jax.Array, ...],
     batched_args: tuple[jax.Array, ...],
     *,
@@ -643,6 +871,15 @@ def _time_pipeline(
     ``fn`` is a single-sample (unbatched) pure function. Timed via
     ``time.perf_counter`` with ``jax.block_until_ready`` around every call so
     async dispatch does not hide the real compute cost.
+
+    Args:
+        fn: Single-sample pure function.
+        single_args: Arguments for one sample.
+        batched_args: Arguments for a batch of samples.
+        repeats: Number of timed batch-1 repeats.
+
+    Returns:
+        Batch-1 median and batched-amortised per-trajectory latency, in seconds.
     """
     single_jit = eqx.filter_jit(fn)
     warm = single_jit(*single_args)
@@ -676,6 +913,7 @@ def _time_pipeline(
 
 
 def main() -> None:
+    """Run the inD evaluation and write the result JSON."""
     args = _build_parser().parse_args()
     rows = _validate_args(args)
 
@@ -883,7 +1121,19 @@ def main() -> None:
                 u_dyn_kb=u_kb,
             )
 
-            def _made_pnp_pipeline(ctx, meta, x0):
+            def _made_pnp_pipeline(
+                ctx: jax.Array, meta: jax.Array, x0: jax.Array
+            ) -> jax.Array:
+                """Predict one window and apply the frozen MaDE correction.
+
+                Args:
+                    ctx: Assembled context for the window.
+                    meta: Window metadata.
+                    x0: Seed state.
+
+                Returns:
+                    The corrected future states.
+                """
                 x_pred = predictor(ctx)
                 params = made_model.params_from_metadata(meta)
                 x_corr, _u = _made_pnp_single(made_model.cell, x_pred, params, x0, dt)

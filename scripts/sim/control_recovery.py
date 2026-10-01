@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Control-recovery evaluation: how well does the inverse model recover ground-truth controls?
 
 Measures the control-recovery error of the inverse dynamics against the simulator's
@@ -25,7 +35,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -76,6 +86,14 @@ def control_recovery_metrics(
     """
 
     def _per_trajectory(trajectory: jax.Array) -> jax.Array:
+        """Recovered controls for one trajectory.
+
+        Args:
+            trajectory: States of one trajectory.
+
+        Returns:
+            The controls implied by consecutive states.
+        """
         return jax.vmap(lambda x_prev, x_curr: inverse_fn(x_prev, x_curr, params))(
             trajectory[:-1], trajectory[1:]
         )
@@ -102,8 +120,15 @@ def control_recovery_metrics(
     }
 
 
-def _resolve_cell_physics(cfg):
-    """Mirror scripts/evaluate.py's known-system resolution exactly."""
+def _resolve_cell_physics(cfg: Any) -> tuple[Any, Any, jax.Array]:
+    """Mirror scripts/evaluate.py's known-system resolution exactly.
+
+    Args:
+        cfg: The experiment configuration.
+
+    Returns:
+        The known physics, known constraints and known parameters.
+    """
     true_system = cfg.physics.true_system
     known_system = cfg.model.known_system or true_system
     if cfg.model.known_system:
@@ -121,7 +146,20 @@ def evaluate_checkpoint_cell(
     states: jax.Array,
     controls: jax.Array,
 ) -> dict:
-    """Restore a MaDE checkpoint and evaluate its inverse dynamics."""
+    """Restore a MaDE checkpoint and evaluate its inverse dynamics.
+
+    Args:
+        config_path: Path of the experiment config JSON.
+        checkpoint_dir: Checkpoint directory.
+        states: ``(N, T, state_dim)`` clean trajectories.
+        controls: ``(N, T-1, control_dim)`` ground-truth controls.
+
+    Returns:
+        The control-recovery metrics plus the checkpoint path.
+
+    Raises:
+        ValueError: If the checkpoint cannot be restored.
+    """
     cfg = load_config(str(config_path))
     known_physics, known_constraints, known_params = _resolve_cell_physics(cfg)
 
@@ -154,7 +192,16 @@ def evaluate_prior_cell(
     states: jax.Array,
     controls: jax.Array,
 ) -> dict:
-    """Evaluate the known-physics control prior alone (no learned component)."""
+    """Evaluate the known-physics control prior alone (no learned component).
+
+    Args:
+        config_path: Path of the experiment config JSON.
+        states: ``(N, T, state_dim)`` clean trajectories.
+        controls: ``(N, T-1, control_dim)`` ground-truth controls.
+
+    Returns:
+        The control-recovery metrics (``checkpoint`` is None).
+    """
     cfg = load_config(str(config_path))
     known_physics, _, known_params = _resolve_cell_physics(cfg)
     dt = cfg.physics.dt
@@ -169,7 +216,14 @@ def evaluate_prior_cell(
 
 
 def _aggregate(rows: list[dict]) -> dict:
-    """Mean ± population std of nrmse/bias across seed rows of one variant."""
+    """Mean ± population std of nrmse/bias across seed rows of one variant.
+
+    Args:
+        rows: Per-seed control-recovery metrics of one variant.
+
+    Returns:
+        Per-dimension mean and std of nRMSE and bias, and the number of seeds.
+    """
     nrmse = jnp.asarray([row["nrmse_per_dim"] for row in rows])
     bias = jnp.asarray([row["bias_per_dim"] for row in rows])
     return {
@@ -197,7 +251,15 @@ _PM = r"\,{\scriptscriptstyle\pm}\,"
 
 
 def _fmt(value: float, style: str) -> str:
-    """One number in the table's style: 4 decimals, or 3 significant figures as a x 10^e."""
+    """One number in the table's style: 4 decimals, or 3 significant figures as a x 10^e.
+
+    Args:
+        value: The number to format.
+        style: ``fixed`` or ``sci``.
+
+    Returns:
+        The formatted number.
+    """
     if style == "fixed":
         return f"{value:.4f}"
     mantissa, exponent = f"{value:.2e}".split("e")
@@ -205,6 +267,18 @@ def _fmt(value: float, style: str) -> str:
 
 
 def _cell(agg: dict | None, stat: str, dim: int, style: str, with_std: bool) -> str:
+    """Render one table cell.
+
+    Args:
+        agg: Aggregate of the variant, or None for a missing cell.
+        stat: Statistic name (``nrmse`` or ``bias``).
+        dim: Control dimension.
+        style: Number style, ``fixed`` or ``sci``.
+        with_std: Append the standard deviation when True.
+
+    Returns:
+        The LaTeX cell text (``--`` when missing).
+    """
     if agg is None:
         return "--"
     mean = _fmt(agg[f"{stat}_per_dim_mean"][dim], style)
@@ -214,7 +288,14 @@ def _cell(agg: dict | None, stat: str, dim: int, style: str, with_std: bool) -> 
 
 
 def render_tex(conditions: dict) -> str:
-    """The tabular of the control-recovery table (known inverse, MaDE, supervised-I columns)."""
+    """The tabular of the control-recovery table (known inverse, MaDE, supervised-I columns).
+
+    Args:
+        conditions: Aggregates keyed by condition and then by variant.
+
+    Returns:
+        The LaTeX tabular source.
+    """
     lines = [
         r"\begin{tabular}{llccc}",
         r"\toprule",
@@ -232,6 +313,14 @@ def render_tex(conditions: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Evaluate control recovery for every system, variant and seed and write the JSON and table.
+
+    Args:
+        argv: Command-line arguments; ``sys.argv`` when None.
+
+    Returns:
+        Process exit code (0 on success).
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--systems", default="double_integrator,unicycle,kinematic_bicycle,"
                                               "dynamic_bicycle")

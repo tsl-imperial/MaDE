@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Composed MaDE cell."""
 
 from __future__ import annotations
@@ -35,6 +45,22 @@ class MaDECell(eqx.Module):
         adjoint: diffrax.AbstractAdjoint | None = None,
         return_diagnostics: bool = False,
     ) -> tuple[jax.Array, jax.Array] | tuple[jax.Array, jax.Array, CorrectorDiagnostics]:
+        """Propose a control, integrate the dynamics, and correct.
+
+        Args:
+            x_prev: Previous state.
+            x_curr: Current state.
+            params: Physical parameters.
+            dt: Step length.
+            training: Selects the training or evaluation corrector loop.
+            correction_mode: Explicit corrector mode, or None for the default.
+            solver: Optional diffrax solver.
+            adjoint: Optional diffrax adjoint.
+            return_diagnostics: Also return corrector diagnostics.
+
+        Returns:
+            ``(x, u)``, plus ``CorrectorDiagnostics`` when requested.
+        """
         u = self.inverse_dynamics(x_prev, x_curr, params)
         x_pred = self.augmented_dynamics.integrate(
             x_prev,
@@ -71,6 +97,22 @@ class MaDECell(eqx.Module):
         key: jax.Array,
         dt: float = 0.1,
     ) -> "MaDECell":
+        """Build a cell from configs.
+
+        Args:
+            physics: Known physics model.
+            constraints: Constraint set.
+            model_config: Model configuration.
+            corrector_config: Corrector configuration.
+            key: PRNG key for weight initialisation.
+            dt: Step length.
+
+        Returns:
+            A new ``MaDECell``.
+
+        Raises:
+            ValueError: If ``model_config.residual`` or ``corrector_config.mode`` is invalid.
+        """
         inverse_key, residual_key = jax.random.split(key)
         if model_config.residual not in {"learned", "zero"}:
             raise ValueError("model_config.residual must be 'learned' or 'zero'.")

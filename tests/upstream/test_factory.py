@@ -1,7 +1,18 @@
-"""Round-trip tests for the E05 predictor factory (make -> save -> load)."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Round-trip tests for the inD predictor factory (make -> save -> load)."""
 
 from __future__ import annotations
 
+from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -16,6 +27,15 @@ STATE_STD = jnp.asarray([20.0, 15.0, 1.5, 3.0])
 
 
 def _sample_context(seed: int = 0, location_id: float = 2.0) -> jax.Array:
+    """Build a deterministic context window with metadata.
+
+    Args:
+        seed: Random seed.
+        location_id: Location id stored in the metadata.
+
+    Returns:
+        Assembled context array.
+    """
     rng = np.random.default_rng(seed)
     states = np.cumsum(rng.standard_normal((H, D)), axis=0) + np.array([50.0, 30.0, 0.0, 5.0])
     metadata = np.array([4.5, 2.0, 1.0, 0.0, location_id])
@@ -23,7 +43,8 @@ def _sample_context(seed: int = 0, location_id: float = 2.0) -> jax.Array:
 
 
 @pytest.mark.parametrize("kind", ["lstm", "ssm", "transformer"])
-def test_round_trip_identical_outputs(kind: str, tmp_path) -> None:
+def test_round_trip_identical_outputs(kind: str, tmp_path: Path) -> None:
+    """Verify round trip identical outputs."""
     model = make_predictor(
         kind, horizon=F, state_mean=STATE_MEAN, state_std=STATE_STD, key=jax.random.key(0)
     )
@@ -59,7 +80,8 @@ def test_round_trip_identical_outputs(kind: str, tmp_path) -> None:
 
 
 @pytest.mark.parametrize("kind", ["lstm", "ssm", "transformer"])
-def test_round_trip_preserves_vmap_batching(kind: str, tmp_path) -> None:
+def test_round_trip_preserves_vmap_batching(kind: str, tmp_path: Path) -> None:
+    """Verify round trip preserves vmap batching."""
     model = make_predictor(
         kind, horizon=F, state_mean=STATE_MEAN, state_std=STATE_STD, key=jax.random.key(3)
     )
@@ -84,6 +106,7 @@ def test_round_trip_preserves_vmap_batching(kind: str, tmp_path) -> None:
 
 @pytest.mark.parametrize("kind", ["lstm", "ssm", "transformer"])
 def test_make_predictor_overrides_reach_constructor(kind: str) -> None:
+    """Verify make predictor overrides reach constructor."""
     overrides = {"decoder_width": 8, "decoder_depth": 1}
     model = make_predictor(
         kind,
@@ -98,13 +121,15 @@ def test_make_predictor_overrides_reach_constructor(kind: str) -> None:
 
 
 def test_unknown_kind_raises() -> None:
+    """Verify unknown kind raises."""
     with pytest.raises(ValueError, match="kind"):
         make_predictor(
             "gru", horizon=F, state_mean=STATE_MEAN, state_std=STATE_STD, key=jax.random.key(0)
         )
 
 
-def test_save_predictor_absolutises_directory(tmp_path) -> None:
+def test_save_predictor_absolutises_directory(tmp_path: Path) -> None:
+    """Verify save predictor absolutises directory."""
     model = make_predictor(
         "lstm", horizon=F, state_mean=STATE_MEAN, state_std=STATE_STD, key=jax.random.key(0)
     )

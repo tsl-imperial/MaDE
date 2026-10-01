@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Entry point for single-agent training."""
 
 from __future__ import annotations
@@ -5,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from typing import Any
 from dataclasses import replace
 from pathlib import Path
 
@@ -47,10 +58,16 @@ _MADE_VARIANTS = {
 }
 
 
-def _extract_constraint_bounds(constraints) -> dict:
+def _extract_constraint_bounds(constraints: Any) -> dict:
     """Extract box-constraint bounds as serialisable lists.
 
     Handles CompositeConstraints by delegating to its first (BoxConstraints) layer.
+
+    Args:
+        constraints: A box constraint or a ``CompositeConstraints``.
+
+    Returns:
+        Dict with ``state_min``, ``state_max``, ``control_min`` and ``control_max`` as lists.
     """
     box = constraints.constraints[0] if isinstance(constraints, CompositeConstraints) else constraints
     return {
@@ -61,7 +78,15 @@ def _extract_constraint_bounds(constraints) -> dict:
     }
 
 
-def _save_trained_model(model, checkpoint_dir: str, key: jax.Array, step: int = 1) -> None:
+def _save_trained_model(model: Any, checkpoint_dir: str, key: jax.Array, step: int = 1) -> None:
+    """Save a trained model as a checkpoint.
+
+    Args:
+        model: The trained model.
+        checkpoint_dir: Directory to write the checkpoint to.
+        key: PRNG key stored in the checkpoint.
+        step: Step number of the checkpoint.
+    """
     CheckpointManager(checkpoint_dir).save(
         TrainState(
             model=model,
@@ -75,10 +100,24 @@ def _save_trained_model(model, checkpoint_dir: str, key: jax.Array, step: int = 
 
 
 def _known_param_overrides(cfg: ExperimentConfig) -> dict[str, float]:
+    """Known-model parameters for a configuration.
+
+    Args:
+        cfg: The experiment configuration.
+
+    Returns:
+        The known parameters when a known system is set, else the true parameters.
+    """
     return cfg.model.known_params if cfg.model.known_system else cfg.physics.true_params
 
 
-def _apply_known_params_to_source(source, known_params: jax.Array) -> None:
+def _apply_known_params_to_source(source: Any, known_params: jax.Array) -> None:
+    """Overwrite every sample's parameters with the known-model parameters.
+
+    Args:
+        source: Data source whose ``samples`` are updated in place.
+        known_params: Known-model parameters.
+    """
     for sample in source.samples:
         sample["params"] = known_params
 
@@ -241,6 +280,7 @@ def main_programmatic(
 
 
 def main() -> None:
+    """Train one single-agent variant from the command line."""
     parser = argparse.ArgumentParser(description="Single-agent MaDE training.")
     parser.add_argument("--system", default=None, help="True physics system name.")
     parser.add_argument("--variant", default="made", help="Model variant to train.")

@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """MLP baseline smoke tests for the inD pipeline.
 
 Mirrors ``tests/baselines/test_fab_inD.py`` but exercises the location-aware
@@ -28,6 +38,14 @@ from made.utils.config import MLPBaselineConfig
 
 
 def _make_mlp_inD(key: jax.Array) -> MLPBaseline:
+    """Build a tiny location-aware MLPBaseline with inD metadata layout.
+
+    Args:
+        key: PRNG key for initialisation.
+
+    Returns:
+        Small MLPBaseline.
+    """
     return MLPBaseline(
         state_dim=IND_STATE_DIM,
         hidden=(16, 16),
@@ -40,11 +58,18 @@ def _make_mlp_inD(key: jax.Array) -> MLPBaseline:
 
 
 def _ind_metadata(loc_id: int = 1) -> jax.Array:
-    """Return a single inD-shaped metadata vector ``[length, width, car=1, truck=0, loc_id]``."""
+    """Return a single inD-shaped metadata vector ``[length, width, car=1, truck=0, loc_id]``.
+
+    Args:
+        loc_id: Location id stored in the last column.
+
+    Returns:
+        Metadata vector of shape (5,).
+    """
     return jnp.array([4.5, 1.8, 1.0, 0.0, float(loc_id)], dtype=jnp.float64)
 
 
-def test_mlp_forward_no_nan_with_inD_metadata():
+def test_mlp_forward_no_nan_with_inD_metadata() -> None:
     """MLP forward through the location-embedded metadata path produces finite output."""
     model = _make_mlp_inD(jax.random.key(0))
     x_prev = jnp.zeros(IND_STATE_DIM, dtype=jnp.float64)
@@ -57,20 +82,20 @@ def test_mlp_forward_no_nan_with_inD_metadata():
     assert jnp.all(jnp.isfinite(pred_curr))
 
 
-def test_mlp_location_embedding_field_exists():
+def test_mlp_location_embedding_field_exists() -> None:
     """When num_locations > 0 the baseline must expose a location_embedding."""
     model = _make_mlp_inD(jax.random.key(1))
     assert model.location_embedding is not None
     assert model.location_embedding.weight.shape == (IND_NUM_LOCATIONS, 8)
 
 
-def test_mlp_location_embedding_disabled_by_default():
+def test_mlp_location_embedding_disabled_by_default() -> None:
     """Without num_locations the legacy scalar-only path is preserved."""
     model = MLPBaseline(state_dim=IND_STATE_DIM, hidden=(16, 16), key=jax.random.key(2))
     assert model.location_embedding is None
 
 
-def test_mlp_different_locations_yield_different_outputs():
+def test_mlp_different_locations_yield_different_outputs() -> None:
     """Two metadata vectors that differ only in location_id should produce
     different predictions once the embedding has been initialised."""
     model = _make_mlp_inD(jax.random.key(3))
@@ -84,7 +109,7 @@ def test_mlp_different_locations_yield_different_outputs():
     assert not jnp.allclose(out_loc1[1], out_loc4[1])
 
 
-def test_mlp_train_smoke_inD_metadata():
+def test_mlp_train_smoke_inD_metadata() -> None:
     """train_mlp_baseline runs 2 steps with inD-shaped metadata without NaN."""
     model = _make_mlp_inD(jax.random.key(4))
     batch_size = 4

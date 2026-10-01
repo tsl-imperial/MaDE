@@ -1,3 +1,13 @@
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
 """Tests for the inD data loader stub.
 
 These tests run without real inD data by using ``load_ind_split_stub``.
@@ -5,6 +15,7 @@ Shape, dtype, and location-id range are verified.
 """
 
 # ruff: noqa: E402
+from pathlib import Path
 import os
 
 os.environ["JAX_PLATFORMS"] = "cpu"
@@ -25,7 +36,7 @@ from made.data.ind_data import (
 )
 
 
-def test_stub_shapes():
+def test_stub_shapes() -> None:
     """Stub returns arrays with the expected shapes."""
     n, t = 32, 16
     states, metadata, lengths = load_ind_split_stub(n, t, seed=0)
@@ -34,7 +45,7 @@ def test_stub_shapes():
     assert lengths.shape == (n,)
 
 
-def test_stub_dtypes():
+def test_stub_dtypes() -> None:
     """Stub returns float64 states/metadata and int32 lengths."""
     states, metadata, lengths = load_ind_split_stub(8, 10, seed=1)
     assert states.dtype == jnp.float64
@@ -42,14 +53,14 @@ def test_stub_dtypes():
     assert lengths.dtype == jnp.int32
 
 
-def test_stub_lengths_value():
+def test_stub_lengths_value() -> None:
     """Stub lengths equal trajectory_length for all trajectories."""
     n, t = 12, 20
     _, _, lengths = load_ind_split_stub(n, t, seed=2)
     assert jnp.all(lengths == t)
 
 
-def test_stub_location_id_range():
+def test_stub_location_id_range() -> None:
     """Location IDs (last metadata column) are in {1, 2, 3, 4}."""
     states, metadata, lengths = load_ind_split_stub(128, 10, seed=3)
     loc_ids = metadata[:, IND_LOCATION_ID_INDEX]
@@ -57,7 +68,7 @@ def test_stub_location_id_range():
     assert jnp.all(loc_ids <= IND_NUM_LOCATIONS)
 
 
-def test_stub_location_id_all_values():
+def test_stub_location_id_all_values() -> None:
     """With 128 trajectories, all four location IDs appear."""
     _, metadata, _ = load_ind_split_stub(128, 10, seed=4)
     loc_ids = np.asarray(metadata[:, IND_LOCATION_ID_INDEX], dtype=np.int32)
@@ -65,7 +76,7 @@ def test_stub_location_id_all_values():
         assert loc in loc_ids, f"Location ID {loc} missing from stub data"
 
 
-def test_stub_class_onehot_valid():
+def test_stub_class_onehot_valid() -> None:
     """Class one-hot columns sum to 1 for every trajectory."""
     _, metadata, _ = load_ind_split_stub(32, 10, seed=5)
     # Columns 2 and 3 are the class one-hot
@@ -74,17 +85,17 @@ def test_stub_class_onehot_valid():
     assert jnp.allclose(row_sums, jnp.ones_like(row_sums))
 
 
-def test_stub_metadata_dim_constant():
+def test_stub_metadata_dim_constant() -> None:
     """IND_METADATA_DIM equals 5."""
     assert IND_METADATA_DIM == 5
 
 
-def test_stub_location_id_index_constant():
+def test_stub_location_id_index_constant() -> None:
     """IND_LOCATION_ID_INDEX equals 4 (trailing column)."""
     assert IND_LOCATION_ID_INDEX == 4
 
 
-def test_load_ind_split_raises_without_plan0(tmp_path):
+def test_load_ind_split_raises_without_plan0(tmp_path: Path) -> None:
     """load_ind_split raises NotImplementedError (or FileNotFoundError) when data is absent."""
     from made.data.ind_data import load_ind_split
 

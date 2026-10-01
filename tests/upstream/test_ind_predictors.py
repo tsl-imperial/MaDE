@@ -1,4 +1,14 @@
-"""Contract tests for the E05 upstream predictors (LSTM + compact selective-SSM)."""
+# MaDE: Markovian Dynamics Enforcer.
+#
+# Copyright (c) 2026 Kevin Yu, Transport Systems and Logistics Laboratory, Imperial College London
+# SPDX-License-Identifier: MIT
+#
+# Part of the code release for:
+#   K. Yu, T. Guo, C. Antoniou, P. Angeloudis. "Markovian Dynamics Enforcer: Feasibility
+#   Preserving Correction on Learned Dynamics Manifolds." NeurIPS, 2026. arXiv:2609.39888
+# If you use this code, please cite the paper (see CITATION.cff and README.md).
+
+"""Contract tests for the inD upstream predictors (LSTM + compact selective-SSM)."""
 
 import equinox as eqx
 import jax
@@ -15,12 +25,30 @@ STATE_MEAN = jnp.asarray([50.0, 30.0, 0.0, 5.0])
 STATE_STD = jnp.asarray([20.0, 15.0, 1.5, 3.0])
 
 
-def _make_predictor(kind: str, key: jax.Array):
+def _make_predictor(kind: str, key: jax.Array) -> LSTMPredictor | SSMPredictor:
+    """Build a small predictor for tests.
+
+    Args:
+        kind: Predictor kind, 'lstm' or 'ssm'.
+        key: PRNG key for initialisation.
+
+    Returns:
+        Predictor instance.
+    """
     cls = {"lstm": LSTMPredictor, "ssm": SSMPredictor}[kind]
     return cls(horizon=F, state_mean=STATE_MEAN, state_std=STATE_STD, key=key)
 
 
 def _sample_context(seed: int = 0, location_id: float = 2.0) -> jax.Array:
+    """Build a deterministic context window with metadata.
+
+    Args:
+        seed: Random seed.
+        location_id: Location id stored in the metadata.
+
+    Returns:
+        Assembled context array.
+    """
     rng = np.random.default_rng(seed)
     states = np.cumsum(rng.standard_normal((H, D)), axis=0) + np.array([50.0, 30.0, 0.0, 5.0])
     metadata = np.array([4.5, 2.0, 1.0, 0.0, location_id])
@@ -28,11 +56,13 @@ def _sample_context(seed: int = 0, location_id: float = 2.0) -> jax.Array:
 
 
 @pytest.fixture(params=["lstm", "ssm"])
-def predictor_kind(request) -> str:
+def predictor_kind(request: pytest.FixtureRequest) -> str:
+    """Provide each predictor kind in turn."""
     return request.param
 
 
 def test_output_shape_and_finiteness(predictor_kind: str) -> None:
+    """Verify output shape and finiteness."""
     model = _make_predictor(predictor_kind, jax.random.key(0))
     prediction = model(_sample_context())
     assert prediction.shape == (F, D)
@@ -41,6 +71,7 @@ def test_output_shape_and_finiteness(predictor_kind: str) -> None:
 
 
 def test_vmap_batching(predictor_kind: str) -> None:
+    """Verify vmap batching."""
     model = _make_predictor(predictor_kind, jax.random.key(0))
     batch = jnp.stack([_sample_context(seed) for seed in range(3)])
     predictions = jax.vmap(model)(batch)
@@ -50,6 +81,7 @@ def test_vmap_batching(predictor_kind: str) -> None:
 
 
 def test_construction_is_deterministic(predictor_kind: str) -> None:
+    """Verify construction is deterministic."""
     a = _make_predictor(predictor_kind, jax.random.key(7))
     b = _make_predictor(predictor_kind, jax.random.key(7))
     context = _sample_context()
@@ -78,10 +110,19 @@ def test_metadata_agnostic_at_init(predictor_kind: str) -> None:
 
 
 def test_gradients_flow_but_norm_stats_frozen(predictor_kind: str) -> None:
+    """Verify gradients flow but norm stats frozen."""
     model = _make_predictor(predictor_kind, jax.random.key(0))
     context = _sample_context()
 
-    def loss(m):
+    def loss(m: eqx.Module) -> jax.Array:
+        """Return the mean squared prediction of the model.
+
+        Args:
+            m: Predictor model.
+
+        Returns:
+            Scalar loss.
+        """
         return jnp.mean(m(context) ** 2)
 
     grads = eqx.filter_grad(loss)(model)
@@ -98,26 +139,62 @@ def test_gradients_flow_but_norm_stats_frozen(predictor_kind: str) -> None:
 
 @pytest.mark.parametrize("location_id", [1.0, 4.0])
 def test_boundary_location_ids(predictor_kind: str, location_id: float) -> None:
+    """Verify boundary location ids."""
     model = _make_predictor(predictor_kind, jax.random.key(0))
     prediction = model(_sample_context(location_id=location_id))
     assert bool(jnp.all(jnp.isfinite(prediction)))
 
 
 def _np_sigmoid(v: np.ndarray) -> np.ndarray:
+    """NumPy sigmoid.
+
+    Args:
+        v: Input array.
+
+    Returns:
+        Elementwise sigmoid.
+    """
     return 1.0 / (1.0 + np.exp(-v))
 
 
 def _np_silu(v: np.ndarray) -> np.ndarray:
+    """NumPy SiLU.
+
+    Args:
+        v: Input array.
+
+    Returns:
+        Elementwise SiLU.
+    """
     return v * _np_sigmoid(v)
 
 
 def _np_softplus(v: np.ndarray) -> np.ndarray:
+    """NumPy softplus.
+
+    Args:
+        v: Input array.
+
+    Returns:
+        Elementwise softplus.
+    """
     return np.logaddexp(v, 0.0)
 
 
 def _np_layer_norm(
     x: np.ndarray, weight: np.ndarray, bias: np.ndarray, eps: float = 1e-5
 ) -> np.ndarray:
+    """NumPy layer norm over a vector, mirroring eqx.nn.LayerNorm.
+
+    Args:
+        x: Input vector.
+        weight: Scale.
+        bias: Shift.
+        eps: Variance epsilon.
+
+    Returns:
+        Normalised vector.
+    """
     mean = np.mean(x)
     # eqx.nn.LayerNorm: population variance (ddof=0), clamped to be non-negative.
     variance = max(np.var(x), 0.0)
@@ -135,6 +212,15 @@ def _np_causal_depthwise_conv(
     eqx.nn.Conv1d's depthwise (feature_group_count=d_inner) weight/bias layout.
     Left-only padding of ``K - 1`` zeros makes this causal: output row ``t``
     depends only on input rows ``t - (K - 1) .. t``.
+
+    Args:
+        x_in: Input of shape [T, d_inner].
+        conv_weight: Weights of shape [d_inner, 1, K].
+        conv_bias: Bias of shape [d_inner, 1].
+        kernel_size: Kernel size K.
+
+    Returns:
+        Convolved array of shape [T, d_inner].
     """
     T, d_inner = x_in.shape
     pad = kernel_size - 1
@@ -155,6 +241,14 @@ def _reference_ssm_block(block: _SSMBlock, x_seq: np.ndarray, static: np.ndarray
     split(delta_raw, b, c) -> softplus(delta) -> A = -exp(A_log) -> per-step
     selective-scan recurrence h = a_bar * h + bx (h0 from init_state_proj) ->
     y = einsum(hs, c) + D skip -> gate by silu(z) -> out_proj -> residual add.
+
+    Args:
+        block: Block whose weights are used.
+        x_seq: Input sequence.
+        static: Static features.
+
+    Returns:
+        Block output sequence.
     """
     T, _d_model = x_seq.shape
     d_inner, d_state, dt_rank = block.d_inner, block.d_state, block.dt_rank
