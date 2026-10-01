@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.common.tex_check import assert_compiles, overfull_pt  # noqa: E402
 
 SOURCE = ROOT / "outputs/ind/panel.json"
-OUT_DIR = ROOT / "outputs/tables"
+OUT_DIR = ROOT / "outputs/table_2"
 
 PREDICTORS = ("lstm", "ssm", "transformer")
 ROWS = ("raw", "clamp", "smoother", "smoother_dyn", "made_pnp")

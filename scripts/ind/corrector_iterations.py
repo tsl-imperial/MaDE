@@ -57,7 +57,7 @@ configure()
 from scripts.ind.evaluate import WINDOW_SPEC, THRESH_M  # noqa: E402
 
 DATA_DIR = ROOT / "data/inD-preprocessed/v1"
-OUT = ROOT / "outputs/ind/corrector_iterations.json"
+OUT = ROOT / "outputs/appendix/corrector_iterations.json"
 FAMILIES = ("lstm", "ssm", "transformer")
 PRED_SEEDS = (0, 1, 2, 3, 4)
 MADE_SEEDS = (0, 1, 2)
@@ -282,6 +282,7 @@ def main() -> int:
         "per_made_seed": per_seed,
         "cells": cells,
     }
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(payload, indent=2) + "\n")
     print(f"\ncap={cap} tol={tol}")
     print(f"pooled: {pooled}")

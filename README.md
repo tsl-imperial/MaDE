@@ -79,60 +79,55 @@ step is `dt=0.2`.
 
 ### Data
 
-**Simulated systems.** Generated locally by the first step of `scripts/sim/run_all.sh`
-(`scripts/sim/generate_data.py --system all --seed 0`). Output goes to
-`data/generated/`. Dynamic-bicycle controls are sampled in ±0.2 rad and ±1.5 m/s², inside the
-±0.5 rad and ±3.0 m/s² constraint box (`configs/sim/data_generation.json`).
+**Simulated systems.** Generated locally by `scripts/sim/generate_data.py --system all --seed 0`,
+which `run_all.sh` runs first for every simulated table. Output goes to `data/generated/`.
+Dynamic-bicycle controls are sampled in ±0.2 rad and ±1.5 m/s², inside the ±0.5 rad and
+±3.0 m/s² constraint box (`configs/sim/data_generation.json`).
 
 **inD.** We do not redistribute inD. Request access from levelXdata at
 https://levelxdata.com/ind-dataset/. The dataset is licensed for non-commercial research use.
-Place the contents of the dataset's `data/` directory in `data/inD-raw/`, then run:
+Place the contents of the dataset's `data/` directory in `data/inD-raw/`. The first inD table
+you request preprocesses it into `data/inD-preprocessed/v1`, which every inD command reads. To
+run that step yourself:
 
 ```bash
 uv run python scripts/ind/preprocess.py --raw-dir data/inD-raw --output-dir data/inD-preprocessed
 ```
 
-This writes `data/inD-preprocessed/v1`, which every inD command reads.
-
 ### Commands
 
-Run from the repository root. Each `run_all.sh` runs its full pipeline in order: data, training,
-scoring, then tables. The inD preprocessing step is commented out in `scripts/ind/run_all.sh`
-because it needs your raw data.
+Run from the repository root. Each flag runs the steps its table needs, and steps shared by
+several flags run once. Combine flags, or use `--all`. `--dry-run` prints the commands without
+running them, and `--help` lists every option.
 
 ```bash
-uv run bash scripts/sim/run_all.sh   # simulated systems, CPU
-uv run bash scripts/ind/run_all.sh   # inD, GPU
+uv run ./run_all.sh --table1 --table3
 ```
 
-| Paper item | Produced by | Output |
-|---|---|---|
-| Table 1: simulated results | `scripts/sim/run_all.sh`: `run_matrix.py --seeds 0,1,2,3,4`, `train_fab.py` per system and seed, `score_all.py --seeds 0,1,2,3,4`, `build_tables.py` | `outputs/tables/tab_e01_results.tex` |
-| Table 2: inD results | `scripts/ind/run_all.sh`: `train_made.py` (seeds 0–2), `train_predictor.py` (3 families × seeds 0–4), `tune_smoother.py`, `evaluate.py --smoother-noise outputs/ind/smoother_noise.json`, `build_table_main.py` | `outputs/tables/tab_e05_ind.tex` |
-| Table 3: ablations | `scripts/sim/build_tables.py` | `outputs/tables/tab_e01_ablations.tex` |
-| Table 5: control recovery | `scripts/sim/control_recovery.py --seeds 0,1,2,3,4` (run by `scripts/sim/run_all.sh` after `score_all.py`) | `outputs/tables/tab_control_recovery.tex`, `outputs/sim/control_recovery.json` |
-| Table 6: runtime | `scripts/ind/measure_latency.py --idle-devices 0 --smoother-noise outputs/ind/smoother_noise.json` | `outputs/ind/latency.json` |
-| Table 8: gradient depth | `scripts/ind/gradient_depth_probe.py` (arguments as in `scripts/ind/run_all.sh`) | `outputs/ind/grad_norm_probe.json` |
-| Tables 9 and 10: inD inequality breakdown | `scripts/ind/build_table_breakdown.py` | `outputs/tables/tab_ineq_breakdown_ind_{rate,magnitude}.tex` |
-| Table 11: completion-only variant | `scripts/ind/evaluate_completion_only.py`, `scripts/ind/build_table_completion_only.py` | `outputs/tables/tab_completion_only.tex` |
-| Corrector iteration counts (Section 5, Appendix) | `scripts/ind/corrector_iterations.py` | `outputs/ind/corrector_iterations.json` |
-| Prior-only comparator (Appendix) | `scripts/sim/build_tables.py` | `prior_only_comparison` in `outputs/tables/tab_e01_seed_level.json` |
-| Per-model breakdown (Appendix) | `scripts/ind/evaluate.py` | `outputs/ind/panel.json` |
+| Paper item | Command | Output | Hardware |
+|---|---|---|---|
+| Table 1: simulated results | `uv run ./run_all.sh --table1` | `outputs/table_1/` | CPU |
+| Table 2: inD results | `uv run ./run_all.sh --table2` | `outputs/table_2/` | GPU |
+| Table 3: ablations | `uv run ./run_all.sh --table3` | `outputs/table_3/` | CPU |
+| Table 5: control recovery | `uv run ./run_all.sh --table5` | `outputs/table_5/` | CPU |
+| Table 6: runtime | `uv run ./run_all.sh --table6` | `outputs/table_6/` | idle NVIDIA GPU |
+| Table 8: gradient depth | `uv run ./run_all.sh --table8` | `outputs/table_8/` | GPU |
+| Tables 9 and 10: inD inequality breakdown | `uv run ./run_all.sh --table9` (same as `--table10`) | `outputs/table_9_10/` | GPU |
+| Table 11: completion-only variant | `uv run ./run_all.sh --table11` | `outputs/table_11/` | GPU |
+| Prior-only comparator (Appendix) | `uv run ./run_all.sh --table1` | `prior_only_comparison` in `outputs/table_1/tab_e01_seed_level.json` | CPU |
+| Per-model breakdown (Appendix) | `uv run ./run_all.sh --table2` | `outputs/ind/panel.json` | GPU |
+| Corrector iteration counts (Section 5, Appendix) | `uv run ./run_all.sh --corrector-iterations` | `outputs/appendix/` | GPU |
 
 Figures 1 and 2 are drawings. Tables 4 and 7 list metric definitions and default
-hyperparameters. None of the four has associated code. Run `measure_latency.py` alone on an
-idle GPU: it measures wall-clock time.
+hyperparameters. None of the four has associated code. Run `--table6` alone on an idle GPU,
+because it measures wall-clock time. `--all` runs it last.
 
-The simulated tables are built from a separate scoring pass (`score_all.py`), not from the
-evaluation that `run_matrix.py` writes next to each checkpoint. To rebuild the tables from
-existing scores:
-
-```bash
-uv run python scripts/sim/build_tables.py
-uv run python scripts/ind/build_table_main.py
-uv run python scripts/ind/build_table_breakdown.py
-uv run python scripts/ind/build_table_completion_only.py
-```
+Data, checkpoints, scores and evaluation panels stay under `data/`, `outputs/sim/` and
+`outputs/ind/`. A rerun skips finished predictors and tuned smoother noise (`--force` disables
+this), and MaDE training resumes from its checkpoints. The simulated tables come from the
+scoring pass in `outputs/sim/scores/`, not from the `metrics.json` that `run_matrix.py` writes
+next to each checkpoint. Each table builder (`scripts/sim/build_tables.py`,
+`scripts/ind/build_table_*.py`) can be rerun on its own and writes to the same directories.
 
 ## Citation
 

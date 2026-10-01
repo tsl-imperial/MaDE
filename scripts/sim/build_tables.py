@@ -656,31 +656,31 @@ def main() -> None:
     parser.add_argument(
         "--out-seed-level",
         type=Path,
-        default=ROOT / "outputs" / "tables" / "tab_e01_seed_level.json",
+        default=ROOT / "outputs" / "table_1" / "tab_e01_seed_level.json",
         help="Where to write per-seed values alongside the aggregates. Always written.",
     )
     parser.add_argument(
         "--out-tex",
         type=Path,
-        default=ROOT / "outputs" / "tables" / "tab_e01_results.tex",
+        default=ROOT / "outputs" / "table_1" / "tab_e01_results.tex",
         help="Where to write the regenerated tabular block (LaTeX).",
     )
     parser.add_argument(
         "--out-json",
         type=Path,
-        default=ROOT / "outputs" / "tables" / "tab_e01_results.audit.json",
+        default=ROOT / "outputs" / "table_1" / "tab_e01_results.audit.json",
         help="Where to write per-cell mean/std/n audit JSON.",
     )
     parser.add_argument(
         "--out-ablation-tex",
         type=Path,
-        default=ROOT / "outputs" / "tables" / "tab_e01_ablations.tex",
+        default=ROOT / "outputs" / "table_3" / "tab_e01_ablations.tex",
         help="Where to write the appendix ablation tabular block (LaTeX).",
     )
     parser.add_argument(
         "--out-ablation-json",
         type=Path,
-        default=ROOT / "outputs" / "tables" / "tab_e01_ablations.audit.json",
+        default=ROOT / "outputs" / "table_3" / "tab_e01_ablations.audit.json",
         help="Where to write appendix ablation per-cell mean/std/n audit JSON.",
     )
     args = parser.parse_args()

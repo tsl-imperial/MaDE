@@ -27,7 +27,7 @@ Usage (GPU workstation, real checkpoint):
         --config outputs/ind/made/seed0/config.json \
         --made-checkpoint outputs/ind/made/seed0/checkpoints \
         --data-dir data/inD-preprocessed/v1 \
-        --output outputs/ind/grad_norm_probe.json
+        --output outputs/table_8/grad_norm_probe.json
 
 Local CPU smoke (random cell, stub data, tiny batch):
     JAX_PLATFORMS=cpu python scripts/ind/gradient_depth_probe.py \

@@ -57,7 +57,7 @@ DATA_DIR = ROOT / "data/inD-preprocessed/v1"
 FAMILIES = ("lstm", "ssm", "transformer")
 PRED_SEEDS = (0, 1, 2, 3, 4)
 MADE_SEEDS = (0, 1, 2)
-OUT = ROOT / "outputs/ind/latency.json"
+OUT = ROOT / "outputs/table_6/latency.json"
 # The corrector's eval loop runs to a tolerance, so step size affects iteration count and
 # therefore latency. Import the single definition from evaluate.py to avoid mismatch.
 from scripts.ind.evaluate import WINDOW_SPEC, THRESH_M as THRESHOLD_M  # noqa: E402

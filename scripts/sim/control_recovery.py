@@ -329,8 +329,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config-dir", default=str(ROOT / "configs" / "sim"))
     parser.add_argument("--runs-root", default=str(ROOT / "outputs" / "sim" / "runs"))
     parser.add_argument("--data-dir", default=str(ROOT / "data" / "generated"))
-    parser.add_argument("--out-json", default=str(ROOT / "outputs" / "sim" / "control_recovery.json"))
-    parser.add_argument("--out-tex", default=str(ROOT / "outputs" / "tables" / "tab_control_recovery.tex"))
+    parser.add_argument("--out-json", default=str(ROOT / "outputs" / "table_5" / "control_recovery.json"))
+    parser.add_argument("--out-tex", default=str(ROOT / "outputs" / "table_5" / "tab_control_recovery.tex"))
     args = parser.parse_args(argv)
 
     systems = set(args.systems.split(","))
