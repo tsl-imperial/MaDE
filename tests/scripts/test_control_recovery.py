@@ -49,7 +49,7 @@ def test_render_matches_published_format() -> None:
         return {"nrmse_per_dim_mean": list(nm), "nrmse_per_dim_std": list(ns),
                 "bias_per_dim_mean": list(bm), "bias_per_dim_std": list(bs)}
 
-    # The currently published values (the paper's Table 5), in the summary's shape.
+    # The currently published values (the paper's Table 6), in the summary's shape.
     PUBLISHED = {
         "double_integrator/fully-specified": {
             "prior": _pub([7.90e-16, 9.54e-16], [0.0, 0.0]),

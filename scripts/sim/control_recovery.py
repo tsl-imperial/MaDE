@@ -23,7 +23,7 @@ Run layout read: ``<runs-root>/<system>/<condition>/<variant>/seed<seed>/checkpo
 one config per system and variant at ``<config-dir>/<prefix>_<variant>.json``.
 
 Outputs: ``<out-json>`` (the full per-cell and per-condition summary) and ``<out-tex>``
-(the paper's Table 5 tabular body).
+(the paper's Table 6 tabular body).
 
 Usage:
     python scripts/sim/control_recovery.py
@@ -329,8 +329,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config-dir", default=str(ROOT / "configs" / "sim"))
     parser.add_argument("--runs-root", default=str(ROOT / "outputs" / "sim" / "runs"))
     parser.add_argument("--data-dir", default=str(ROOT / "data" / "generated"))
-    parser.add_argument("--out-json", default=str(ROOT / "outputs" / "table_5" / "control_recovery.json"))
-    parser.add_argument("--out-tex", default=str(ROOT / "outputs" / "table_5" / "tab_control_recovery.tex"))
+    parser.add_argument("--out-json", default=str(ROOT / "outputs" / "table_6" / "control_recovery.json"))
+    parser.add_argument("--out-tex", default=str(ROOT / "outputs" / "table_6" / "tab_control_recovery.tex"))
     args = parser.parse_args(argv)
 
     systems = set(args.systems.split(","))

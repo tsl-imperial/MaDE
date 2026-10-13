@@ -101,25 +101,25 @@ several flags run once. Combine flags, or use `--all`. `--dry-run` prints the co
 running them, and `--help` lists every option.
 
 ```bash
-uv run ./run_all.sh --table1 --table3
+uv run ./run_all.sh --table1 --table5
 ```
 
 | Paper item | Command | Output | Hardware |
 |---|---|---|---|
 | Table 1: simulated results | `uv run ./run_all.sh --table1` | `outputs/table_1/` | CPU |
 | Table 2: inD results | `uv run ./run_all.sh --table2` | `outputs/table_2/` | GPU |
-| Table 3: ablations | `uv run ./run_all.sh --table3` | `outputs/table_3/` | CPU |
-| Table 5: control recovery | `uv run ./run_all.sh --table5` | `outputs/table_5/` | CPU |
-| Table 6: runtime | `uv run ./run_all.sh --table6` | `outputs/table_6/` | idle NVIDIA GPU |
-| Table 8: gradient depth | `uv run ./run_all.sh --table8` | `outputs/table_8/` | GPU |
-| Tables 9 and 10: inD inequality breakdown | `uv run ./run_all.sh --table9` (same as `--table10`) | `outputs/table_9_10/` | GPU |
-| Table 11: completion-only variant | `uv run ./run_all.sh --table11` | `outputs/table_11/` | GPU |
+| Table 5: ablations | `uv run ./run_all.sh --table5` | `outputs/table_5/` | CPU |
+| Table 6: control recovery | `uv run ./run_all.sh --table6` | `outputs/table_6/` | CPU |
+| Table 11: runtime | `uv run ./run_all.sh --table11` | `outputs/table_11/` | idle NVIDIA GPU |
+| Table 7: gradient depth | `uv run ./run_all.sh --table7` | `outputs/table_7/` | GPU |
+| Tables 8 and 9: inD inequality breakdown | `uv run ./run_all.sh --table8` (same as `--table9`) | `outputs/table_8_9/` | GPU |
+| Table 10: completion-only variant | `uv run ./run_all.sh --table10` | `outputs/table_10/` | GPU |
 | Prior-only comparator (Appendix) | `uv run ./run_all.sh --table1` | `prior_only_comparison` in `outputs/table_1/tab_e01_seed_level.json` | CPU |
 | Per-model breakdown (Appendix) | `uv run ./run_all.sh --table2` | `outputs/ind/panel.json` | GPU |
 | Corrector iteration counts (Section 5, Appendix) | `uv run ./run_all.sh --corrector-iterations` | `outputs/appendix/` | GPU |
 
-Figures 1 and 2 are drawings. Tables 4 and 7 list metric definitions and default
-hyperparameters. None of the four has associated code. Run `--table6` alone on an idle GPU,
+Figures 1 and 2 are drawings. Tables 3 and 4 list metric definitions and default
+hyperparameters. None of the four has associated code. Run `--table11` alone on an idle GPU,
 because it measures wall-clock time. `--all` runs it last.
 
 Data, checkpoints, scores and evaluation panels stay under `data/`, `outputs/sim/` and

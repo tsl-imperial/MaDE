@@ -674,13 +674,13 @@ def main() -> None:
     parser.add_argument(
         "--out-ablation-tex",
         type=Path,
-        default=ROOT / "outputs" / "table_3" / "tab_e01_ablations.tex",
+        default=ROOT / "outputs" / "table_5" / "tab_e01_ablations.tex",
         help="Where to write the appendix ablation tabular block (LaTeX).",
     )
     parser.add_argument(
         "--out-ablation-json",
         type=Path,
-        default=ROOT / "outputs" / "table_3" / "tab_e01_ablations.audit.json",
+        default=ROOT / "outputs" / "table_5" / "tab_e01_ablations.audit.json",
         help="Where to write appendix ablation per-cell mean/std/n audit JSON.",
     )
     args = parser.parse_args()

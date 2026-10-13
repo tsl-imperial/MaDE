@@ -31,16 +31,16 @@ MATRIX = "python scripts/sim/run_matrix.py --seeds 0,1,2,3,4"
 SCORE = "python scripts/sim/score_all.py --seeds 0,1,2,3,4"
 CONTROL = (
     "python scripts/sim/control_recovery.py --seeds 0,1,2,3,4"
-    " --out-json outputs/table_5/control_recovery.json"
-    " --out-tex outputs/table_5/tab_control_recovery.tex"
+    " --out-json outputs/table_6/control_recovery.json"
+    " --out-tex outputs/table_6/tab_control_recovery.tex"
 )
 BUILD_SIM = (
     "python scripts/sim/build_tables.py --results-root outputs/sim/scores"
     " --out-seed-level outputs/table_1/tab_e01_seed_level.json"
     " --out-tex outputs/table_1/tab_e01_results.tex"
     " --out-json outputs/table_1/tab_e01_results.audit.json"
-    " --out-ablation-tex outputs/table_3/tab_e01_ablations.tex"
-    " --out-ablation-json outputs/table_3/tab_e01_ablations.audit.json"
+    " --out-ablation-tex outputs/table_5/tab_e01_ablations.tex"
+    " --out-ablation-json outputs/table_5/tab_e01_ablations.audit.json"
 )
 PREPROCESS = (
     "python scripts/ind/preprocess.py --raw-dir data/inD-raw --output-dir data/inD-preprocessed"
@@ -59,11 +59,11 @@ PREDICTOR_LSTM0 = (
 PROBE = (
     "python scripts/ind/gradient_depth_probe.py --config outputs/ind/made/seed0/config.json"
     " --made-checkpoint outputs/ind/made/seed0/checkpoints"
-    " --data-dir data/inD-preprocessed/v1 --output outputs/table_8/grad_norm_probe.json"
+    " --data-dir data/inD-preprocessed/v1 --output outputs/table_7/grad_norm_probe.json"
 )
 LATENCY = (
     "python scripts/ind/measure_latency.py --idle-devices 0"
-    " --smoother-noise outputs/ind/smoother_noise.json --out outputs/table_6/latency.json"
+    " --smoother-noise outputs/ind/smoother_noise.json --out outputs/table_11/latency.json"
 )
 FAMILIES = ("lstm", "ssm", "transformer")
 
@@ -152,16 +152,16 @@ def _summary(root: Path, family: str, seed: int) -> Path:
     return root / "outputs/ind/predictors" / f"{family}_stage1_seed{seed}" / "training_summary.json"
 
 
-def test_table5_needs_only_data_and_matrix(tmp_path: Path) -> None:
-    """--table5 runs data, matrix and control recovery, with no inD data present."""
+def test_table6_needs_only_data_and_matrix(tmp_path: Path) -> None:
+    """--table6 runs data, matrix and control recovery, with no inD data present."""
     s = _sandbox(tmp_path, raw=False)
-    assert _dry_run(s, "--table5") == [GEN, MATRIX, CONTROL]
+    assert _dry_run(s, "--table6") == [GEN, MATRIX, CONTROL]
 
 
-def test_table1_and_table3_share_one_build(tmp_path: Path) -> None:
-    """--table1 with --table3 runs the shared chain and one build_tables call."""
+def test_table1_and_table5_share_one_build(tmp_path: Path) -> None:
+    """--table1 with --table5 runs the shared chain and one build_tables call."""
     s = _sandbox(tmp_path, raw=False)
-    cmds = _dry_run(s, "--table3", "--table1")
+    cmds = _dry_run(s, "--table5", "--table1")
     assert len(cmds) == 24
     assert cmds[0] == GEN
     assert cmds[1] == MATRIX
@@ -172,10 +172,10 @@ def test_table1_and_table3_share_one_build(tmp_path: Path) -> None:
     assert _count(cmds, "control_recovery") == 0
 
 
-def test_table3_alone_runs_fab_and_scoring(tmp_path: Path) -> None:
-    """--table3 alone still trains FAB and scores before building."""
+def test_table5_alone_runs_fab_and_scoring(tmp_path: Path) -> None:
+    """--table5 alone still trains FAB and scores before building."""
     s = _sandbox(tmp_path, raw=False)
-    cmds = _dry_run(s, "--table3")
+    cmds = _dry_run(s, "--table5")
     assert _count(cmds, "scripts/sim/train_fab.py") == 20
     assert SCORE in cmds
     assert cmds[-1] == BUILD_SIM
@@ -206,32 +206,32 @@ def test_all_runs_every_stage_once(tmp_path: Path) -> None:
     assert cmds[-1] == LATENCY
 
 
-def test_table8_trains_only_made_seed0(tmp_path: Path) -> None:
-    """--table8 preprocesses, trains MaDE seed 0 and runs the probe, nothing else."""
+def test_table7_trains_only_made_seed0(tmp_path: Path) -> None:
+    """--table7 preprocesses, trains MaDE seed 0 and runs the probe, nothing else."""
     s = _sandbox(tmp_path, raw=True)
-    assert _dry_run(s, "--table8") == [PREPROCESS, MADE0, PROBE]
+    assert _dry_run(s, "--table7") == [PREPROCESS, MADE0, PROBE]
 
 
-def test_table9_and_table10_are_one_target(tmp_path: Path) -> None:
-    """--table9 and --table10 together build the breakdown once."""
+def test_table8_and_table9_are_one_target(tmp_path: Path) -> None:
+    """--table8 and --table9 together build the breakdown once."""
     s = _sandbox(tmp_path, raw=False, preprocessed=True)
-    cmds = _dry_run(s, "--table9", "--table10")
+    cmds = _dry_run(s, "--table8", "--table9")
     assert _count(cmds, "build_table_breakdown.py") == 1
-    assert cmds[-1].endswith("--out-dir outputs/table_9_10")
+    assert cmds[-1].endswith("--out-dir outputs/table_8_9")
     assert _count(cmds, "preprocess.py") == 0
 
 
-def test_table11_skips_smoother_and_panel(tmp_path: Path) -> None:
-    """--table11 needs neither tune_smoother nor the filtered-panel evaluation."""
+def test_table10_skips_smoother_and_panel(tmp_path: Path) -> None:
+    """--table10 needs neither tune_smoother nor the filtered-panel evaluation."""
     s = _sandbox(tmp_path, raw=False, preprocessed=True)
-    cmds = _dry_run(s, "--table11")
+    cmds = _dry_run(s, "--table10")
     assert len(cmds) == 20
     assert _count(cmds, "tune_smoother.py") == 0
     assert _count(cmds, "scripts/ind/evaluate.py") == 0
     assert _count(cmds, "evaluate_completion_only.py") == 1
     assert cmds[-1] == (
         "python scripts/ind/build_table_completion_only.py"
-        " --source outputs/ind/completion_only.json --out-dir outputs/table_11"
+        " --source outputs/ind/completion_only.json --out-dir outputs/table_10"
     )
 
 
@@ -250,10 +250,10 @@ def test_finished_predictor_skipped_unless_forced(tmp_path: Path) -> None:
     summary = _summary(tmp_path, "lstm", 0)
     summary.parent.mkdir(parents=True)
     summary.write_text("{}")
-    cmds = _dry_run(s, "--table11")
+    cmds = _dry_run(s, "--table10")
     assert _count(cmds, "train_predictor.py") == 14
     assert PREDICTOR_LSTM0 not in cmds
-    assert _count(_dry_run(s, "--table11", "--force"), "train_predictor.py") == 15
+    assert _count(_dry_run(s, "--table10", "--force"), "train_predictor.py") == 15
 
 
 def test_tuned_smoother_skipped_only_when_predictors_are_done(tmp_path: Path) -> None:
@@ -296,7 +296,7 @@ def test_partial_preprocessed_dir_stops_before_running(tmp_path: Path) -> None:
     """A v1 directory without manifest.json exits 1 with the --force hint and runs nothing."""
     s = _sandbox(tmp_path, raw=False, preprocessed=True)
     (tmp_path / "data/inD-preprocessed/v1/manifest.json").unlink()
-    proc = _invoke(s, "--dry-run", "--table8")
+    proc = _invoke(s, "--dry-run", "--table7")
     assert proc.returncode == 1
     assert "manifest.json" in proc.stderr
     assert "--force" in proc.stderr
@@ -308,7 +308,7 @@ def test_help_and_bad_arguments(tmp_path: Path) -> None:
     s = _sandbox(tmp_path, raw=False)
     helped = _invoke(s, "--help")
     assert helped.returncode == 0
-    assert "--table9" in helped.stdout
+    assert "--table8" in helped.stdout
     assert "--corrector-iterations" in helped.stdout
     assert _invoke(s).returncode == 2
     assert _invoke(s, "--bogus").returncode == 2

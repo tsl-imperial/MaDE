@@ -12,7 +12,7 @@
 # Reproduces the paper's tables. One flag per table: each runs the steps its table needs, in
 # order, and steps shared between requested tables run once. The script calls `python`, so run
 # it inside the project environment:
-#   uv run ./run_all.sh --table1 --table3     (or activate .venv first)
+#   uv run ./run_all.sh --table1 --table5     (or activate .venv first)
 #   ./run_all.sh --help                       (every flag, outputs and skip rules)
 set -euo pipefail
 
@@ -28,9 +28,9 @@ IND_DATA=data/inD-preprocessed/v1
 IND_RAW=data/inD-raw
 SMOOTHER_NOISE=outputs/ind/smoother_noise.json
 
-# Run order, independent of flag order: simulated tables first, latency (Table 6) last.
-TARGETS="table1 table3 table5 table2 table9_10 table11 table8 corrector_iterations table6"
-IND_TARGETS="table2 table9_10 table11 table8 corrector_iterations table6"
+# Run order, independent of flag order: simulated tables first, latency (Table 11) last.
+TARGETS="table1 table5 table6 table2 table8_9 table10 table7 corrector_iterations table11"
+IND_TARGETS="table2 table8_9 table10 table7 corrector_iterations table11"
 
 DRY_RUN=0
 FORCE=0
@@ -46,14 +46,14 @@ Reproduce the paper's tables. Run inside the project environment (the script cal
 Targets (combine freely; each runs its prerequisites, shared steps run once):
   --table1                 Table 1, simulated results              -> outputs/table_1/
   --table2                 Table 2, inD results                    -> outputs/table_2/
-  --table3                 Table 3, ablations                      -> outputs/table_3/
-  --table5                 Table 5, control recovery               -> outputs/table_5/
-  --table6                 Table 6, runtime (idle NVIDIA GPU)      -> outputs/table_6/
-  --table8                 Table 8, gradient depth                 -> outputs/table_8/
-  --table9, --table10      Tables 9 and 10, inequality breakdown   -> outputs/table_9_10/
-  --table11                Table 11, completion-only variant       -> outputs/table_11/
+  --table5                 Table 5, ablations                      -> outputs/table_5/
+  --table6                 Table 6, control recovery               -> outputs/table_6/
+  --table11                Table 11, runtime (idle NVIDIA GPU)     -> outputs/table_11/
+  --table7                 Table 7, gradient depth                 -> outputs/table_7/
+  --table8, --table9       Tables 8 and 9, inequality breakdown    -> outputs/table_8_9/
+  --table10                Table 10, completion-only variant       -> outputs/table_10/
   --corrector-iterations   Corrector iteration counts (Appendix)   -> outputs/appendix/
-  --all                    Every target above; Table 6 runs last
+  --all                    Every target above; Table 11 runs last
 
 Options:
   --dry-run    Print the commands in order without running them.
@@ -68,7 +68,7 @@ inD targets read data/inD-preprocessed/v1 (done once its manifest.json exists). 
 missing and data/inD-raw/ exists, the raw recordings are preprocessed first; otherwise the
 script stops (see README.md, "Reproducing the paper"). A v1/ without manifest.json is an
 interrupted preprocessing run: the script stops and says how to redo it.
-Training runs, scores and evaluation panels stay under data/, outputs/sim/ and outputs/ind/. Run Table 6 alone on an idle GPU: it measures wall-clock time.
+Training runs, scores and evaluation panels stay under data/, outputs/sim/ and outputs/ind/. Run Table 11 alone on an idle GPU: it measures wall-clock time.
 EOF
 }
 
@@ -142,19 +142,19 @@ stage_score_all() {
   run python scripts/sim/score_all.py --seeds "$SIM_SEEDS"
 }
 
-# One build_tables.py call writes Table 1, Table 3 and the seed-level JSON.
+# One build_tables.py call writes Table 1, Table 5 and the seed-level JSON.
 stage_sim_tables() {
   once sim_tables || return 0
   stage_score_all
-  echo "=== build Tables 1 and 3 ==="
+  echo "=== build Tables 1 and 5 ==="
   outdir outputs/table_1
-  outdir outputs/table_3
+  outdir outputs/table_5
   run python scripts/sim/build_tables.py --results-root outputs/sim/scores \
     --out-seed-level outputs/table_1/tab_e01_seed_level.json \
     --out-tex outputs/table_1/tab_e01_results.tex \
     --out-json outputs/table_1/tab_e01_results.audit.json \
-    --out-ablation-tex outputs/table_3/tab_e01_ablations.tex \
-    --out-ablation-json outputs/table_3/tab_e01_ablations.audit.json
+    --out-ablation-tex outputs/table_5/tab_e01_ablations.tex \
+    --out-ablation-json outputs/table_5/tab_e01_ablations.audit.json
 }
 
 # ---- inD stages ----
@@ -258,16 +258,16 @@ stage_completion_eval() {
 # ---- targets (each called at most once) ----
 
 target_table1() { stage_sim_tables; }
-target_table3() { stage_sim_tables; }
+target_table5() { stage_sim_tables; }
 
-target_table5() {
+target_table6() {
   once control_recovery || return 0
   stage_run_matrix
-  echo "=== control recovery (Table 5) ==="
-  outdir outputs/table_5
+  echo "=== control recovery (Table 6) ==="
+  outdir outputs/table_6
   run python scripts/sim/control_recovery.py --seeds "$SIM_SEEDS" \
-    --out-json outputs/table_5/control_recovery.json \
-    --out-tex outputs/table_5/tab_control_recovery.tex
+    --out-json outputs/table_6/control_recovery.json \
+    --out-tex outputs/table_6/tab_control_recovery.tex
 }
 
 target_table2() {
@@ -278,29 +278,29 @@ target_table2() {
     --out-dir outputs/table_2
 }
 
-target_table9_10() {
+target_table8_9() {
   stage_evaluate
-  echo "=== build Tables 9 and 10 ==="
-  outdir outputs/table_9_10
+  echo "=== build Tables 8 and 9 ==="
+  outdir outputs/table_8_9
   run python scripts/ind/build_table_breakdown.py --source outputs/ind/panel.json \
-    --out-dir outputs/table_9_10
+    --out-dir outputs/table_8_9
 }
 
-target_table11() {
+target_table10() {
   stage_completion_eval
-  echo "=== build Table 11 ==="
-  outdir outputs/table_11
+  echo "=== build Table 10 ==="
+  outdir outputs/table_10
   run python scripts/ind/build_table_completion_only.py \
-    --source outputs/ind/completion_only.json --out-dir outputs/table_11
+    --source outputs/ind/completion_only.json --out-dir outputs/table_10
 }
 
-target_table8() {
+target_table7() {
   stage_made 0
-  echo "=== probe gradient norms through the recursive corrector (Table 8) ==="
-  outdir outputs/table_8
+  echo "=== probe gradient norms through the recursive corrector (Table 7) ==="
+  outdir outputs/table_7
   run python scripts/ind/gradient_depth_probe.py --config outputs/ind/made/seed0/config.json \
     --made-checkpoint outputs/ind/made/seed0/checkpoints --data-dir "$IND_DATA" \
-    --output outputs/table_8/grad_norm_probe.json
+    --output outputs/table_7/grad_norm_probe.json
 }
 
 target_corrector_iterations() {
@@ -312,14 +312,14 @@ target_corrector_iterations() {
     --out outputs/appendix/corrector_iterations.json
 }
 
-target_table6() {
+target_table11() {
   stage_made_all
   stage_predictors
   stage_tune_smoother
-  echo "=== latency (Table 6): run alone on an idle GPU ==="
-  outdir outputs/table_6
+  echo "=== latency (Table 11): run alone on an idle GPU ==="
+  outdir outputs/table_11
   run python scripts/ind/measure_latency.py --idle-devices 0 \
-    --smoother-noise "$SMOOTHER_NOISE" --out outputs/table_6/latency.json
+    --smoother-noise "$SMOOTHER_NOISE" --out outputs/table_11/latency.json
 }
 
 # ---- main ----
@@ -332,12 +332,12 @@ for arg in "$@"; do
   case "$arg" in
     --table1) want table1 ;;
     --table2) want table2 ;;
-    --table3) want table3 ;;
     --table5) want table5 ;;
     --table6) want table6 ;;
-    --table8) want table8 ;;
-    --table9 | --table10) want table9_10 ;;
     --table11) want table11 ;;
+    --table7) want table7 ;;
+    --table8 | --table9) want table8_9 ;;
+    --table10) want table10 ;;
     --corrector-iterations) want corrector_iterations ;;
     --all) for t in $TARGETS; do want "$t"; done ;;
     --dry-run) DRY_RUN=1 ;;
